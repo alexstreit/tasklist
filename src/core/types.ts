@@ -1,0 +1,151 @@
+// Core data types. Spec §2 and §3. This module must stay dependency-free.
+
+export type Severity = 'warning' | 'info';
+
+/** Absolute character offsets into `Tree.text` (the normalised source). */
+export interface Span {
+  from: number;
+  to: number;
+}
+
+export interface Diagnostic {
+  line: number; // 1-based
+  span?: Span;
+  severity: Severity;
+  message: string;
+}
+
+export type ColumnType = 'duration' | 'number' | 'text';
+
+export interface Column {
+  name: string;
+  type: ColumnType;
+}
+
+/** One positional field on an item line. `value` is trimmed; `span` covers the trimmed text. */
+export interface Field {
+  value: string;
+  span: Span;
+}
+
+interface NodeBase {
+  line: number; // 1-based
+  span: Span; // the full line, excluding the newline
+}
+
+export interface BlankNode extends NodeBase {
+  kind: 'blank';
+}
+
+export interface CommentNode extends NodeBase {
+  kind: 'comment';
+}
+
+/** A `#` line — reserved for future headings (spec §2.2). */
+export interface ReservedNode extends NodeBase {
+  kind: 'reserved';
+}
+
+/** A front matter delimiter or content line, retained for losslessness. */
+export interface FrontMatterNode extends NodeBase {
+  kind: 'front-matter';
+}
+
+export interface ItemNode extends NodeBase {
+  kind: 'item';
+  indent: number;
+  /** Own `~` marker only; inherited done-ness is computed. */
+  done: boolean;
+  title: string;
+  titleSpan: Span;
+  fields: Field[];
+  children: ItemNode[];
+}
+
+export type Node = BlankNode | CommentNode | ReservedNode | FrontMatterNode | ItemNode;
+
+export interface FrontMatterEntry {
+  key: string;
+  value: string;
+  line: number;
+  valueSpan: Span;
+}
+
+export interface Tree {
+  /** Normalised source: CRLF -> LF, tabs -> 4 spaces. All spans index into this. */
+  text: string;
+  /** Every line of the file, in order. Lossless. */
+  nodes: Node[];
+  /** Root items of the hierarchy. */
+  items: ItemNode[];
+  /** null when the file has no front matter block. */
+  frontMatter: FrontMatterEntry[] | null;
+  diagnostics: Diagnostic[];
+}
+
+export type RollupMode = 'derived' | 'override' | 'additive';
+
+/** Computed cell for a `duration` or `number` column. Spec §2.7–2.8. */
+export interface SummableCell {
+  kind: 'duration' | 'number';
+  effective: number;
+  childSum: number;
+  mode: RollupMode;
+  doneSum: number;
+  /** The field text as entered, '' when empty. */
+  raw: string;
+  span: Span | null;
+}
+
+export interface TextCell {
+  kind: 'text';
+  value: string;
+  span: Span | null;
+}
+
+export type Cell = SummableCell | TextCell;
+
+export interface ModelNode {
+  line: number;
+  span: Span;
+  indent: number;
+  title: string;
+  titleSpan: Span;
+  /** Own `~` or inherited from an ancestor. */
+  done: boolean;
+  /** One cell per declared column, in order. */
+  cells: Cell[];
+  children: ModelNode[];
+  source: ItemNode;
+}
+
+export interface DocumentTotal {
+  effective: number;
+  doneSum: number;
+}
+
+export interface Model {
+  columns: Column[];
+  roots: ModelNode[];
+  /** Aligned with `columns`; null for text columns. */
+  totals: (DocumentTotal | null)[];
+  diagnostics: Diagnostic[];
+}
+
+// Renderer seam. Spec §3.3.
+
+export interface ColumnRequirement {
+  type: string;
+}
+
+export interface RenderContext {
+  cursorLine: number | null;
+  setCursorLine(line: number): void;
+}
+
+export interface Renderer {
+  id: string;
+  label: string;
+  requires: ColumnRequirement[];
+  render(model: Model, host: HTMLElement, ctx: RenderContext): void;
+}
