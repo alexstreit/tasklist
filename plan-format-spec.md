@@ -129,15 +129,17 @@ else:             doneSum = sum(doneSum of children)
 
 All diagnostics carry a line number and a severity. MVP severities: `warning`, `info`.
 
-| Condition                       | Severity                           |
-| ------------------------------- | ---------------------------------- |
-| Tabs converted on load          | info                               |
-| Line starts with `#`            | warning                            |
-| More fields than columns        | warning                            |
-| Unparseable duration/number     | warning                            |
-| Unknown front matter key        | warning                            |
-| Unknown column type             | warning (column treated as `text`) |
-| Override differs from child sum | info                               |
+| Condition                                                                                                  | Severity                           |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Tabs converted on load                                                                                     | info                               |
+| Line starts with `#`                                                                                       | warning                            |
+| More fields than columns                                                                                   | warning                            |
+| Unparseable duration/number                                                                                | warning                            |
+| Unknown front matter key                                                                                   | warning                            |
+| Unknown column type                                                                                        | warning (column treated as `text`) |
+| Duplicate column name                                                                                      | warning                            |
+| Front matter opened but not closed (reported on line 1; remaining lines are still treated as front matter) | warning                            |
+| Override differs from child sum                                                                            | info                               |
 
 ### 2.10 Example
 
@@ -161,7 +163,7 @@ Computed:
 
 | Node           | effective   | childSum    | mode                     | doneSum |
 | -------------- | ----------- | ----------- | ------------------------ | ------- |
-| Auth           | 2d (16h)    | 2d 1h (17h) | override (info: differs) | 4h      |
+| Auth           | 2d (16h)    | 2d 7h (23h) | override (info: differs) | 4h      |
 | Login page     | 4h          | —           | override                 | 4h      |
 | Password reset | 6h          | —           | override                 | 0       |
 | OAuth (Google) | 1d 5h (13h) | 5h          | additive                 | 0       |
@@ -192,6 +194,8 @@ Comments and blank lines are retained as non-item nodes so the tree is a lossles
 `compute(tree, columns) → Model`. Pure function. Walks the tree bottom-up and attaches `effective`, `childSum`, `mode`, `done`, `doneSum` and diagnostics to each node. No renderer performs arithmetic.
 
 Both `parse` and `compute` are plain TypeScript with no DOM dependency and should be covered by unit tests before any UI exists.
+
+`analyze(text) → Model` composes `parse`, `parseColumns` and `compute` and is the single entry point the app shell and any tooling should call.
 
 ### 3.3 Renderers
 

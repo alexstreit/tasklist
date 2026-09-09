@@ -1,11 +1,4 @@
 // Reference test: the spec §2.10 example, every cell asserted.
-//
-// NOTE: the spec's table gives Auth childSum as "2d 1h (17h)". That contradicts
-// §2.7: Auth's children are Login (4h) + Password reset (6h) + OAuth's additive
-// effective (8h + 5h = 13h) = 23h = 2d 7h. 17h is what you get if Password reset
-// is dropped from the sum, so the table cell looks like an arithmetic slip. Every
-// other cell in the table (including the 3d document total and 4h doneSum) agrees
-// with §2.7, which this test treats as normative.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';

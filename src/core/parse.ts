@@ -38,15 +38,17 @@ export function parse(text: string): Tree {
   let i = 0;
 
   // Front matter: must begin on line 1 with `---`, ends at the next `---`.
-  // An unclosed block consumes the rest of the file.
+  // An unclosed block consumes the rest of the file and warns on line 1 (§2.9).
   if (lines.length > 0 && lines[0].trimEnd() === '---') {
     frontMatter = [];
     nodes.push({ kind: 'front-matter', line: 1, span: lineSpan(0) });
     i = 1;
+    let closed = false;
     while (i < lines.length) {
       const line = lines[i];
       nodes.push({ kind: 'front-matter', line: i + 1, span: lineSpan(i) });
       if (line.trimEnd() === '---') {
+        closed = true;
         i++;
         break;
       }
@@ -54,6 +56,14 @@ export function parse(text: string): Tree {
         frontMatter.push(parseFrontMatterLine(line, i, lineOffsets[i]));
       }
       i++;
+    }
+    if (!closed) {
+      diagnostics.push({
+        line: 1,
+        span: lineSpan(0),
+        severity: 'warning',
+        message: 'front matter not closed',
+      });
     }
     for (const entry of frontMatter) {
       if (entry.key !== 'columns') {

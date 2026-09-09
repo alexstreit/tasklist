@@ -1,10 +1,8 @@
-import { compute, parse, parseColumns } from '../../src/core';
+import { analyze, parse } from '../../src/core';
 import type { Model, ModelNode, SummableCell, Tree } from '../../src/core';
 
 export function load(text: string): { tree: Tree; model: Model } {
-  const tree = parse(text);
-  const { columns, diagnostics } = parseColumns(tree.frontMatter);
-  return { tree, model: compute(tree, columns, diagnostics) };
+  return { tree: parse(text), model: analyze(text) };
 }
 
 /** Depth-first flatten of the model's item nodes. */

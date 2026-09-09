@@ -65,6 +65,25 @@ describe('spec §2.9 diagnostics', () => {
     expect(model.roots[0].cells[0]).toMatchObject({ kind: 'text', value: 'whatever' });
   });
 
+  it('duplicate column name → warning', () => {
+    const { model } = load('---\ncolumns: est:duration | est:number\n---\nA | 4h');
+    const d = only(model);
+    expect(d.line).toBe(2);
+    expect(d.severity).toBe('warning');
+  });
+
+  it('front matter opened but not closed → warning on line 1, remaining lines still front matter', () => {
+    const { model, tree } = load('---\ncolumns: est:duration\nA | 4h');
+    // The swallowed item line also warns as an unknown front matter key.
+    expect(model.diagnostics.map((d) => [d.line, d.severity])).toEqual([
+      [1, 'warning'],
+      [3, 'warning'],
+    ]);
+    expect(model.diagnostics[0].message).toBe('front matter not closed');
+    expect(tree.nodes.every((n) => n.kind === 'front-matter')).toBe(true);
+    expect(model.roots).toHaveLength(0);
+  });
+
   it('override differs from child sum → info', () => {
     const { model } = load('A | 4h\n    B | 1h');
     const d = only(model);
