@@ -1,5 +1,8 @@
 html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
-.app { display: flex; height: 100%; }
+body { display: flex; flex-direction: column; }
+.toolbar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 13px; }
+.toolbar #filename { margin-left: 8px; color: #555; }
+.app { display: flex; flex: 1; min-height: 0; }
 .pane { flex: 1 1 50%; min-width: 0; overflow: auto; }
 #editor .cm-editor { height: 100%; }
 #editor .cm-scroller { font-family: ui-monospace, Menlo, Consolas, monospace; }

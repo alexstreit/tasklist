@@ -1,12 +1,31 @@
 // @vitest-environment jsdom
 // The shell re-analyzes on a ~50 ms debounce, hands the model to the active
-// renderer, and keeps the editor cursor and the preview in sync.
+// renderer, keeps the editor cursor and the preview in sync, and opens/saves
+// the buffer as a file.
 
 import { EditorView } from '@codemirror/view';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 let view: EditorView;
 let preview: HTMLElement;
+
+// Fake File System Access API.
+let openText = '';
+const written: string[] = [];
+const handle = {
+  name: 'q4.plan',
+  getFile: async () => ({ text: async () => openText }),
+  createWritable: async () => ({ write: async (t: string) => void written.push(t), close: async () => {} }),
+};
+const showOpenFilePicker = vi.fn(async () => [handle]);
+const showSaveFilePicker = vi.fn(async () => handle);
+Object.assign(window, { showOpenFilePicker, showSaveFilePicker });
+
+const flush = async () => {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+};
+const ctrlS = () =>
+  view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 's', keyCode: 83, ctrlKey: true, bubbles: true, cancelable: true }));
 
 const rows = () => [...preview.querySelectorAll<HTMLTableRowElement>('tbody tr')];
 const titles = () => rows().map((r) => r.cells[0].textContent);
@@ -18,7 +37,9 @@ beforeAll(async () => {
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect = () => new DOMRect();
   Element.prototype.scrollIntoView = scroll;
-  document.body.innerHTML = '<div id="editor"></div><section id="preview"></section>';
+  document.body.innerHTML =
+    '<button id="open"></button><button id="save"></button><button id="save-as"></button><span id="filename"></span>' +
+    '<div id="editor"></div><section id="preview"></section>';
   vi.useFakeTimers();
   await import('../../src/app/main');
   view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
@@ -93,5 +114,58 @@ describe('app shell', () => {
     vi.advanceTimersByTime(60);
     expect(cursorRow()).toBe('User list');
     expect(scroll).not.toHaveBeenCalled();
+  });
+});
+
+describe('open and save', () => {
+  it('shows the unsaved indicator on Untitled before any save', () => {
+    // Earlier tests edited the buffer, so it is unsaved by now; check the shape only.
+    expect(document.title).toMatch(/^● Untitled — Plan$/);
+  });
+
+  it('Ctrl+S on a new document prompts for a location; later saves do not', async () => {
+    ctrlS();
+    await flush();
+    expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+    expect(written).toEqual([view.state.doc.toString()]);
+    expect(document.title).toBe('q4.plan — Plan');
+    view.dispatch({ changes: { from: 0, insert: '// edited\n' } });
+    expect(document.title).toBe('● q4.plan — Plan');
+    ctrlS();
+    await flush();
+    expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+    expect(written).toHaveLength(2);
+    expect(written[1].startsWith('// edited\n')).toBe(true);
+    expect(document.title).toBe('q4.plan — Plan');
+  });
+
+  it('undoing back to the saved text clears the indicator', () => {
+    view.dispatch({ changes: { from: 0, insert: 'x' } });
+    expect(document.title).toBe('● q4.plan — Plan');
+    view.dispatch({ changes: { from: 0, to: 1 } });
+    expect(document.title).toBe('q4.plan — Plan');
+  });
+
+  it('prompts on beforeunload only with unsaved changes', () => {
+    const clean = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(clean);
+    expect(clean.defaultPrevented).toBe(false);
+    view.dispatch({ changes: { from: 0, insert: 'x' } });
+    const unsaved = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unsaved);
+    expect(unsaved.defaultPrevented).toBe(true);
+    view.dispatch({ changes: { from: 0, to: 1 } });
+  });
+
+  it('round-trips a file with comments, blank lines, trailing whitespace and front matter, converting tabs', async () => {
+    openText = '---\ncolumns: est:duration | owner:text\n---\n\n// note   \nAuth | 2d   \n\tLogin | 4h\n    Reset | 1h |\n\n';
+    document.getElementById('open')!.click();
+    await flush();
+    expect(view.state.doc.toString()).toBe(openText.replace('\t', '    '));
+    expect(document.title).toBe('q4.plan — Plan');
+    written.length = 0;
+    document.getElementById('save')!.click();
+    await flush();
+    expect(written).toEqual([openText.replace('\t', '    ')]);
   });
 });

@@ -88,10 +88,12 @@ Implement `src/renderers/tree/` per spec §5, replacing the JSON dump.
 - Open and save using the File System Access API where available; fallback to `<input type="file">` and download.
 - `Ctrl+S` saves to the open file handle, or triggers Save As if none.
 - Unsaved-changes indicator in the title.
+- Save writes the editor buffer as-is. Never re-serialise from the tree.
 
 **Acceptance criteria**
 
-- [ ] Open a file with comments, blank lines, trailing whitespace on some lines, and a front matter block; save it unchanged; the file on disk is identical except tab-to-space conversion.
+- [ ] Open a file with comments, blank lines, trailing whitespace on some lines, a trailing `|` on one item, and a front matter block; save it unchanged; the file on disk is byte-identical except tab-to-space and CRLF-to-LF normalisation.
+- [ ] Open a CRLF file, save it; the file on disk now has LF endings.
 - [ ] `Ctrl+S` on a new document prompts for a location; subsequent saves don't prompt.
 - [ ] Closing the tab with unsaved changes prompts (via `beforeunload`).
 - [ ] Works in Chrome and in a browser without File System Access (Firefox) via the fallback.
