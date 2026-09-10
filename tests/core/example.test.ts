@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { formatDuration } from '../../src/core';
 import type { TextCell } from '../../src/core';
-import { byTitle, est, load } from './helpers';
+import { byTitle, est, flatten, load } from './helpers';
 
 const text = readFileSync(new URL('../../examples/example.plan', import.meta.url), 'utf8');
 
@@ -33,6 +33,24 @@ describe('spec §2.10 example', () => {
     expect(formatDuration(est(byTitle(model, 'Auth')).effective)).toBe('2d');
     expect(formatDuration(est(byTitle(model, 'OAuth (Google)')).effective)).toBe('1d 5h');
     expect(formatDuration(est(byTitle(model, 'Admin')).effective)).toBe('1d');
+  });
+
+  it.each([
+    ['Auth', '1'],
+    ['Login page', '1.1'],
+    ['Password reset', '1.2'],
+    ['OAuth (Google)', '1.3'],
+    ['Consent screen', '1.3.1'],
+    ['Token refresh', '1.3.2'],
+    ['Admin', '2'],
+    ['User list', '2.1'],
+  ])('%s has outline number %s', (title, outlineNumber) => {
+    expect(byTitle(model, title).outlineNumber).toBe(outlineNumber);
+  });
+
+  it('the commented-out Audit log line has no number and does not consume one', () => {
+    expect(flatten(model).map((n) => n.title)).not.toContain('Audit log');
+    expect(flatten(model).map((n) => n.outlineNumber)).toEqual(['1', '1.1', '1.2', '1.3', '1.3.1', '1.3.2', '2', '2.1']);
   });
 
   it('document total is 3d, doneSum 4h', () => {

@@ -9,7 +9,7 @@ export const treeRenderer: Renderer = {
   requires: [],
 
   render(model: Model, host: HTMLElement, ctx: RenderContext): void {
-    const table = createGrid('plan-tree', [''], model);
+    const table = createGrid('plan-tree', ['#', ''], model);
     const visit = (node: ModelNode, depth: number): void => {
       const row = addItemRow(table, node, ctx);
       const title = row.insertCell();
@@ -19,7 +19,7 @@ export const treeRenderer: Renderer = {
       node.children.forEach((child) => visit(child, depth + 1));
     };
     model.roots.forEach((root) => visit(root, 0));
-    addTotalRow(table, ['Total'], model);
+    addTotalRow(table, ['', 'Total'], model);
     mount(host, table, ctx);
   },
 };

@@ -85,6 +85,7 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
       title: item.title,
       titleSpan: item.titleSpan,
       done,
+      outlineNumber: item.outlineNumber,
       cells,
       children,
       source: item,

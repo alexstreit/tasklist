@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from '../../src/core';
 import type { ItemNode } from '../../src/core';
-import { load } from './helpers';
+import { byTitle, load } from './helpers';
 
 describe('hierarchy (§2.4)', () => {
   it('0 / 8 / 4 indents: third item is a sibling of the second, no diagnostic', () => {
@@ -11,6 +11,29 @@ describe('hierarchy (§2.4)', () => {
     expect(a.children.map((c) => c.title)).toEqual(['B', 'C']);
     expect(a.children[0].children).toHaveLength(0);
     expect(model.diagnostics).toHaveLength(0);
+  });
+});
+
+describe('outline numbers (§3.1)', () => {
+  it('numbers items by position among siblings, appended to the parent', () => {
+    const { tree } = load('A\n    B\n        C\n    D\nE');
+    const a = tree.items[0];
+    expect(a.outlineNumber).toBe('1');
+    expect(a.children.map((c) => c.outlineNumber)).toEqual(['1.1', '1.2']);
+    expect(a.children[0].children[0].outlineNumber).toBe('1.1.1');
+    expect(tree.items[1].outlineNumber).toBe('2');
+  });
+
+  it('a comment line between siblings does not affect numbering', () => {
+    const { model } = load('A\n    B\n    // C | 2d\n    D\n\n# reserved\nE');
+    expect(byTitle(model, 'B').outlineNumber).toBe('1.1');
+    expect(byTitle(model, 'D').outlineNumber).toBe('1.2');
+    expect(byTitle(model, 'E').outlineNumber).toBe('2');
+  });
+
+  it('0 / 8 / 4 indents: third item is numbered as a sibling (1.2), not a grandchild', () => {
+    const { model } = load('A\n        B\n    C');
+    expect(byTitle(model, 'C').outlineNumber).toBe('1.2');
   });
 });
 

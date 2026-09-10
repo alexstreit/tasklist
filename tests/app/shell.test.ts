@@ -33,9 +33,9 @@ const ctrlS = () =>
   view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 's', keyCode: 83, ctrlKey: true, bubbles: true, cancelable: true }));
 
 const rows = () => [...preview.querySelectorAll<HTMLTableRowElement>('tbody tr')];
-const titles = () => rows().map((r) => r.cells[0].textContent);
-const cursorRow = () => preview.querySelector<HTMLTableRowElement>('tr.at-cursor')?.cells[0].textContent ?? null;
-const nearRow = () => preview.querySelector<HTMLTableRowElement>('tr.near-cursor')?.cells[0].textContent ?? null;
+const titles = () => rows().map((r) => r.cells[1].textContent);
+const cursorRow = () => preview.querySelector<HTMLTableRowElement>('tr.at-cursor')?.cells[1].textContent ?? null;
+const nearRow = () => preview.querySelector<HTMLTableRowElement>('tr.near-cursor')?.cells[1].textContent ?? null;
 const scroll = vi.fn();
 
 beforeAll(async () => {
@@ -56,7 +56,7 @@ describe('app shell', () => {
     expect(titles()).toEqual([
       'Auth', 'Login page', 'Password reset', 'OAuth (Google)', 'Consent screen', 'Token refresh', 'Admin', 'User list',
     ]);
-    expect(preview.querySelector('tfoot td:nth-child(2)')!.firstChild!.textContent).toBe('3d');
+    expect(preview.querySelector('tfoot td:nth-child(3)')!.firstChild!.textContent).toBe('3d');
   });
 
   it('re-renders after an edit once the debounce elapses', () => {
@@ -64,7 +64,7 @@ describe('app shell', () => {
     expect(titles()).toHaveLength(8);
     vi.advanceTimersByTime(60);
     expect(titles()).toHaveLength(9);
-    expect(preview.querySelector('tfoot td:nth-child(2)')!.firstChild!.textContent).toBe('4d');
+    expect(preview.querySelector('tfoot td:nth-child(3)')!.firstChild!.textContent).toBe('4d');
   });
 
   it('highlights the row under the editor cursor as it moves', () => {
@@ -105,7 +105,7 @@ describe('app shell', () => {
   });
 
   it('moves the editor cursor and focuses the editor when a row is clicked', () => {
-    const consent = rows().find((r) => r.cells[0].textContent === 'Consent screen')!;
+    const consent = rows().find((r) => r.cells[1].textContent === 'Consent screen')!;
     consent.click();
     expect(view.state.selection.main.head).toBe(view.state.doc.line(9).from);
     expect(document.activeElement).toBe(view.contentDOM);
@@ -115,7 +115,7 @@ describe('app shell', () => {
 
   it('does not scroll the preview when the move came from a preview click', () => {
     scroll.mockClear();
-    rows().find((r) => r.cells[0].textContent === 'User list')!.click();
+    rows().find((r) => r.cells[1].textContent === 'User list')!.click();
     vi.advanceTimersByTime(60);
     expect(cursorRow()).toBe('User list');
     expect(scroll).not.toHaveBeenCalled();
@@ -238,8 +238,8 @@ describe('renderer switcher', () => {
     tab('Table').click();
     expect(tab('Table').classList.contains('active')).toBe(true);
     expect(preview.querySelector('table')!.className).toContain('plan-table');
-    expect(rows().map((r) => r.cells[0].textContent)).toEqual(['1', '2']);
-    expect(rows().map((r) => r.cells[1].textContent)).toEqual(['Auth', 'Login']);
+    expect(rows().map((r) => r.cells[1].textContent)).toEqual(['1', '2']);
+    expect(rows().map((r) => r.cells[2].textContent)).toEqual(['Auth', 'Login']);
     tab('Tree').click();
     expect(preview.querySelector('table')!.className).toContain('plan-tree');
   });
@@ -248,11 +248,11 @@ describe('renderer switcher', () => {
     tab('Table').click();
     view.dispatch({ selection: { anchor: view.state.doc.line(2).from } });
     vi.advanceTimersByTime(60);
-    expect(preview.querySelector<HTMLTableRowElement>('tr.at-cursor')!.cells[1].textContent).toBe('Login');
+    expect(preview.querySelector<HTMLTableRowElement>('tr.at-cursor')!.cells[2].textContent).toBe('Login');
     rows()[0].click();
     expect(view.state.selection.main.head).toBe(0);
     vi.advanceTimersByTime(60);
-    expect(preview.querySelector<HTMLTableRowElement>('tr.at-cursor')!.cells[1].textContent).toBe('Auth');
+    expect(preview.querySelector<HTMLTableRowElement>('tr.at-cursor')!.cells[2].textContent).toBe('Auth');
   });
 
   it('never renders a greyed-out renderer', () => {

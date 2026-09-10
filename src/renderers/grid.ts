@@ -42,12 +42,15 @@ export function createGrid(className: string, leading: string[], model: Model): 
   return table;
 }
 
-/** An item row: done and cursor classes, click-to-line, then one cell per declared column. */
+/** An item row: done and cursor classes, click-to-line, the outline number, then the caller adds the rest. */
 export function addItemRow(table: HTMLTableElement, node: ModelNode, ctx: RenderContext): HTMLTableRowElement {
   const row = table.tBodies[0].insertRow();
   row.classList.toggle('done', node.done);
   if (node.line === ctx.cursorItem?.line) row.classList.add(ctx.cursorItem.exact ? 'at-cursor' : 'near-cursor');
   row.addEventListener('click', () => ctx.setCursorLine(node.line));
+  const outline = row.insertCell();
+  outline.className = 'outline';
+  outline.textContent = node.outlineNumber;
   return row;
 }
 

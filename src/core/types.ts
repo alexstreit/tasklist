@@ -60,6 +60,8 @@ export interface ItemNode extends NodeBase {
   titleSpan: Span;
   fields: Field[];
   children: ItemNode[];
+  /** Structural reference: `1`, `1.2`, `2.1.5`. Only item nodes count. */
+  outlineNumber: string;
 }
 
 export type Node = BlankNode | CommentNode | ReservedNode | FrontMatterNode | ItemNode;
@@ -117,6 +119,7 @@ export interface ModelNode {
   titleSpan: Span;
   /** Own `~` or inherited from an ancestor. */
   done: boolean;
+  outlineNumber: string;
   /** One cell per declared column, in order. */
   cells: Cell[];
   children: ModelNode[];

@@ -101,8 +101,9 @@ export function parse(text: string): Tree {
       // Parent = nearest preceding item with a strictly smaller indent (§2.4).
       while (stack.length > 0 && stack[stack.length - 1].indent >= item.indent) stack.pop();
       const parent = stack[stack.length - 1];
-      if (parent) parent.children.push(item);
-      else items.push(item);
+      const siblings = parent ? parent.children : items;
+      siblings.push(item);
+      item.outlineNumber = parent ? `${parent.outlineNumber}.${siblings.length}` : String(siblings.length);
       stack.push(item);
     }
   }
@@ -170,5 +171,6 @@ function parseItem(line: string, lineNo: number, lineOffset: number): ItemNode {
     titleSpan: title.span,
     fields,
     children: [],
+    outlineNumber: '', // assigned once the parent is known
   };
 }

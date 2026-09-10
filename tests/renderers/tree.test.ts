@@ -16,7 +16,7 @@ function render(text: string, cursorLine: number | null = null, setCursorLine = 
   treeRenderer.render(analyze(text), host, ctx);
   const rows = [...host.querySelectorAll('tbody tr')] as HTMLTableRowElement[];
   const total = host.querySelector('tfoot tr') as HTMLTableRowElement;
-  return { host, rows, total, row: (title: string) => rows.find((r) => r.cells[0].textContent === title)! };
+  return { host, rows, total, row: (title: string) => rows.find((r) => r.cells[1].textContent === title)! };
 }
 
 describe('tree renderer', () => {
@@ -26,14 +26,22 @@ describe('tree renderer', () => {
 
   it('renders one row per item and nothing for comments or blank lines', () => {
     const { rows } = render(example + '\n// trailing comment\n');
-    expect(rows.map((r) => r.cells[0].textContent)).toEqual([
+    expect(rows.map((r) => r.cells[1].textContent)).toEqual([
       'Auth', 'Login page', 'Password reset', 'OAuth (Google)', 'Consent screen', 'Token refresh', 'Admin', 'User list',
     ]);
   });
 
+  it('shows the outline number in a leading, non-selectable column', () => {
+    const { host, row, total } = render(example);
+    expect(host.querySelector('thead th')!.textContent).toBe('#');
+    expect(row('Token refresh').cells[0].textContent).toBe('1.3.2');
+    expect(row('Token refresh').cells[0].className).toBe('outline');
+    expect(total.cells[0].textContent).toBe('');
+  });
+
   it('indents titles by depth', () => {
     const { row } = render(example);
-    const indent = (title: string) => parseFloat(row(title).cells[0].style.paddingLeft);
+    const indent = (title: string) => parseFloat(row(title).cells[1].style.paddingLeft);
     expect(indent('Login page')).toBeGreaterThan(indent('Auth'));
     expect(indent('Consent screen')).toBeGreaterThan(indent('OAuth (Google)'));
     expect(indent('Admin')).toBe(indent('Auth'));
@@ -41,7 +49,7 @@ describe('tree renderer', () => {
 
   it('shows effective, with childSum muted for override and additive over estimated children', () => {
     const { row } = render(example);
-    const est = (title: string) => row(title).cells[1];
+    const est = (title: string) => row(title).cells[2];
     expect(est('Auth').firstChild!.textContent).toBe('2d');
     expect(est('Auth').querySelector('.muted')!.textContent).toBe('⟨Σ 2d 7h⟩');
     expect(est('OAuth (Google)').firstChild!.textContent).toBe('1d 5h');
@@ -53,28 +61,28 @@ describe('tree renderer', () => {
 
   it('shows text cells as entered', () => {
     const { row } = render(example);
-    expect(row('Login page').cells[2].textContent).toBe('alice');
-    expect(row('OAuth (Google)').cells[3].textContent).toBe('may not need for v1');
+    expect(row('Login page').cells[3].textContent).toBe('alice');
+    expect(row('OAuth (Google)').cells[4].textContent).toBe('may not need for v1');
   });
 
   it('leaves an unestimated leaf blank rather than 0h', () => {
     const { row } = render('A\n    B | 2h\n    C\n');
-    expect(row('C').cells[1].textContent).toBe('');
-    expect(row('A').cells[1].textContent).toBe('2h');
+    expect(row('C').cells[2].textContent).toBe('');
+    expect(row('A').cells[2].textContent).toBe('2h');
   });
 
   it('shows no child sum for an override over unestimated children, but does once one is estimated', () => {
     const empty = render('A | 4h\n    B\n    C\n');
-    expect(empty.row('A').cells[1].textContent).toBe('4h');
-    expect(empty.row('A').cells[1].querySelector('.muted')).toBeNull();
+    expect(empty.row('A').cells[2].textContent).toBe('4h');
+    expect(empty.row('A').cells[2].querySelector('.muted')).toBeNull();
     const one = render('A | 4h\n    B\n    C | 1h\n');
-    expect(one.row('A').cells[1].querySelector('.muted')!.textContent).toBe('⟨Σ 1h⟩');
+    expect(one.row('A').cells[2].querySelector('.muted')!.textContent).toBe('⟨Σ 1h⟩');
   });
 
   it('leaves a parent with an all-empty subtree blank', () => {
     const { row } = render('A\n    B\n        C\n');
-    expect(row('A').cells[1].textContent).toBe('');
-    expect(row('B').cells[1].textContent).toBe('');
+    expect(row('A').cells[2].textContent).toBe('');
+    expect(row('B').cells[2].textContent).toBe('');
   });
 
   it('marks done rows', () => {
@@ -85,9 +93,9 @@ describe('tree renderer', () => {
 
   it('shows the document total: 3d effective, 4h done', () => {
     const { total } = render(example);
-    expect(total.cells[1].firstChild!.textContent).toBe('3d');
-    expect(total.cells[1].querySelector('.muted')!.textContent).toBe('done 4h');
-    expect(total.cells[2].textContent).toBe('');
+    expect(total.cells[2].firstChild!.textContent).toBe('3d');
+    expect(total.cells[2].querySelector('.muted')!.textContent).toBe('done 4h');
+    expect(total.cells[3].textContent).toBe('');
   });
 
   it('highlights the row under the cursor', () => {

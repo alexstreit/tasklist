@@ -9,3 +9,4 @@
 .plan-grid .muted { color: #9ca3af; margin-left: 0.5em; font-size: 0.9em; }
 .plan-grid tr.total td { border-top: 1px solid #ddd; font-weight: 600; }
 .plan-grid td.level { color: #6b7280; text-align: right; }
+.plan-grid td.outline { color: #6b7280; user-select: none; }

@@ -9,7 +9,7 @@ export const tableRenderer: Renderer = {
   requires: [],
 
   render(model: Model, host: HTMLElement, ctx: RenderContext): void {
-    const table = createGrid('plan-table', ['level', ''], model);
+    const table = createGrid('plan-table', ['#', 'level', ''], model);
     const visit = (node: ModelNode, level: number): void => {
       const row = addItemRow(table, node, ctx);
       const levelCell = row.insertCell();
@@ -20,7 +20,7 @@ export const tableRenderer: Renderer = {
       node.children.forEach((child) => visit(child, level + 1));
     };
     model.roots.forEach((root) => visit(root, 1));
-    addTotalRow(table, ['', 'Total'], model);
+    addTotalRow(table, ['', '', 'Total'], model);
     mount(host, table, ctx);
   },
 };

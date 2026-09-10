@@ -194,6 +194,8 @@ text ──► parse ──► tree ──► compute ──► model ──► 
 
 Comments and blank lines are retained as non-item nodes so the tree is a lossless representation of the file.
 
+Every item node carries an `outlineNumber` (`1`, `1.1`, `1.2`, `2`, `2.1.5`): its 1-based position among its siblings, appended to the parent's number. It is structure, not arithmetic, so `parse` assigns it. Only item nodes are counted; comment, blank, reserved and front matter lines consume no numbers, so a commented-out line between two siblings does not affect their numbering.
+
 ### 3.2 Compute
 
 `compute(tree, columns) → Model`. Pure function. Walks the tree bottom-up and attaches `effective`, `childSum`, `mode`, `done`, `doneSum` and diagnostics to each node. No renderer performs arithmetic.
@@ -255,7 +257,7 @@ Shown as gutter markers with hover text, and as underlines on the offending span
 ## 5. Preview — tree renderer (MVP)
 
 - A tree that mirrors the text one row per item, comments and blank lines omitted.
-- Columns: title, then each declared column. Summable columns show `effective` when `hasValue` is true and an empty cell otherwise (an unestimated subtree must not read as `0h`); when `mode` is `override` or `additive` and `childrenHaveValue` is true, the computed `childSum` is shown alongside in a muted style, e.g. `2d ⟨Σ 2d 1h⟩`; derived parents render bare.
+- Columns: outline number (`#`, not selectable), title, then each declared column. Summable columns show `effective` when `hasValue` is true and an empty cell otherwise (an unestimated subtree must not read as `0h`); when `mode` is `override` or `additive` and `childrenHaveValue` is true, the computed `childSum` is shown alongside in a muted style, e.g. `2d ⟨Σ 2d 1h⟩`; derived parents render bare.
 - Done rows are struck through or dimmed.
 - A document total row at the bottom showing `effective` and `doneSum` per summable column.
 - The row for the item under the editor cursor is highlighted; clicking a row moves the editor cursor to that line.

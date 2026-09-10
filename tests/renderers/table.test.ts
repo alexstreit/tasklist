@@ -25,20 +25,21 @@ describe('table renderer', () => {
 
   it('renders one flat row per item with its level', () => {
     const { rows } = render(tableRenderer, example);
-    expect(rows.map((r) => [r.cells[0].textContent, r.cells[1].textContent])).toEqual([
-      ['1', 'Auth'], ['2', 'Login page'], ['2', 'Password reset'], ['2', 'OAuth (Google)'],
-      ['3', 'Consent screen'], ['3', 'Token refresh'], ['1', 'Admin'], ['2', 'User list'],
+    expect(rows.map((r) => [r.cells[0].textContent, r.cells[1].textContent, r.cells[2].textContent])).toEqual([
+      ['1', '1', 'Auth'], ['1.1', '2', 'Login page'], ['1.2', '2', 'Password reset'], ['1.3', '2', 'OAuth (Google)'],
+      ['1.3.1', '3', 'Consent screen'], ['1.3.2', '3', 'Token refresh'], ['2', '1', 'Admin'], ['2.1', '2', 'User list'],
     ]);
-    expect(rows.every((r) => r.cells[1].style.paddingLeft === '')).toBe(true);
+    expect(rows.every((r) => r.cells[0].className === 'outline')).toBe(true);
+    expect(rows.every((r) => r.cells[2].style.paddingLeft === '')).toBe(true);
   });
 
   it('shows the same numbers as the tree for the §2.10 example', () => {
     const tree = render(treeRenderer, example);
     const table = render(tableRenderer, example);
     const values = (rows: HTMLTableRowElement[], offset: number) => rows.map((r) => [...r.cells].slice(offset).map((c) => c.textContent));
-    expect(values(table.rows, 2)).toEqual(values(tree.rows, 1));
-    expect([...table.total.cells].slice(2).map((c) => c.textContent)).toEqual([...tree.total.cells].slice(1).map((c) => c.textContent));
-    expect(table.total.cells[2].firstChild!.textContent).toBe('3d');
+    expect(values(table.rows, 3)).toEqual(values(tree.rows, 2));
+    expect([...table.total.cells].slice(3).map((c) => c.textContent)).toEqual([...tree.total.cells].slice(2).map((c) => c.textContent));
+    expect(table.total.cells[3].firstChild!.textContent).toBe('3d');
   });
 
   it('marks done rows and the cursor row, and clicks through to the line', () => {
