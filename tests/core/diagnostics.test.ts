@@ -72,13 +72,10 @@ describe('spec §2.9 diagnostics', () => {
     expect(d.severity).toBe('warning');
   });
 
-  it('front matter opened but not closed → warning on line 1, remaining lines still front matter', () => {
-    const { model, tree } = load('---\ncolumns: est:duration\nA | 4h');
-    // The swallowed item line also warns as an unknown front matter key.
-    expect(model.diagnostics.map((d) => [d.line, d.severity])).toEqual([
-      [1, 'warning'],
-      [3, 'warning'],
-    ]);
+  it('front matter opened but not closed → one warning on line 1, remaining lines still front matter', () => {
+    const { model, tree } = load('---\ncolumns: est:duration\nA | 4h\nB | 2h\n// note');
+    // The swallowed lines raise no unknown-key warnings of their own.
+    expect(model.diagnostics.map((d) => [d.line, d.severity])).toEqual([[1, 'warning']]);
     expect(model.diagnostics[0].message).toBe('front matter not closed');
     expect(tree.nodes.every((n) => n.kind === 'front-matter')).toBe(true);
     expect(model.roots).toHaveLength(0);
@@ -90,6 +87,18 @@ describe('spec §2.9 diagnostics', () => {
     expect(d.line).toBe(1);
     expect(d.severity).toBe('info');
     expect(d.message).toBe('override differs from children (4h vs 1h)');
+  });
+
+  it('override over children without estimates → no diagnostic', () => {
+    const { model } = load('A | 4h\n    B\n    C | later');
+    expect(model.diagnostics.filter((d) => d.severity === 'info')).toHaveLength(0);
+  });
+
+  it('override differing from a single estimated child → info', () => {
+    const { model } = load('A | 4h\n    B\n    C | 1h');
+    const infos = model.diagnostics.filter((d) => d.severity === 'info');
+    expect(infos).toHaveLength(1);
+    expect(infos[0].message).toBe('override differs from children (4h vs 1h)');
   });
 
   it('override equal to child sum → no diagnostic', () => {

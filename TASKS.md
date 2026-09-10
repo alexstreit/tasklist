@@ -110,7 +110,7 @@ Implement `src/renderers/tree/` per spec §5, replacing the JSON dump.
 
 **Acceptance criteria**
 
-- [ ] Each diagnostic in spec §2.9 is visible in the gutter with the correct severity when triggered.
+- [ ] Each diagnostic in spec §2.9 except tab conversion (not reachable from the editor; the buffer never holds tabs) is visible in the gutter with the correct severity when triggered.
 - [ ] Hover shows the message text from the model verbatim.
 - [ ] Unparseable duration underlines only the field, not the whole line.
 - [ ] Diagnostics clear as soon as the line is fixed.

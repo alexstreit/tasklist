@@ -58,19 +58,21 @@ export function parse(text: string): Tree {
       i++;
     }
     if (!closed) {
+      // The swallowed lines are not real keys; one warning is enough.
       diagnostics.push({
         line: 1,
         severity: 'warning',
         message: 'front matter not closed',
       });
-    }
-    for (const entry of frontMatter) {
-      if (entry.key !== 'columns') {
-        diagnostics.push({
-          line: entry.line,
-          severity: 'warning',
-          message: `unknown front matter key "${entry.key}"`,
-        });
+    } else {
+      for (const entry of frontMatter) {
+        if (entry.key !== 'columns') {
+          diagnostics.push({
+            line: entry.line,
+            severity: 'warning',
+            message: `unknown front matter key "${entry.key}"`,
+          });
+        }
       }
     }
   }

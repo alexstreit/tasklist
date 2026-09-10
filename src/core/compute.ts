@@ -38,6 +38,7 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
       }
 
       const childSum = children.reduce((sum, c) => sum + (c.cells[i] as SummableCell).effective, 0);
+      const childHasValue = children.some((c) => (c.cells[i] as SummableCell).hasValue);
       const raw = field?.value ?? '';
       let mode: RollupMode = 'derived';
       let effective = childSum;
@@ -59,7 +60,7 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
           ownValue = true;
           mode = 'override';
           effective = parsed.value;
-          if (children.length > 0 && parsed.value !== childSum) {
+          if (childHasValue && parsed.value !== childSum) {
             const fmt = col.type === 'duration' ? formatDuration : String;
             diagnostics.push({
               line: item.line,
@@ -73,7 +74,7 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
       const doneSum = done
         ? effective
         : children.reduce((sum, c) => sum + (c.cells[i] as SummableCell).doneSum, 0);
-      const hasValue = ownValue || children.some((c) => (c.cells[i] as SummableCell).hasValue);
+      const hasValue = ownValue || childHasValue;
       return { kind: col.type, effective, childSum, mode, doneSum, hasValue, raw, span: field?.span ?? null };
     });
 

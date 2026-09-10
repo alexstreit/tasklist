@@ -109,7 +109,7 @@ Attach to the node, per column:
 - `childSum` — what the children add up to
 - `mode` — `derived` | `override` | `additive`
 - `hasValue` — true when the node's own field is non-empty or any child has `hasValue`; false means the whole subtree is unestimated and renderers show nothing rather than `0`
-- if `mode == override` and children exist and `value != childSum` → informational diagnostic "override differs from children (X vs Y)"
+- if `mode == override` and at least one child has `hasValue` and `value != childSum` → informational diagnostic "override differs from children (X vs Y)". A parent with an estimate whose children are all unestimated gets no diagnostic.
 
 Leaves with `+` behave as `0 + value`, i.e. the same as an override. No diagnostic.
 
@@ -132,14 +132,14 @@ All diagnostics carry a line number and a severity. MVP severities: `warning`, `
 
 | Condition                                                                                                  | Severity                           |
 | ---------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Tabs converted on load                                                                                     | info                               |
+| Tabs converted on load (raised by `parse`; not reachable from the editor, whose buffer never holds tabs)    | info                               |
 | Line starts with `#`                                                                                       | warning                            |
 | More fields than columns                                                                                   | warning                            |
 | Unparseable duration/number                                                                                | warning                            |
 | Unknown front matter key                                                                                   | warning                            |
 | Unknown column type                                                                                        | warning (column treated as `text`) |
 | Duplicate column name                                                                                      | warning                            |
-| Front matter opened but not closed (reported on line 1; remaining lines are still treated as front matter) | warning                            |
+| Front matter opened but not closed (reported on line 1; remaining lines are still treated as front matter, and raise no unknown-key warnings) | warning                            |
 | Override differs from child sum                                                                            | info                               |
 
 ### 2.10 Example
