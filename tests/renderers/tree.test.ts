@@ -60,6 +60,12 @@ describe('tree renderer', () => {
     expect(row('A').cells[1].textContent).toBe('2h');
   });
 
+  it('leaves a parent with an all-empty subtree blank', () => {
+    const { row } = render('A\n    B\n        C\n');
+    expect(row('A').cells[1].textContent).toBe('');
+    expect(row('B').cells[1].textContent).toBe('');
+  });
+
   it('marks done rows', () => {
     const { row } = render(example);
     expect(row('Login page').classList.contains('done')).toBe(true);
@@ -77,6 +83,11 @@ describe('tree renderer', () => {
     const { rows, row } = render(example, 7);
     expect(row('Password reset').classList.contains('at-cursor')).toBe(true);
     expect(rows.filter((r) => r.classList.contains('at-cursor'))).toHaveLength(1);
+  });
+
+  it('keeps the cursor class on a done row', () => {
+    const { row } = render(example, 6);
+    expect([...row('Login page').classList]).toEqual(expect.arrayContaining(['done', 'at-cursor']));
   });
 
   it('asks the context to move the cursor when a row is clicked', () => {

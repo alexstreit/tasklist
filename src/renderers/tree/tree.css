@@ -3,7 +3,7 @@
 .plan-tree th { color: #666; font-weight: 600; border-bottom: 1px solid #ddd; }
 .plan-tree tbody tr { cursor: pointer; }
 .plan-tree tbody tr:hover { background: #f3f4f6; }
-.plan-tree tr.at-cursor { background: #dbeafe; }
 .plan-tree tr.done { color: #9ca3af; text-decoration: line-through; }
+.plan-tree tr.at-cursor, .plan-tree tr.at-cursor.done { background: #bfdbfe; color: #1e3a8a; }
 .plan-tree .muted { color: #9ca3af; margin-left: 0.5em; font-size: 0.9em; }
 .plan-tree tr.total td { border-top: 1px solid #ddd; font-weight: 600; }
