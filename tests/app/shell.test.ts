@@ -11,10 +11,13 @@ let preview: HTMLElement;
 const rows = () => [...preview.querySelectorAll<HTMLTableRowElement>('tbody tr')];
 const titles = () => rows().map((r) => r.cells[0].textContent);
 const cursorRow = () => preview.querySelector<HTMLTableRowElement>('tr.at-cursor')?.cells[0].textContent ?? null;
+const nearRow = () => preview.querySelector<HTMLTableRowElement>('tr.near-cursor')?.cells[0].textContent ?? null;
+const scroll = vi.fn();
 
 beforeAll(async () => {
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect = () => new DOMRect();
+  Element.prototype.scrollIntoView = scroll;
   document.body.innerHTML = '<div id="editor"></div><section id="preview"></section>';
   vi.useFakeTimers();
   await import('../../src/app/main');
@@ -48,6 +51,31 @@ describe('app shell', () => {
     view.dispatch({ selection: { anchor: view.state.doc.line(4).from } });
     vi.advanceTimersByTime(60);
     expect(cursorRow()).toBeNull();
+    expect(nearRow()).toBeNull();
+  });
+
+  it('near-highlights the preceding item when the cursor is on a comment or blank line', () => {
+    view.dispatch({ selection: { anchor: view.state.doc.line(13).from } });
+    vi.advanceTimersByTime(60);
+    expect(nearRow()).toBe('User list');
+    expect(cursorRow()).toBeNull();
+    // Line 14 is the Ops item appended earlier; line 15 is the trailing blank line.
+    view.dispatch({ selection: { anchor: view.state.doc.line(15).from } });
+    vi.advanceTimersByTime(60);
+    expect(nearRow()).toBe('Ops');
+  });
+
+  it('scrolls the highlighted row into view on an editor cursor move, once per change', () => {
+    scroll.mockClear();
+    view.dispatch({ selection: { anchor: view.state.doc.line(6).from } });
+    vi.advanceTimersByTime(60);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.instances[0]).toBe(preview.querySelector('tr.at-cursor'));
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+    // Moving within the same item's line does not scroll again.
+    view.dispatch({ selection: { anchor: view.state.doc.line(6).from + 2 } });
+    vi.advanceTimersByTime(60);
+    expect(scroll).toHaveBeenCalledTimes(1);
   });
 
   it('moves the editor cursor and focuses the editor when a row is clicked', () => {
@@ -57,5 +85,13 @@ describe('app shell', () => {
     expect(document.activeElement).toBe(view.contentDOM);
     vi.advanceTimersByTime(60);
     expect(cursorRow()).toBe('Consent screen');
+  });
+
+  it('does not scroll the preview when the move came from a preview click', () => {
+    scroll.mockClear();
+    rows().find((r) => r.cells[0].textContent === 'User list')!.click();
+    vi.advanceTimersByTime(60);
+    expect(cursorRow()).toBe('User list');
+    expect(scroll).not.toHaveBeenCalled();
   });
 });

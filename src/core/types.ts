@@ -140,8 +140,21 @@ export interface ColumnRequirement {
   type: string;
 }
 
+/** The item a renderer should highlight for the editor cursor. */
+export interface CursorItem {
+  line: number;
+  /** True when the cursor is on the item's own line; false when it is on a
+   *  comment or blank line and this is the nearest item at or before it. */
+  exact: boolean;
+}
+
 export interface RenderContext {
   cursorLine: number | null;
+  cursorItem: CursorItem | null;
+  /** True when the highlighted item changed because of an editor cursor move.
+   *  Renderers scroll the highlighted row into view. Never true for a move the
+   *  renderer itself requested through setCursorLine. */
+  scrollToCursor: boolean;
   setCursorLine(line: number): void;
 }
 

@@ -211,7 +211,7 @@ interface Renderer {
 }
 ```
 
-`requires` lets the app grey out a renderer whose needs aren't met ("add a `date` column to enable Gantt") instead of rendering nonsense. `RenderContext` carries the current cursor line so renderers can highlight it.
+`requires` lets the app grey out a renderer whose needs aren't met ("add a `date` column to enable Gantt") instead of rendering nonsense. `RenderContext` carries the current cursor line, the resolved cursor item (the item on that line, or the nearest item at or before a comment or blank line, flagged `exact` or not) and whether the highlighted row should be scrolled into view, so renderers highlight and scroll without duplicating that logic.
 
 ### 3.4 Editors
 
@@ -255,6 +255,8 @@ Shown as gutter markers with hover text, and as underlines on the offending span
 - Done rows are struck through or dimmed.
 - A document total row at the bottom showing `effective` and `doneSum` per summable column.
 - The row for the item under the editor cursor is highlighted; clicking a row moves the editor cursor to that line.
+- When the cursor is on a comment or blank line, the nearest item at or before it is highlighted in a distinct "near" style. Nothing is highlighted when no item precedes the cursor.
+- When the highlighted row changes because of an editor cursor move, it is scrolled into view (`block: 'nearest'`). A move that originated from a click in the preview does not scroll.
 - Updates live on every edit (debounced ~50 ms).
 
 ## 6. Persistence (MVP)

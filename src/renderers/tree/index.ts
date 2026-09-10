@@ -42,7 +42,7 @@ export const treeRenderer: Renderer = {
     const visit = (node: ModelNode, depth: number): void => {
       const row = body.insertRow();
       row.classList.toggle('done', node.done);
-      row.classList.toggle('at-cursor', node.line === ctx.cursorLine);
+      if (node.line === ctx.cursorItem?.line) row.classList.add(ctx.cursorItem.exact ? 'at-cursor' : 'near-cursor');
       row.addEventListener('click', () => ctx.setCursorLine(node.line));
       const title = row.insertCell();
       title.textContent = node.title;
@@ -68,5 +68,6 @@ export const treeRenderer: Renderer = {
     });
 
     host.replaceChildren(table);
+    if (ctx.scrollToCursor) table.querySelector('.at-cursor, .near-cursor')?.scrollIntoView({ block: 'nearest' });
   },
 };

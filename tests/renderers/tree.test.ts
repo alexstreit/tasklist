@@ -5,11 +5,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { analyze } from '../../src/core';
 import type { RenderContext } from '../../src/core';
 import { treeRenderer } from '../../src/renderers/tree';
+import { cursorItemFor, itemLines } from '../../src/app/cursor';
 import example from '../../examples/example.plan?raw';
 
-function render(text: string, cursorLine: number | null = null, setCursorLine = (_line: number) => {}) {
+Element.prototype.scrollIntoView = vi.fn();
+
+function render(text: string, cursorLine: number | null = null, setCursorLine = (_line: number) => {}, scrollToCursor = false) {
   const host = document.createElement('div');
-  const ctx: RenderContext = { cursorLine, setCursorLine };
+  const ctx: RenderContext = { cursorLine, cursorItem: cursorItemFor(itemLines(analyze(text)), cursorLine), scrollToCursor, setCursorLine };
   treeRenderer.render(analyze(text), host, ctx);
   const rows = [...host.querySelectorAll('tbody tr')] as HTMLTableRowElement[];
   const total = host.querySelector('tfoot tr') as HTMLTableRowElement;
@@ -83,6 +86,25 @@ describe('tree renderer', () => {
     const { rows, row } = render(example, 7);
     expect(row('Password reset').classList.contains('at-cursor')).toBe(true);
     expect(rows.filter((r) => r.classList.contains('at-cursor'))).toHaveLength(1);
+  });
+
+  it('highlights the nearest preceding item in the near style when the cursor is on a comment', () => {
+    const { rows, row } = render(example, 13);
+    expect(row('User list').classList.contains('near-cursor')).toBe(true);
+    expect(row('User list').classList.contains('at-cursor')).toBe(false);
+    expect(rows.filter((r) => r.classList.contains('at-cursor'))).toHaveLength(0);
+    expect(render(example, 4).rows.some((r) => r.classList.contains('near-cursor'))).toBe(false);
+  });
+
+  it('scrolls the highlighted row into view only when asked', () => {
+    const scroll = vi.mocked(Element.prototype.scrollIntoView);
+    scroll.mockClear();
+    render(example, 7);
+    expect(scroll).not.toHaveBeenCalled();
+    const { row } = render(example, 7, () => {}, true);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.instances[0]).toBe(row('Password reset'));
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
   });
 
   it('keeps the cursor class on a done row', () => {
