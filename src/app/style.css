@@ -7,4 +7,9 @@ body { display: flex; flex-direction: column; }
 .pane { flex: 1 1 50%; min-width: 0; overflow: auto; }
 #editor .cm-editor { height: 100%; }
 #editor .cm-scroller { font-family: ui-monospace, Menlo, Consolas, monospace; }
-#preview { padding: 8px 0; border-left: 1px solid #ddd; }
+#preview { border-left: 1px solid #ddd; }
+#renderers { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 13px; }
+#renderers button { border: 1px solid #d1d5db; background: #fff; border-radius: 4px; padding: 2px 10px; cursor: pointer; }
+#renderers button.active { background: #dbeafe; border-color: #93c5fd; }
+#renderers button:disabled { color: #9ca3af; cursor: not-allowed; }
+#host { padding: 8px 0; }

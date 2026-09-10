@@ -44,7 +44,7 @@ beforeAll(async () => {
   Element.prototype.scrollIntoView = scroll;
   document.body.innerHTML =
     '<button id="open"></button><button id="save"></button><button id="save-as"></button><span id="filename"></span><span id="status"></span>' +
-    '<div id="editor"></div><section id="preview"></section>';
+    '<div id="editor"></div><section id="preview"><nav id="renderers"></nav><div id="host"></div></section>';
   vi.useFakeTimers();
   await import('../../src/app/main');
   view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
@@ -218,5 +218,47 @@ describe('diagnostics', () => {
     vi.advanceTimersByTime(60);
     expect(diagnosticCount(view.state)).toBe(0);
     expect(view.dom.querySelectorAll('.cm-lint-marker')).toHaveLength(0);
+  });
+});
+
+describe('renderer switcher', () => {
+  const tab = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('#renderers button')].find((b) => b.textContent === label)!;
+
+  it('lists every registered renderer, greying out one whose requirements are unmet', () => {
+    expect([...document.querySelectorAll('#renderers button')].map((b) => b.textContent)).toEqual(['Tree', 'Table', 'Gantt']);
+    expect(tab('Tree').classList.contains('active')).toBe(true);
+    expect(tab('Table').disabled).toBe(false);
+    expect(tab('Gantt').disabled).toBe(true);
+    expect(tab('Gantt').title).toBe('needs a date column');
+  });
+
+  it('switches to the table renderer and back', () => {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: 'Auth | 2d\n    Login | 4h\n' } });
+    vi.advanceTimersByTime(60);
+    tab('Table').click();
+    expect(tab('Table').classList.contains('active')).toBe(true);
+    expect(preview.querySelector('table')!.className).toContain('plan-table');
+    expect(rows().map((r) => r.cells[0].textContent)).toEqual(['1', '2']);
+    expect(rows().map((r) => r.cells[1].textContent)).toEqual(['Auth', 'Login']);
+    tab('Tree').click();
+    expect(preview.querySelector('table')!.className).toContain('plan-tree');
+  });
+
+  it('keeps cursor sync working in the table', () => {
+    tab('Table').click();
+    view.dispatch({ selection: { anchor: view.state.doc.line(2).from } });
+    vi.advanceTimersByTime(60);
+    expect(preview.querySelector<HTMLTableRowElement>('tr.at-cursor')!.cells[1].textContent).toBe('Login');
+    rows()[0].click();
+    expect(view.state.selection.main.head).toBe(0);
+    vi.advanceTimersByTime(60);
+    expect(preview.querySelector<HTMLTableRowElement>('tr.at-cursor')!.cells[1].textContent).toBe('Auth');
+  });
+
+  it('never renders a greyed-out renderer', () => {
+    tab('Gantt').click();
+    expect(tab('Gantt').classList.contains('active')).toBe(false);
+    expect(tab('Table').classList.contains('active')).toBe(true);
+    expect(preview.querySelector('table')!.className).toContain('plan-table');
   });
 });

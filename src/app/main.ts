@@ -9,15 +9,18 @@ import type { Model, Renderer } from '../core';
 import { planEditor, showDiagnostics } from '../editor';
 import { cursorItemFor, itemLines } from './cursor';
 import { createFileStore } from './files';
+import { ganttRenderer } from '../renderers/gantt';
+import { tableRenderer } from '../renderers/table';
 import { treeRenderer } from '../renderers/tree';
 import example from '../../examples/example.plan?raw';
 import './style.css';
 
 const DEBOUNCE_MS = 50;
 
-const renderers: Renderer[] = [treeRenderer];
-const active = renderers[0];
-const host = document.getElementById('preview')!;
+const renderers: Renderer[] = [treeRenderer, tableRenderer, ganttRenderer];
+let active = renderers[0];
+const host = document.getElementById('host')!;
+const tabs = document.getElementById('renderers')!;
 const files = createFileStore();
 const filename = document.getElementById('filename')!;
 const status = document.getElementById('status')!;
@@ -41,6 +44,32 @@ function setCursorLine(line: number): void {
   view.focus();
 }
 
+/** Why a renderer cannot show this document; empty when it can. */
+function unmet(renderer: Renderer, model: Model): string[] {
+  return renderer.requires
+    .filter((req) => !model.columns.some((c) => c.type === req.type))
+    .map((req) => `needs a ${req.type} column`);
+}
+
+function renderTabs(): void {
+  tabs.replaceChildren(
+    ...renderers.map((renderer) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = renderer.label;
+      button.classList.toggle('active', renderer === active);
+      const reasons = unmet(renderer, model);
+      button.disabled = reasons.length > 0;
+      button.title = reasons.join('; ');
+      button.addEventListener('click', () => {
+        active = renderer;
+        render();
+      });
+      return button;
+    }),
+  );
+}
+
 function render(): void {
   if (dirty) {
     model = analyze(view.state.doc.toString());
@@ -48,6 +77,17 @@ function render(): void {
     dirty = false;
     showDiagnostics(view, model.diagnostics);
   }
+  if (unmet(active, model).length > 0) {
+    // The document changed under the active renderer; fall back to one that can show it.
+    const fallback = renderers.find((r) => unmet(r, model).length === 0);
+    if (!fallback) {
+      renderTabs();
+      host.replaceChildren();
+      return;
+    }
+    active = fallback;
+  }
+  renderTabs();
   const cursorItem = cursorItemFor(lines, cursorLine);
   const scrollToCursor = editorMovedCursor && cursorItem !== null && cursorItem.line !== highlightedLine;
   editorMovedCursor = false;
