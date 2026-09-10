@@ -14,16 +14,20 @@ describe('parseDuration (§2.6)', () => {
     ['1w 2d 4h', 60, false],
     ['+2d 4h', 20, true],
     ['1.5d 4h', 16, false],
+    ['2 d', 16, false],
+    ['2 d 4 h', 20, false],
+    ['+ 2 d 4 h', 20, true],
   ])('parses %s', (raw, value, additive) => {
     expect(parseDuration(raw)).toEqual({ value, additive });
   });
 
-  it.each(['', 'abc', '4x', '1..5', '-4h', 'h', '+', '2d 2d', '2d 4', '4 2d', '2dh', '2 d'])(
-    'rejects %s',
-    (raw) => {
-      expect(parseDuration(raw)).toBeNull();
-    },
-  );
+  it.each(['', 'abc', '4x', '1..5', '-4h', 'h', '+', '2d 2d', '2dh'])('rejects %s as unparseable', (raw) => {
+    expect(parseDuration(raw)).toEqual({ error: `unparseable duration: "${raw}"` });
+  });
+
+  it.each(['4 2d', '2d 4', '2 d 4'])('rejects %s: bare number in a compound value', (raw) => {
+    expect(parseDuration(raw)).toEqual({ error: 'bare number not allowed in compound duration' });
+  });
 
   it.each([
     ['4', 4],
@@ -33,8 +37,11 @@ describe('parseDuration (§2.6)', () => {
     ['+2d 4h', 20],
     ['1.5d 4h', 16],
     ['0.5h 1w', 40.5],
+    ['2 d 4 h', 20],
   ])('%s round-trips through formatDuration', (raw, hours) => {
-    expect(formatDuration(parseDuration(raw)!.value)).toBe(formatDuration(hours));
+    const parsed = parseDuration(raw);
+    if ('error' in parsed) throw new Error(parsed.error);
+    expect(formatDuration(parsed.value)).toBe(formatDuration(hours));
   });
 });
 
@@ -48,7 +55,7 @@ describe('parseNumber (§2.6)', () => {
   });
 
   it.each(['', '4h', 'x'])('rejects %s', (raw) => {
-    expect(parseNumber(raw)).toBeNull();
+    expect(parseNumber(raw)).toEqual({ error: `unparseable number: "${raw}"` });
   });
 });
 

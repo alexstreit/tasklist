@@ -81,15 +81,15 @@ Unknown keys raise a warning and are ignored, so future keys (`calendar`, `unit`
 
 ### 2.6 Column types
 
-| Type       | Parses                                                                                          | Roll-up | Display                                |
-| ---------- | ----------------------------------------------------------------------------------------------- | ------- | -------------------------------------- |
-| `duration` | `4`, `4h`, `2d`, `1.5w`, `2d 4h` — one or more `number unit` terms, optionally prefixed with `+`  | sum     | mixed units, largest first: `1w 2d 4h` |
-| `number`   | decimal number, optionally prefixed with `+`                                                    | sum     | as entered                             |
-| `text`     | anything                                                                                        | none    | as entered                             |
+| Type       | Parses                                                                                           | Roll-up | Display                                |
+| ---------- | ------------------------------------------------------------------------------------------------ | ------- | -------------------------------------- |
+| `duration` | `4`, `4h`, `2d`, `1.5w`, `2d 4h` — one or more `number unit` terms, optionally prefixed with `+` | sum     | mixed units, largest first: `1w 2d 4h` |
+| `number`   | decimal number, optionally prefixed with `+`                                                     | sum     | as entered                             |
+| `text`     | anything                                                                                         | none    | as entered                             |
 
 Units are fixed in the MVP: bare number = hours, `1d = 8h`, `1w = 5d = 40h`. Internally every duration is stored in hours.
 
-A duration value is one or more whitespace-separated terms, each a number immediately followed by a unit `h`/`d`/`w` (`2d 4h`, `4h 2d`, `1w 2d 4h`). Terms may appear in any order; each unit at most once. A bare number (no unit) is hours and is only allowed as the sole term. A leading `+` applies to the whole value (`+2d 4h`). Invalid: `2d 2d`, `2d 4`, `4 2d`, `2dh`, `2 d`.
+A duration is one or more terms, each a number followed by a unit (`h`, `d`, `w`), with optional whitespace between number and unit and between terms. Each unit may appear at most once. A value consisting of a single bare number is hours. A bare number anywhere in a multi-term value is an error, since `4 2d` is too easily misread as `4h 2d`. A leading `+` applies to the whole value.
 
 An unparseable value in a `duration` or `number` field raises a warning and is treated as empty.
 
@@ -133,17 +133,18 @@ else:             doneSum = sum(doneSum of children)
 
 All diagnostics carry a line number and a severity. MVP severities: `warning`, `info`.
 
-| Condition                                                                                                  | Severity                           |
-| ---------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Tabs converted on load (raised by `parse`; not reachable from the editor, whose buffer never holds tabs)    | info                               |
-| Line starts with `#`                                                                                       | warning                            |
-| More fields than columns                                                                                   | warning                            |
-| Unparseable duration/number                                                                                | warning                            |
-| Unknown front matter key                                                                                   | warning                            |
-| Unknown column type                                                                                        | warning (column treated as `text`) |
-| Duplicate column name                                                                                      | warning                            |
+| Condition                                                                                                                                     | Severity                           |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Tabs converted on load (raised by `parse`; not reachable from the editor, whose buffer never holds tabs)                                      | info                               |
+| Line starts with `#`                                                                                                                          | warning                            |
+| More fields than columns                                                                                                                      | warning                            |
+| Unparseable duration/number                                                                                                                   | warning                            |
+| Bare number in a compound duration (`4 2d`)                                                                                                   | warning                            |
+| Unknown front matter key                                                                                                                      | warning                            |
+| Unknown column type                                                                                                                           | warning (column treated as `text`) |
+| Duplicate column name                                                                                                                         | warning                            |
 | Front matter opened but not closed (reported on line 1; remaining lines are still treated as front matter, and raise no unknown-key warnings) | warning                            |
-| Override differs from child sum                                                                            | info                               |
+| Override differs from child sum                                                                                                               | info                               |
 
 ### 2.10 Example
 

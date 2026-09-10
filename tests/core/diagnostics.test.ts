@@ -42,11 +42,21 @@ describe('spec §2.9 diagnostics', () => {
   });
 
   it('invalid compound duration → warning, treated as empty (derived)', () => {
-    const { model } = load('A | 2d 2d\n    B | 2d 4h');
+    const { model } = load('A | 2d 2d\n    B | 2 d 4 h');
     const d = only(model);
     expect(d.line).toBe(1);
     expect(d.severity).toBe('warning');
+    expect(d.message).toBe('unparseable duration: "2d 2d"');
     expect(model.roots[0].cells[0]).toMatchObject({ mode: 'derived', effective: 20 });
+  });
+
+  it('bare number in compound duration → warning with its own message', () => {
+    const { model } = load('A | 4 2d');
+    const d = only(model);
+    expect(d.line).toBe(1);
+    expect(d.severity).toBe('warning');
+    expect(d.message).toBe('bare number not allowed in compound duration');
+    expect(model.roots[0].cells[0]).toMatchObject({ mode: 'derived', hasValue: false });
   });
 
   it('unparseable number → warning', () => {

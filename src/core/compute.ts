@@ -45,12 +45,12 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
       let ownValue = false;
       if (raw !== '') {
         const parsed = col.type === 'duration' ? parseDuration(raw) : parseNumber(raw);
-        if (parsed === null) {
+        if ('error' in parsed) {
           diagnostics.push({
             line: item.line,
             span: field.span,
             severity: 'warning',
-            message: `unparseable ${col.type}: "${raw}"`,
+            message: parsed.error,
           });
         } else if (parsed.additive) {
           ownValue = true;
