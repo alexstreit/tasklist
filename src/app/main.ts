@@ -1,24 +1,44 @@
-// App shell: buffer -> analyze -> whatever is on the right.
-// The right pane is a raw JSON dump of the model until Task 3.
+// App shell: buffer -> analyze -> active renderer, with cursor sync both ways.
 
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { analyze } from '../core';
-import type { Model } from '../core';
+import type { Model, Renderer } from '../core';
 import { planEditor } from '../editor';
+import { treeRenderer } from '../renderers/tree';
 import example from '../../examples/example.plan?raw';
 import './style.css';
 
 const DEBOUNCE_MS = 50;
 
-const output = document.getElementById('model')!;
+const renderers: Renderer[] = [treeRenderer];
+const active = renderers[0];
+const host = document.getElementById('preview')!;
 
-function showModel(model: Model): void {
-  // `source` repeats the parse tree under every node; drop it from the dump.
-  output.textContent = JSON.stringify(model, (key, value) => (key === 'source' ? undefined : value), 2);
+let model: Model;
+let cursorLine: number | null = null;
+let dirty = true;
+let timer: ReturnType<typeof setTimeout> | undefined;
+
+function setCursorLine(line: number): void {
+  const { doc } = view.state;
+  if (line > doc.lines) return;
+  view.dispatch({ selection: { anchor: doc.line(line).from }, scrollIntoView: true });
+  view.focus();
 }
 
-let timer: ReturnType<typeof setTimeout> | undefined;
+function render(): void {
+  if (dirty) {
+    model = analyze(view.state.doc.toString());
+    dirty = false;
+  }
+  active.render(model, host, { cursorLine, setCursorLine });
+}
+
+function schedule(): void {
+  clearTimeout(timer);
+  timer = setTimeout(render, DEBOUNCE_MS);
+}
 
 const view = new EditorView({
   state: EditorState.create({
@@ -26,13 +46,16 @@ const view = new EditorView({
     extensions: [
       planEditor(),
       EditorView.updateListener.of((update) => {
-        if (!update.docChanged) return;
-        clearTimeout(timer);
-        timer = setTimeout(() => showModel(analyze(view.state.doc.toString())), DEBOUNCE_MS);
+        const line = update.state.doc.lineAt(update.state.selection.main.head).number;
+        const cursorMoved = line !== cursorLine;
+        cursorLine = line;
+        if (update.docChanged) dirty = true;
+        if (update.docChanged || cursorMoved) schedule();
       }),
     ],
   }),
   parent: document.getElementById('editor')!,
 });
 
-showModel(analyze(view.state.doc.toString()));
+cursorLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+render();

@@ -1,0 +1,9 @@
+.plan-tree { border-collapse: collapse; width: 100%; font-size: 13px; }
+.plan-tree th, .plan-tree td { padding: 3px 10px; text-align: left; white-space: nowrap; }
+.plan-tree th { color: #666; font-weight: 600; border-bottom: 1px solid #ddd; }
+.plan-tree tbody tr { cursor: pointer; }
+.plan-tree tbody tr:hover { background: #f3f4f6; }
+.plan-tree tr.at-cursor { background: #dbeafe; }
+.plan-tree tr.done { color: #9ca3af; text-decoration: line-through; }
+.plan-tree .muted { color: #9ca3af; margin-left: 0.5em; font-size: 0.9em; }
+.plan-tree tr.total td { border-top: 1px solid #ddd; font-weight: 600; }
