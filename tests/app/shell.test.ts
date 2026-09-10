@@ -3,6 +3,7 @@
 // renderer, keeps the editor cursor and the preview in sync, and opens/saves
 // the buffer as a file.
 
+import { diagnosticCount, forEachDiagnostic } from '@codemirror/lint';
 import { EditorView } from '@codemirror/view';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -182,5 +183,40 @@ describe('open and save', () => {
     expect(document.getElementById('status')!.textContent).toBe('Could not save: The user denied write access');
     expect(document.title).toBe('● q4.plan — Plan');
     writable = true;
+  });
+});
+
+describe('diagnostics', () => {
+  const collect = () => {
+    const out: { from: number; to: number; severity: string; message: string }[] = [];
+    forEachDiagnostic(view.state, (d) => out.push({ from: d.from, to: d.to, severity: d.severity, message: d.message }));
+    return out;
+  };
+
+  it('shows the model diagnostics for the current buffer', () => {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '# heading\nAuth\n    Login | 4x\n' } });
+    vi.advanceTimersByTime(60);
+    const out = collect();
+    expect(out.map((d) => d.severity)).toEqual(['warning', 'warning']);
+    expect(view.state.doc.sliceString(out[0].from, out[0].to)).toBe('# heading');
+    expect(view.state.doc.sliceString(out[1].from, out[1].to)).toBe('4x');
+    expect(out[1].message).toBe('unparseable duration: "4x"');
+  });
+
+  it('underlines only the offending field and marks the gutter', () => {
+    const marks = [...view.contentDOM.querySelectorAll('.cm-lintRange-warning')].map((m) => m.textContent);
+    expect(marks).toEqual(['# heading', '4x']);
+    expect(view.dom.querySelectorAll('.cm-gutter-lint .cm-lint-marker-warning')).toHaveLength(2);
+  });
+
+  it('clears a diagnostic as soon as its line is fixed', () => {
+    const line3 = view.state.doc.line(3);
+    view.dispatch({ changes: { from: line3.from, to: line3.to, insert: '    Login | 4h' } });
+    vi.advanceTimersByTime(60);
+    expect(diagnosticCount(view.state)).toBe(1);
+    view.dispatch({ changes: { from: 0, to: view.state.doc.line(1).to + 1 } });
+    vi.advanceTimersByTime(60);
+    expect(diagnosticCount(view.state)).toBe(0);
+    expect(view.dom.querySelectorAll('.cm-lint-marker')).toHaveLength(0);
   });
 });

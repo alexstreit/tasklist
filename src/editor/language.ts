@@ -12,7 +12,6 @@ import type { LineKind } from './lines';
 export const planTags = {
   frontMatter: Tag.define(),
   comment: Tag.define(),
-  reserved: Tag.define(),
   doneMarker: Tag.define(),
   separator: Tag.define(),
   duration: Tag.define(),
@@ -66,10 +65,10 @@ function token(stream: StringStream, state: State): string | null {
   switch (state.kind) {
     case 'frontMatter':
     case 'comment':
-    case 'reserved':
       stream.skipToEnd();
       return state.kind;
     case 'blank':
+    case 'reserved': // underlined through its diagnostic, not the tokenizer
       stream.skipToEnd();
       return null;
   }
@@ -113,7 +112,6 @@ export const planLanguage = StreamLanguage.define(parser);
 export const planHighlightStyle = HighlightStyle.define([
   { tag: planTags.frontMatter, class: 'cm-plan-front-matter' },
   { tag: planTags.comment, class: 'cm-plan-comment' },
-  { tag: planTags.reserved, class: 'cm-plan-reserved' },
   { tag: planTags.doneMarker, class: 'cm-plan-done-marker' },
   { tag: planTags.separator, class: 'cm-plan-separator' },
   { tag: planTags.duration, class: 'cm-plan-duration' },
@@ -124,7 +122,6 @@ export const planHighlightStyle = HighlightStyle.define([
 const planTheme = EditorView.theme({
   '.cm-plan-front-matter': { color: '#7c6f64' },
   '.cm-plan-comment': { color: '#8a8a8a', fontStyle: 'italic' },
-  '.cm-plan-reserved': { textDecoration: 'underline wavy #d97706', textDecorationSkipInk: 'none' },
   '.cm-plan-done-marker': { color: '#16a34a', fontWeight: 'bold' },
   '.cm-plan-separator': { color: '#9ca3af' },
   '.cm-plan-duration': { color: '#1d4ed8' },

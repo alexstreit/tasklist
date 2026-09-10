@@ -6,7 +6,7 @@ import type { Text } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { analyze } from '../core';
 import type { Model, Renderer } from '../core';
-import { planEditor } from '../editor';
+import { planEditor, showDiagnostics } from '../editor';
 import { cursorItemFor, itemLines } from './cursor';
 import { createFileStore } from './files';
 import { treeRenderer } from '../renderers/tree';
@@ -46,6 +46,7 @@ function render(): void {
     model = analyze(view.state.doc.toString());
     lines = itemLines(model);
     dirty = false;
+    showDiagnostics(view, model.diagnostics);
   }
   const cursorItem = cursorItemFor(lines, cursorLine);
   const scrollToCursor = editorMovedCursor && cursorItem !== null && cursorItem.line !== highlightedLine;

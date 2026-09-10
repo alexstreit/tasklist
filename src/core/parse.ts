@@ -60,7 +60,6 @@ export function parse(text: string): Tree {
     if (!closed) {
       diagnostics.push({
         line: 1,
-        span: lineSpan(0),
         severity: 'warning',
         message: 'front matter not closed',
       });

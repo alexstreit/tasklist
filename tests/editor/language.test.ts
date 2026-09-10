@@ -32,7 +32,7 @@ function classesOf(doc: string, line: number, text: string): string[] {
 
 describe('language mode', () => {
   it('styles every category of the §2.10 example distinctly', () => {
-    const doc = example + '# heading\n';
+    const doc = example;
     const cases: [number, string, string][] = [
       [1, '---', 'cm-plan-front-matter'],
       [2, 'columns: est:duration | owner:text | notes:text', 'cm-plan-front-matter'],
@@ -42,7 +42,6 @@ describe('language mode', () => {
       [6, '~', 'cm-plan-done-marker'],
       [8, '+', 'cm-plan-additive'],
       [8, '1d', 'cm-plan-duration'],
-      [14, '# heading', 'cm-plan-reserved'],
     ];
     for (const [line, text, cls] of cases) {
       expect(classesOf(doc, line, text), `${text} on line ${line}`).toContain(cls);
@@ -56,7 +55,7 @@ describe('language mode', () => {
     expect(classesOf(doc, 5, '2d')).not.toContain('cm-plan-done');
 
     const distinct = new Set([...cases.map((c) => c[2]), 'cm-plan-done']);
-    expect(distinct.size).toBe(8);
+    expect(distinct.size).toBe(7);
   });
 
   it('dims descendants of a done parent, not the following sibling', () => {
@@ -70,6 +69,10 @@ describe('language mode', () => {
   it('only treats --- on line 1 as front matter', () => {
     const doc = 'Auth | 2d\n---\n';
     expect(styled(doc).some((s) => s.classes.includes('cm-plan-front-matter'))).toBe(false);
+  });
+
+  it('leaves reserved # lines to the diagnostics layer', () => {
+    expect(styled('# heading\n')).toEqual([]);
   });
 
   it('does not style non-value fields or titles', () => {
