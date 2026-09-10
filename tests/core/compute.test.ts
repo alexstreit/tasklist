@@ -47,6 +47,14 @@ describe('hasValue (§2.7)', () => {
     expect(est(byTitle(model, 'B')).hasValue).toBe(false);
   });
 
+  it('childrenHaveValue reflects the children only', () => {
+    const { model } = load('A | 4h\n    B\nC | 1h\n    D | 2h\nE | 1h');
+    expect(est(byTitle(model, 'A')).childrenHaveValue).toBe(false);
+    expect(est(byTitle(model, 'C')).childrenHaveValue).toBe(true);
+    expect(est(byTitle(model, 'D')).childrenHaveValue).toBe(false);
+    expect(est(byTitle(model, 'E')).childrenHaveValue).toBe(false);
+  });
+
   it('treats an unparseable value as empty', () => {
     const { model } = load('A | soon');
     expect(est(model.roots[0]).hasValue).toBe(false);

@@ -94,6 +94,8 @@ export interface SummableCell {
   doneSum: number;
   /** Own field non-empty, or any child has a value. False means there is nothing to display. */
   hasValue: boolean;
+  /** True when any child has `hasValue`; renderers show the child sum only then. */
+  childrenHaveValue: boolean;
   /** The field text as entered, '' when empty. */
   raw: string;
   span: Span | null;

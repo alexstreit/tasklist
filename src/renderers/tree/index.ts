@@ -15,11 +15,11 @@ function muted(text: string): HTMLSpanElement {
   return span;
 }
 
-function fillSummable(td: HTMLTableCellElement, column: Column, cell: SummableCell, isLeaf: boolean): void {
-  // An unestimated subtree shows nothing rather than "0h"; a leaf has no child sum to show.
+function fillSummable(td: HTMLTableCellElement, column: Column, cell: SummableCell): void {
+  // An unestimated subtree shows nothing rather than "0h".
   if (!cell.hasValue) return;
   td.textContent = format(column, cell.effective);
-  if (cell.mode !== 'derived' && !isLeaf) td.append(muted(`⟨Σ ${format(column, cell.childSum)}⟩`));
+  if (cell.childrenHaveValue) td.append(muted(`⟨Σ ${format(column, cell.childSum)}⟩`));
 }
 
 export const treeRenderer: Renderer = {
@@ -50,7 +50,7 @@ export const treeRenderer: Renderer = {
       node.cells.forEach((cell, i) => {
         const td = row.insertCell();
         if (cell.kind === 'text') td.textContent = cell.value;
-        else fillSummable(td, model.columns[i], cell, node.children.length === 0);
+        else fillSummable(td, model.columns[i], cell);
       });
       node.children.forEach((child) => visit(child, depth + 1));
     };
