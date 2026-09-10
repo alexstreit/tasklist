@@ -25,6 +25,7 @@ describe('native store', () => {
       showSaveFilePicker: vi.fn(async () => (saveTarget ? saveTarget.handle : abort())),
       document,
     } as unknown as Window;
+    Object.assign(win, { self: win, top: win });
     return { store: createFileStore(win), win: win as unknown as { showOpenFilePicker: ReturnType<typeof vi.fn>; showSaveFilePicker: ReturnType<typeof vi.fn> } };
   }
 
@@ -77,6 +78,12 @@ describe('fallback store', () => {
   it('is chosen when the picker API is missing', () => {
     expect('showOpenFilePicker' in window).toBe(false);
     expect(createFileStore(window).inPlace).toBe(false);
+  });
+
+  it('is chosen inside an iframe even when the picker API exists', () => {
+    const win = { showOpenFilePicker: vi.fn(), showSaveFilePicker: vi.fn(), document, top: {} } as unknown as Window;
+    Object.assign(win, { self: win });
+    expect(createFileStore(win).inPlace).toBe(false);
   });
 
   it('opens through a file input', async () => {

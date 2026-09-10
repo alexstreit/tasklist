@@ -29,7 +29,10 @@ interface PickerWindow {
 
 export function createFileStore(win: Window = window): FileStore {
   const picker = win as unknown as PickerWindow;
-  return picker.showOpenFilePicker && picker.showSaveFilePicker ? nativeStore(picker) : fallbackStore(win.document);
+  // Chromium refuses to show the pickers from a cross-origin frame (e.g. the
+  // VS Code Simple Browser), so a framed page uses the fallback.
+  const framed = win.self !== win.top;
+  return picker.showOpenFilePicker && picker.showSaveFilePicker && !framed ? nativeStore(picker) : fallbackStore(win.document);
 }
 
 /** Resolves null when the user dismissed a picker. */
