@@ -32,6 +32,7 @@ describe('native store', () => {
     const file = fakeHandle('q4.plan', 'Auth | 2d\n');
     const { store, win } = setup(file);
     expect(store.name).toBeNull();
+    expect(store.inPlace).toBe(true);
     expect(await store.open()).toEqual({ name: 'q4.plan', text: 'Auth | 2d\n' });
     expect(store.name).toBe('q4.plan');
     expect(await store.save('Auth | 3d\n')).toBe(true);
@@ -75,7 +76,7 @@ describe('fallback store', () => {
 
   it('is chosen when the picker API is missing', () => {
     expect('showOpenFilePicker' in window).toBe(false);
-    expect(createFileStore(window)).toBeDefined();
+    expect(createFileStore(window).inPlace).toBe(false);
   });
 
   it('opens through a file input', async () => {

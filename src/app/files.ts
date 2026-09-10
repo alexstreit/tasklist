@@ -9,6 +9,8 @@ export interface OpenedFile {
 export interface FileStore {
   /** Name of the current file; null for a new document. */
   readonly name: string | null;
+  /** True when save writes back to the opened file; false when it downloads a copy. */
+  readonly inPlace: boolean;
   /** Resolves null when the user cancels. */
   open(): Promise<OpenedFile | null>;
   /** Save to the current file, or Save As when there is none. Resolves false when cancelled. */
@@ -49,6 +51,7 @@ function nativeStore(win: PickerWindow): FileStore {
     return true;
   };
   const store: FileStore = {
+    inPlace: true,
     get name() {
       return handle?.name ?? null;
     },
@@ -75,6 +78,7 @@ function nativeStore(win: PickerWindow): FileStore {
 function fallbackStore(document: Document): FileStore {
   let name: string | null = null;
   const store: FileStore = {
+    inPlace: false,
     get name() {
       return name;
     },

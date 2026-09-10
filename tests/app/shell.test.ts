@@ -12,10 +12,14 @@ let preview: HTMLElement;
 // Fake File System Access API.
 let openText = '';
 const written: string[] = [];
+let writable = true;
 const handle = {
   name: 'q4.plan',
   getFile: async () => ({ text: async () => openText }),
-  createWritable: async () => ({ write: async (t: string) => void written.push(t), close: async () => {} }),
+  createWritable: async () => {
+    if (!writable) throw new DOMException('The user denied write access', 'NotAllowedError');
+    return { write: async (t: string) => void written.push(t), close: async () => {} };
+  },
 };
 const showOpenFilePicker = vi.fn(async () => [handle]);
 const showSaveFilePicker = vi.fn(async () => handle);
@@ -38,7 +42,7 @@ beforeAll(async () => {
   Range.prototype.getBoundingClientRect = () => new DOMRect();
   Element.prototype.scrollIntoView = scroll;
   document.body.innerHTML =
-    '<button id="open"></button><button id="save"></button><button id="save-as"></button><span id="filename"></span>' +
+    '<button id="open"></button><button id="save"></button><button id="save-as"></button><span id="filename"></span><span id="status"></span>' +
     '<div id="editor"></div><section id="preview"></section>';
   vi.useFakeTimers();
   await import('../../src/app/main');
@@ -129,6 +133,7 @@ describe('open and save', () => {
     expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
     expect(written).toEqual([view.state.doc.toString()]);
     expect(document.title).toBe('q4.plan — Plan');
+    expect(document.getElementById('status')!.textContent).toBe('Saved q4.plan');
     view.dispatch({ changes: { from: 0, insert: '// edited\n' } });
     expect(document.title).toBe('● q4.plan — Plan');
     ctrlS();
@@ -167,5 +172,15 @@ describe('open and save', () => {
     document.getElementById('save')!.click();
     await flush();
     expect(written).toEqual([openText.replace('\t', '    ')]);
+  });
+
+  it('reports a failed save and keeps the document unsaved', async () => {
+    writable = false;
+    view.dispatch({ changes: { from: 0, insert: 'x' } });
+    ctrlS();
+    await flush();
+    expect(document.getElementById('status')!.textContent).toBe('Could not save: The user denied write access');
+    expect(document.title).toBe('● q4.plan — Plan');
+    writable = true;
   });
 });

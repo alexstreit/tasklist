@@ -20,6 +20,7 @@ const active = renderers[0];
 const host = document.getElementById('preview')!;
 const files = createFileStore();
 const filename = document.getElementById('filename')!;
+const status = document.getElementById('status')!;
 
 let model: Model;
 let lines: number[] = [];
@@ -71,8 +72,19 @@ function updateTitle(): void {
   document.title = `${unsaved() ? '● ' : ''}${name} — Plan`;
 }
 
+function report(action: string, error: unknown): void {
+  const message = typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : String(error);
+  status.textContent = `Could not ${action}: ${message}`;
+}
+
 async function open(): Promise<void> {
-  const file = await files.open();
+  let file;
+  try {
+    file = await files.open();
+  } catch (e) {
+    report('open', e);
+    return;
+  }
   if (!file) return;
   // Tabs become 4 spaces on load (spec §2.1); the buffer never holds tabs.
   view.dispatch({
@@ -82,14 +94,24 @@ async function open(): Promise<void> {
   });
   savedDoc = view.state.doc;
   updateTitle();
+  status.textContent = `Opened ${file.name}`;
 }
 
 async function save(as = false): Promise<void> {
   const doc = view.state.doc;
-  const ok = as ? await files.saveAs(doc.toString()) : await files.save(doc.toString());
+  let ok: boolean;
+  try {
+    ok = as ? await files.saveAs(doc.toString()) : await files.save(doc.toString());
+  } catch (e) {
+    report('save', e);
+    return;
+  }
   if (!ok) return;
   savedDoc = doc;
   updateTitle();
+  status.textContent = files.inPlace
+    ? `Saved ${files.name}`
+    : `Downloaded ${files.name ?? 'untitled.plan'}. This browser cannot write files in place; open the downloaded copy to continue.`;
 }
 
 const view = new EditorView({
@@ -118,8 +140,14 @@ render();
 updateTitle();
 
 document.getElementById('open')!.addEventListener('click', () => void open());
-document.getElementById('save')!.addEventListener('click', () => void save());
-document.getElementById('save-as')!.addEventListener('click', () => void save(true));
+const saveButton = document.getElementById('save')!;
+const saveAsButton = document.getElementById('save-as')!;
+saveButton.addEventListener('click', () => void save());
+saveAsButton.addEventListener('click', () => void save(true));
+if (!files.inPlace) {
+  saveButton.textContent = 'Download';
+  saveAsButton.hidden = true;
+}
 window.addEventListener('beforeunload', (event) => {
   if (unsaved()) event.preventDefault();
 });
