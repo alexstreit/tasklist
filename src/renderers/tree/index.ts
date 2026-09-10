@@ -16,13 +16,10 @@ function muted(text: string): HTMLSpanElement {
 }
 
 function fillSummable(td: HTMLTableCellElement, column: Column, cell: SummableCell, isLeaf: boolean): void {
-  // Leaves: nothing entered shows empty rather than "0h", and there is no child sum to show.
-  if (isLeaf) {
-    if (cell.mode !== 'derived') td.textContent = format(column, cell.effective);
-    return;
-  }
+  // An unestimated subtree shows nothing rather than "0h"; a leaf has no child sum to show.
+  if (!cell.hasValue) return;
   td.textContent = format(column, cell.effective);
-  if (cell.mode !== 'derived') td.append(muted(`⟨Σ ${format(column, cell.childSum)}⟩`));
+  if (cell.mode !== 'derived' && !isLeaf) td.append(muted(`⟨Σ ${format(column, cell.childSum)}⟩`));
 }
 
 export const treeRenderer: Renderer = {

@@ -21,6 +21,38 @@ describe('roll-up (§2.7)', () => {
   });
 });
 
+describe('hasValue (§2.7)', () => {
+  it('is true for a leaf with a value and false for an empty leaf', () => {
+    const { model } = load('A | 4h\nB');
+    expect(est(model.roots[0]).hasValue).toBe(true);
+    expect(est(model.roots[1]).hasValue).toBe(false);
+  });
+
+  it('is false for a parent whose whole subtree is empty', () => {
+    const { model } = load('A\n    B\n        C\n    D');
+    expect(est(model.roots[0]).hasValue).toBe(false);
+    expect(est(byTitle(model, 'B')).hasValue).toBe(false);
+  });
+
+  it('propagates up from a single valued descendant', () => {
+    const { model } = load('A\n    B\n        C | 1h\n    D');
+    expect(est(model.roots[0]).hasValue).toBe(true);
+    expect(est(byTitle(model, 'B')).hasValue).toBe(true);
+    expect(est(byTitle(model, 'D')).hasValue).toBe(false);
+  });
+
+  it('is true for a parent with a value and empty children', () => {
+    const { model } = load('A | 2d\n    B');
+    expect(est(model.roots[0]).hasValue).toBe(true);
+    expect(est(byTitle(model, 'B')).hasValue).toBe(false);
+  });
+
+  it('treats an unparseable value as empty', () => {
+    const { model } = load('A | soon');
+    expect(est(model.roots[0]).hasValue).toBe(false);
+  });
+});
+
 describe('done (§2.8)', () => {
   it('~ on a parent makes all descendants done; doneSum equals effective', () => {
     const { model } = load('~Parent\n    A | 4h\n        Deep | 2h\n    B | 2h');

@@ -41,6 +41,7 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
       const raw = field?.value ?? '';
       let mode: RollupMode = 'derived';
       let effective = childSum;
+      let ownValue = false;
       if (raw !== '') {
         const parsed = col.type === 'duration' ? parseDuration(raw) : parseNumber(raw);
         if (parsed === null) {
@@ -51,9 +52,11 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
             message: `unparseable ${col.type}: "${raw}"`,
           });
         } else if (parsed.additive) {
+          ownValue = true;
           mode = 'additive';
           effective = childSum + parsed.value;
         } else {
+          ownValue = true;
           mode = 'override';
           effective = parsed.value;
           if (children.length > 0 && parsed.value !== childSum) {
@@ -70,7 +73,8 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
       const doneSum = done
         ? effective
         : children.reduce((sum, c) => sum + (c.cells[i] as SummableCell).doneSum, 0);
-      return { kind: col.type, effective, childSum, mode, doneSum, raw, span: field?.span ?? null };
+      const hasValue = ownValue || children.some((c) => (c.cells[i] as SummableCell).hasValue);
+      return { kind: col.type, effective, childSum, mode, doneSum, hasValue, raw, span: field?.span ?? null };
     });
 
     return {
