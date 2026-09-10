@@ -49,7 +49,7 @@ export const planKeymap: readonly KeyBinding[] = [
   { key: 'Alt-ArrowDown', run: moveLineDown },
   { key: 'Tab', run: indentMore, shift: indentLess },
   { key: 'Mod-/', run: toggleLineComment },
-  { key: 'Mod-Shift-ArrowUp', run: selectSubtree },
+  { key: 'Ctrl-Shift-ArrowUp', run: selectSubtree },
   ...historyKeymap,
   ...foldKeymap,
   ...baseKeymap,

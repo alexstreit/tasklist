@@ -20,7 +20,7 @@ describe('bindings', () => {
 
   it('binds Ctrl+/ to line comment toggle and Ctrl+Shift+Up to subtree selection', () => {
     expect(find('Mod-/')?.run).toBe(toggleLineComment);
-    expect(find('Mod-Shift-ArrowUp')?.run).toBe(selectSubtree);
+    expect(find('Ctrl-Shift-ArrowUp')?.run).toBe(selectSubtree);
   });
 
   it('does not bind Alt+Left/Right', () => {
