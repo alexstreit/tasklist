@@ -135,6 +135,90 @@ A second renderer, to prove the seam.
 
 ---
 
-## Later (not scheduled)
+## Task 7 — Compound durations
 
-See spec §7. When any of these start, add a task here first and update the spec before writing code.
+Core only. Extend the `duration` parser so a value may contain several unit terms.
+
+**Deliverables**
+
+- Grammar: one or more whitespace-separated terms, each `number unit` with unit in `h`/`d`/`w`; any order; each unit at most once; a bare number (no unit) is still hours and is only allowed as the sole term. A leading `+` applies to the whole value.
+- Update spec §2.6 and remove "compound durations" from §7.
+
+**Acceptance criteria**
+
+- [ ] `2d 4h`, `4h 2d`, `1w 2d 4h`, `+2d 4h`, `1.5d 4h` all parse to the expected hours.
+- [ ] `2d 2d`, `2d 4`, `4 2d`, `2dh`, `2 d` produce the existing unparseable-value warning and are treated as empty.
+- [ ] `formatDuration(parseDuration(x)) === formatDuration(hours)` round-trips for all valid inputs.
+- [ ] The §2.10 example output is unchanged.
+- [ ] No changes outside `src/core/` and tests.
+
+---
+
+## Task 8 — Outline numbers
+
+Add a structural reference to every item node and show it in both renderers.
+
+**Deliverables**
+
+- `outlineNumber: string` on each item node, computed in `parse` (it is structure, not arithmetic): `1`, `1.1`, `1.2`, `2`, `2.1.5`. Only item nodes are counted; comment, blank, reserved and front-matter lines consume no numbers.
+- Tree renderer and table renderer each gain a leading column showing it.
+- Spec §3.1 documents the field; §5 lists the column.
+
+**Acceptance criteria**
+
+- [ ] For the §2.10 example: `Auth` is `1`, `Login page` is `1.1`, `Token refresh` is `1.3.2`, `Admin` is `2`, `User list` is `2.1`. The commented `Audit log` line has no number and `User list` is still `2.1`.
+- [ ] A comment line between two siblings does not affect their numbering.
+- [ ] The `0 / 8 / 4` indent case from spec §2.4 numbers the third item as a sibling (`1.2`), not a grandchild.
+- [ ] Both renderers show the column; the number is not selectable/editable.
+- [ ] `src/app/` is unchanged.
+
+---
+
+## Task 9 — Exporters and Copy for Excel
+
+Introduce an exporter seam and ship the first exporter.
+
+**Deliverables**
+
+- `Exporter` interface in `src/core/`:
+  ```ts
+  interface Exporter {
+    id: string;
+    label: string; // e.g. "Copy for Excel"
+    export(model: Model): { mime: string; data: string };
+  }
+  ```
+- `src/exporters/tsv/`: tab-separated text, one header row then one row per item, in document order. Columns: `#` (outline number), `level` (1-based depth), `title`, then each declared column in order, then `done`.
+  - `duration` and `number` cells emit the node's `effective` as a plain decimal number of hours (no unit, no mixed-unit string). Header for duration columns is `name (h)`. Empty when `hasValue` is false.
+  - `text` cells emit the text as entered. Tabs and newlines cannot occur (the format forbids them) but the exporter must still replace any with a space defensively.
+  - `done` emits `TRUE` or `FALSE`.
+  - A final row `Total` with the document totals in the summable columns and `doneSum` is **not** included — Excel users will sum themselves, and a totals row breaks sorting/filtering. Document this in the spec.
+- Preview toolbar: one button per registered exporter. The TSV exporter's button writes `data` to the clipboard via `navigator.clipboard.writeText`, then shows a brief "Copied" confirmation. Failures (permissions, framed context) are surfaced visibly, not swallowed.
+- `src/app/` holds an `exporters` list exactly as it holds `renderers`; nothing else in the shell references the TSV exporter by name.
+- Spec: new §3.6 "Exporters"; §7 updated.
+
+**Acceptance criteria**
+
+- [ ] Unit test: the §2.10 example produces exactly the expected TSV (assert the full string, including header and `Auth` as `16`, `OAuth (Google)` as `13`, `Admin` as `8`).
+- [ ] A text cell containing a tab or newline is exported with a space instead.
+- [ ] A `done` parent's implicitly done children export `TRUE`.
+- [ ] Manual: paste into Excel; every column lands in its own cell, duration columns are numeric (right-aligned, `=SUM()` works), `done` is a boolean.
+- [ ] Manual: the button reports failure visibly in the VS Code Simple Browser.
+- [ ] Adding a second stub exporter requires no change to `src/app/` beyond registration.
+
+---
+
+## Task 10 — Dark mode
+
+**Deliverables**
+
+- All colours in the app, both renderers, and the `cm-plan-*` token classes move to CSS custom properties defined on `:root`, with a second set under `@media (prefers-color-scheme: dark)`.
+- CodeMirror chrome (gutter, selection, cursor, fold markers, lint underline colours) themed via `EditorView.theme(..., { dark: true })` on the same media query, so the editor and the rest of the page switch together.
+- No manual toggle in this task.
+
+**Acceptance criteria**
+
+- [ ] `grep` for hex colours and `rgb(` outside the `:root` variable definitions returns nothing in `src/`.
+- [ ] Manual, in both light and dark: done rows, cursor row, "near" cursor row, override sigma, warning and info underlines, gutter markers, fold markers, comment lines and front matter are all distinguishable from each other and from normal text.
+- [ ] Manual: switching the OS setting while the app is open switches the app without reload.
+- [ ] Manual: the cursor-row highlight on a done row is still visible in dark mode (this regressed once before in light mode).
