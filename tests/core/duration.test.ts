@@ -9,12 +9,32 @@ describe('parseDuration (§2.6)', () => {
     ['1.5w', 60, false],
     ['+1d', 8, true],
     ['  4h  ', 4, false],
+    ['2d 4h', 20, false],
+    ['4h 2d', 20, false],
+    ['1w 2d 4h', 60, false],
+    ['+2d 4h', 20, true],
+    ['1.5d 4h', 16, false],
   ])('parses %s', (raw, value, additive) => {
     expect(parseDuration(raw)).toEqual({ value, additive });
   });
 
-  it.each(['', 'abc', '4x', '2d 4h', '1..5', '-4h', 'h'])('rejects %s', (raw) => {
-    expect(parseDuration(raw)).toBeNull();
+  it.each(['', 'abc', '4x', '1..5', '-4h', 'h', '+', '2d 2d', '2d 4', '4 2d', '2dh', '2 d'])(
+    'rejects %s',
+    (raw) => {
+      expect(parseDuration(raw)).toBeNull();
+    },
+  );
+
+  it.each([
+    ['4', 4],
+    ['2d 4h', 20],
+    ['4h 2d', 20],
+    ['1w 2d 4h', 60],
+    ['+2d 4h', 20],
+    ['1.5d 4h', 16],
+    ['0.5h 1w', 40.5],
+  ])('%s round-trips through formatDuration', (raw, hours) => {
+    expect(formatDuration(parseDuration(raw)!.value)).toBe(formatDuration(hours));
   });
 });
 

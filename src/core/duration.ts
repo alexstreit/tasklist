@@ -8,10 +8,28 @@ export interface ParsedValue {
   additive: boolean;
 }
 
+/**
+ * One or more whitespace-separated `number unit` terms (`2d 4h`), any order,
+ * each unit at most once. A bare number is hours and must be the sole term.
+ * A leading `+` applies to the whole value.
+ */
 export function parseDuration(raw: string): ParsedValue | null {
-  const m = /^(\+)?\s*(\d+(?:\.\d+)?)\s*([hdw])?$/.exec(raw.trim());
-  if (!m) return null;
-  return { value: parseFloat(m[2]) * UNIT_HOURS[m[3] ?? 'h'], additive: m[1] === '+' };
+  let s = raw.trim();
+  const additive = s.startsWith('+');
+  if (additive) s = s.slice(1).trim();
+  const terms = s.split(/\s+/);
+  if (terms.length === 1 && /^\d+(?:\.\d+)?$/.test(terms[0])) {
+    return { value: parseFloat(terms[0]), additive };
+  }
+  const seen = new Set<string>();
+  let hours = 0;
+  for (const term of terms) {
+    const m = /^(\d+(?:\.\d+)?)([hdw])$/.exec(term);
+    if (!m || seen.has(m[2])) return null;
+    seen.add(m[2]);
+    hours += parseFloat(m[1]) * UNIT_HOURS[m[2]];
+  }
+  return { value: hours, additive };
 }
 
 export function parseNumber(raw: string): ParsedValue | null {

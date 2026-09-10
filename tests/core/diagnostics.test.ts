@@ -41,6 +41,14 @@ describe('spec §2.9 diagnostics', () => {
     expect(cell).toMatchObject({ mode: 'derived', effective: 4 });
   });
 
+  it('invalid compound duration → warning, treated as empty (derived)', () => {
+    const { model } = load('A | 2d 2d\n    B | 2d 4h');
+    const d = only(model);
+    expect(d.line).toBe(1);
+    expect(d.severity).toBe('warning');
+    expect(model.roots[0].cells[0]).toMatchObject({ mode: 'derived', effective: 20 });
+  });
+
   it('unparseable number → warning', () => {
     const { model } = load('---\ncolumns: n:number\n---\nA | x1');
     const d = only(model);
