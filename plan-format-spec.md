@@ -252,7 +252,7 @@ Shown as gutter markers with hover text, and as underlines on the offending span
 ## 5. Preview — tree renderer (MVP)
 
 - A tree that mirrors the text one row per item, comments and blank lines omitted.
-- Columns: title, then each declared column. Summable columns show `effective` when `hasValue` is true and an empty cell otherwise (an unestimated subtree must not read as `0h`); when `childrenHaveValue` is true the computed `childSum` is shown alongside in a muted style regardless of `mode`, e.g. `2d ⟨Σ 2d 1h⟩`.
+- Columns: title, then each declared column. Summable columns show `effective` when `hasValue` is true and an empty cell otherwise (an unestimated subtree must not read as `0h`); when `mode` is `override` or `additive` and `childrenHaveValue` is true, the computed `childSum` is shown alongside in a muted style, e.g. `2d ⟨Σ 2d 1h⟩`; derived parents render bare.
 - Done rows are struck through or dimmed.
 - A document total row at the bottom showing `effective` and `doneSum` per summable column.
 - The row for the item under the editor cursor is highlighted; clicking a row moves the editor cursor to that line.

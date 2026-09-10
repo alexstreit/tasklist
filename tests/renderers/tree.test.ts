@@ -39,15 +39,15 @@ describe('tree renderer', () => {
     expect(indent('Admin')).toBe(indent('Auth'));
   });
 
-  it('shows effective, with childSum muted whenever the children have values', () => {
+  it('shows effective, with childSum muted for override and additive over estimated children', () => {
     const { row } = render(example);
     const est = (title: string) => row(title).cells[1];
     expect(est('Auth').firstChild!.textContent).toBe('2d');
     expect(est('Auth').querySelector('.muted')!.textContent).toBe('⟨Σ 2d 7h⟩');
     expect(est('OAuth (Google)').firstChild!.textContent).toBe('1d 5h');
     expect(est('OAuth (Google)').querySelector('.muted')!.textContent).toBe('⟨Σ 5h⟩');
-    expect(est('Admin').firstChild!.textContent).toBe('1d');
-    expect(est('Admin').querySelector('.muted')!.textContent).toBe('⟨Σ 1d⟩');
+    expect(est('Admin').textContent).toBe('1d');
+    expect(est('Admin').querySelector('.muted')).toBeNull();
     expect(est('Login page').textContent).toBe('4h');
   });
 
@@ -60,7 +60,7 @@ describe('tree renderer', () => {
   it('leaves an unestimated leaf blank rather than 0h', () => {
     const { row } = render('A\n    B | 2h\n    C\n');
     expect(row('C').cells[1].textContent).toBe('');
-    expect(row('A').cells[1].firstChild!.textContent).toBe('2h');
+    expect(row('A').cells[1].textContent).toBe('2h');
   });
 
   it('shows no child sum for an override over unestimated children, but does once one is estimated', () => {

@@ -19,7 +19,8 @@ function fillSummable(td: HTMLTableCellElement, column: Column, cell: SummableCe
   // An unestimated subtree shows nothing rather than "0h".
   if (!cell.hasValue) return;
   td.textContent = format(column, cell.effective);
-  if (cell.childrenHaveValue) td.append(muted(`⟨Σ ${format(column, cell.childSum)}⟩`));
+  // Derived parents render bare: effective already is the child sum.
+  if (cell.childrenHaveValue && cell.mode !== 'derived') td.append(muted(`⟨Σ ${format(column, cell.childSum)}⟩`));
 }
 
 export const treeRenderer: Renderer = {
