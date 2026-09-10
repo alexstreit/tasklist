@@ -3,7 +3,7 @@ import { EditorState } from '@codemirror/state';
 import type { StateCommand } from '@codemirror/state';
 import { planEditor } from '../../src/editor';
 
-export const example = readFileSync(new URL('../core/fixtures/example.plan', import.meta.url), 'utf8');
+export const example = readFileSync(new URL('../../examples/example.plan', import.meta.url), 'utf8');
 
 export function state(doc: string, selection?: { anchor: number; head?: number }): EditorState {
   return EditorState.create({ doc, selection, extensions: planEditor() });

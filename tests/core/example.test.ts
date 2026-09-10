@@ -6,7 +6,7 @@ import { formatDuration } from '../../src/core';
 import type { TextCell } from '../../src/core';
 import { byTitle, est, load } from './helpers';
 
-const text = readFileSync(new URL('./fixtures/example.plan', import.meta.url), 'utf8');
+const text = readFileSync(new URL('../../examples/example.plan', import.meta.url), 'utf8');
 
 describe('spec §2.10 example', () => {
   const { model } = load(text);

@@ -6,7 +6,7 @@ import { EditorView } from '@codemirror/view';
 import { analyze } from '../core';
 import type { Model } from '../core';
 import { planEditor } from '../editor';
-import example from '../../tests/core/fixtures/example.plan?raw';
+import example from '../../examples/example.plan?raw';
 import './style.css';
 
 const DEBOUNCE_MS = 50;
