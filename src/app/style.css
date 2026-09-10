@@ -1,0 +1,6 @@
+html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+.app { display: flex; height: 100%; }
+.pane { flex: 1 1 50%; min-width: 0; overflow: auto; }
+#editor .cm-editor { height: 100%; }
+#editor .cm-scroller { font-family: ui-monospace, Menlo, Consolas, monospace; }
+#model { margin: 0; padding: 8px 12px; border-left: 1px solid #ddd; font-size: 12px; }
