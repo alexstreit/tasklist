@@ -1,0 +1,91 @@
+/* Every colour in the app lives here, as a custom property on :root, with a
+   dark set under prefers-color-scheme. Nothing else in src/ may use a colour
+   literal (tests/app/theme.test.ts enforces this). */
+
+:root {
+  color-scheme: light dark;
+
+  /* page */
+  --bg: #ffffff;
+  --fg: #111111;
+  --fg-muted: #6b7280;
+  --fg-faint: #9ca3af;
+  --border: #dddddd;
+  --border-soft: #eeeeee;
+  --hover: #f3f4f6;
+  --button-bg: #ffffff;
+  --button-border: #d1d5db;
+  --accent-bg: #dbeafe;
+  --accent-border: #93c5fd;
+
+  /* preview rows */
+  --done-fg: #9ca3af;
+  --cursor-row-bg: #bfdbfe;
+  --cursor-row-fg: #1e3a8a;
+  --near-row-bg: #eff6ff;
+  --near-row-edge: #93c5fd;
+
+  /* editor tokens (cm-plan-*) */
+  --tok-front-matter: #7c6f64;
+  --tok-comment: #8a8a8a;
+  --tok-done-marker: #16a34a;
+  --tok-separator: #9ca3af;
+  --tok-duration: #1d4ed8;
+  --tok-additive: #b45309;
+
+  /* editor chrome */
+  --editor-bg: #ffffff;
+  --editor-fg: #111111;
+  --caret: #000000;
+  --selection: #d7d4f0;
+  --active-line: #cceeff44;
+  --gutter-bg: #f5f5f5;
+  --gutter-fg: #6c6c6c;
+  --gutter-border: #dddddd;
+  --fold: #6b7280;
+  --diag-warning: #f59e0b;
+  --diag-info: #9ca3af;
+  --diag-active: #ffdd9980;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111827;
+    --fg: #e5e7eb;
+    --fg-muted: #9ca3af;
+    --fg-faint: #6b7280;
+    --border: #374151;
+    --border-soft: #1f2937;
+    --hover: #1f2937;
+    --button-bg: #1f2937;
+    --button-border: #4b5563;
+    --accent-bg: #1e3a8a;
+    --accent-border: #3b82f6;
+
+    --done-fg: #6b7280;
+    --cursor-row-bg: #1e40af;
+    --cursor-row-fg: #dbeafe;
+    --near-row-bg: #172554;
+    --near-row-edge: #3b82f6;
+
+    --tok-front-matter: #a89f91;
+    --tok-comment: #8b8b8b;
+    --tok-done-marker: #4ade80;
+    --tok-separator: #6b7280;
+    --tok-duration: #93c5fd;
+    --tok-additive: #fbbf24;
+
+    --editor-bg: #111827;
+    --editor-fg: #e5e7eb;
+    --caret: #f9fafb;
+    --selection: #334155;
+    --active-line: #99eeff1a;
+    --gutter-bg: #1f2937;
+    --gutter-fg: #9ca3af;
+    --gutter-border: #374151;
+    --fold: #9ca3af;
+    --diag-warning: #fbbf24;
+    --diag-info: #9ca3af;
+    --diag-active: #86714a80;
+  }
+}

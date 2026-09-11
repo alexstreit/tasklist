@@ -9,6 +9,7 @@ import { planFolding } from './folding';
 import { planKeys } from './keymap';
 import { plan } from './language';
 import { convertTabsOnPaste } from './pasteTabs';
+import { planTheme } from './theme';
 
 export { planLanguage, planHighlightStyle, planTags } from './language';
 export { planKeymap, selectSubtree } from './keymap';
@@ -25,5 +26,6 @@ export function planEditor(): Extension {
     planKeys,
     convertTabsOnPaste,
     planDiagnostics,
+    planTheme(),
   ];
 }

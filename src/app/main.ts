@@ -14,6 +14,7 @@ import { ganttRenderer } from '../renderers/gantt';
 import { tableRenderer } from '../renderers/table';
 import { treeRenderer } from '../renderers/tree';
 import example from '../../examples/example.plan?raw';
+import './theme.css';
 import './style.css';
 
 const DEBOUNCE_MS = 50;

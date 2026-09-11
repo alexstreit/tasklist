@@ -119,13 +119,14 @@ export const planHighlightStyle = HighlightStyle.define([
   { tag: planTags.done, class: 'cm-plan-done' },
 ]);
 
+// Colours come from the --tok-* custom properties in src/app/theme.css.
 const planTheme = EditorView.theme({
-  '.cm-plan-front-matter': { color: '#7c6f64' },
-  '.cm-plan-comment': { color: '#8a8a8a', fontStyle: 'italic' },
-  '.cm-plan-done-marker': { color: '#16a34a', fontWeight: 'bold' },
-  '.cm-plan-separator': { color: '#9ca3af' },
-  '.cm-plan-duration': { color: '#1d4ed8' },
-  '.cm-plan-additive': { color: '#b45309', fontWeight: 'bold' },
+  '.cm-plan-front-matter': { color: 'var(--tok-front-matter)' },
+  '.cm-plan-comment': { color: 'var(--tok-comment)', fontStyle: 'italic' },
+  '.cm-plan-done-marker': { color: 'var(--tok-done-marker)', fontWeight: 'bold' },
+  '.cm-plan-separator': { color: 'var(--tok-separator)' },
+  '.cm-plan-duration': { color: 'var(--tok-duration)' },
+  '.cm-plan-additive': { color: 'var(--tok-additive)', fontWeight: 'bold' },
   '.cm-plan-done': { opacity: '0.5' },
 });
 
