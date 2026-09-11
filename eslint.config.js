@@ -22,7 +22,7 @@ export default [
   },
   // Outside core, analyze() is the only entry point (spec §3.2).
   {
-    files: ['src/app/**/*.ts', 'src/editor/**/*.ts', 'src/renderers/**/*.ts'],
+    files: ['src/app/**/*.ts', 'src/editor/**/*.ts', 'src/renderers/**/*.ts', 'src/exporters/**/*.ts'],
     languageOptions: { parser: tseslint.parser },
     rules: {
       'no-restricted-imports': [

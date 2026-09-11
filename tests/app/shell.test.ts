@@ -44,7 +44,7 @@ beforeAll(async () => {
   Element.prototype.scrollIntoView = scroll;
   document.body.innerHTML =
     '<button id="open"></button><button id="save"></button><button id="save-as"></button><span id="filename"></span><span id="status"></span>' +
-    '<div id="editor"></div><section id="preview"><nav id="renderers"></nav><div id="host"></div></section>';
+    '<div id="editor"></div><section id="preview"><nav id="renderers"></nav><nav id="exporters"></nav><div id="host"></div></section>';
   vi.useFakeTimers();
   await import('../../src/app/main');
   view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
@@ -260,5 +260,45 @@ describe('renderer switcher', () => {
     expect(tab('Gantt').classList.contains('active')).toBe(false);
     expect(tab('Table').classList.contains('active')).toBe(true);
     expect(preview.querySelector('table')!.className).toContain('plan-table');
+  });
+});
+
+describe('exporters', () => {
+  const status = () => document.getElementById('status')!.textContent;
+  const button = () => document.querySelector<HTMLButtonElement>('#exporters button')!;
+  const setClipboard = (clipboard: unknown) => Object.defineProperty(navigator, 'clipboard', { value: clipboard, configurable: true });
+
+  it('shows one button per registered exporter', () => {
+    expect([...document.querySelectorAll('#exporters button')].map((b) => b.textContent)).toEqual(['Copy for Excel']);
+  });
+
+  it('reports visibly when the clipboard API is unavailable, as in an embedded frame', async () => {
+    setClipboard(undefined);
+    button().click();
+    await flush();
+    expect(status()).toBe('Could not copy: clipboard unavailable in this context');
+  });
+
+  it('copies the current document as TSV and confirms briefly on the button', async () => {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: 'Auth | 2d\n    ~Login | 4h | alice\n' } });
+    vi.advanceTimersByTime(60);
+    const writeText = vi.fn(async () => {});
+    setClipboard({ writeText });
+    button().click();
+    await flush();
+    expect(writeText).toHaveBeenCalledWith(
+      '#\tlevel\ttitle\test (h)\towner\tnotes\tdone\n1\t1\tAuth\t16\t\t\tFALSE\n1.1\t2\tLogin\t4\talice\t\tTRUE',
+    );
+    expect(button().textContent).toBe('Copied');
+    vi.advanceTimersByTime(1500);
+    expect(button().textContent).toBe('Copy for Excel');
+  });
+
+  it('reports a rejected clipboard write in the status line', async () => {
+    setClipboard({ writeText: vi.fn(async () => { throw new DOMException('Write permission denied.', 'NotAllowedError'); }) });
+    button().click();
+    await flush();
+    expect(status()).toBe('Could not copy: Write permission denied.');
+    expect(button().textContent).toBe('Copy for Excel');
   });
 });

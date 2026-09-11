@@ -227,6 +227,27 @@ Exactly one editor is active at a time. Every editor writes to the shared text b
 
 The shared thing is the text buffer, not the model. A CRDT over the text (e.g. Yjs, which has a CodeMirror 6 binding) gives collaboration without the sync layer knowing anything about the format. Each client parses and computes locally.
 
+### 3.6 Exporters
+
+An exporter is a module exporting:
+
+```ts
+interface Exporter {
+  id: string;
+  label: string; // e.g. "Copy for Excel"
+  export(model: Model): { mime: string; data: string };
+}
+```
+
+Exporters read the model like renderers do and never compute. The app shell holds a list of exporters exactly as it holds renderers, shows one button per exporter in the preview toolbar, and writes the returned `data` to the clipboard via `navigator.clipboard.writeText`. A successful copy is confirmed briefly on the button; a failure (no permission, no secure context, an embedded frame) is shown in the status line, never swallowed.
+
+**TSV (`Copy for Excel`).** Tab-separated text, one header row then one row per item in document order. Columns: `#` (outline number), `level` (1-based depth), `title`, each declared column in order, then `done`.
+
+- `duration` and `number` cells emit `effective` as a plain decimal number of hours (no unit, no mixed-unit string), so Excel treats them as numbers. The header for a duration column is `name (h)`. Empty when `hasValue` is false.
+- `text` cells emit the text as entered. The format forbids tabs and newlines, but the exporter still replaces any with a space.
+- `done` emits `TRUE` or `FALSE`.
+- No totals row: Excel users sum for themselves, and a totals row breaks sorting and filtering.
+
 ## 4. Editor (CodeMirror 6)
 
 ### 4.1 Language mode
@@ -282,7 +303,7 @@ Decided against for MVP, listed so the syntax leaves room:
 - Column **roles** (`start:date(role=start)`) for renderers such as Gantt
 - Additional roll-up types: `max`, `count`, `done%`, `remaining`
 - `\|` escaping
-- Renderers: flat table, Gantt; exports to Excel, Word, HTML, MS Project
+- Renderers: Gantt; exports to Word, HTML, MS Project
 - Grid editor; multi-user via text CRDT
 
 ## 8. Build order

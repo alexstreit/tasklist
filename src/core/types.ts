@@ -169,3 +169,11 @@ export interface Renderer {
   requires: ColumnRequirement[];
   render(model: Model, host: HTMLElement, ctx: RenderContext): void;
 }
+
+// Exporter seam. Spec §3.6.
+
+export interface Exporter {
+  id: string;
+  label: string; // e.g. "Copy for Excel"
+  export(model: Model): { mime: string; data: string };
+}

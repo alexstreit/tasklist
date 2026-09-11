@@ -5,10 +5,11 @@ import { EditorState, Transaction } from '@codemirror/state';
 import type { Text } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { analyze } from '../core';
-import type { Model, Renderer } from '../core';
+import type { Exporter, Model, Renderer } from '../core';
 import { planEditor, showDiagnostics } from '../editor';
 import { cursorItemFor, itemLines } from './cursor';
 import { createFileStore } from './files';
+import { tsvExporter } from '../exporters/tsv';
 import { ganttRenderer } from '../renderers/gantt';
 import { tableRenderer } from '../renderers/table';
 import { treeRenderer } from '../renderers/tree';
@@ -18,9 +19,11 @@ import './style.css';
 const DEBOUNCE_MS = 50;
 
 const renderers: Renderer[] = [treeRenderer, tableRenderer, ganttRenderer];
+const exporters: Exporter[] = [tsvExporter];
 let active = renderers[0];
 const host = document.getElementById('host')!;
 const tabs = document.getElementById('renderers')!;
+const exportBar = document.getElementById('exporters')!;
 const files = createFileStore();
 const filename = document.getElementById('filename')!;
 const status = document.getElementById('status')!;
@@ -65,6 +68,32 @@ function renderTabs(): void {
         active = renderer;
         render();
       });
+      return button;
+    }),
+  );
+}
+
+/** Every exporter's output goes to the clipboard; the button confirms briefly, failures go to the status line. */
+async function copyExport(exporter: Exporter, button: HTMLButtonElement): Promise<void> {
+  try {
+    // Absent outside a secure, top-level context (e.g. an embedded browser frame).
+    if (!navigator.clipboard) throw new Error('clipboard unavailable in this context');
+    await navigator.clipboard.writeText(exporter.export(model).data);
+  } catch (e) {
+    report('copy', e);
+    return;
+  }
+  button.textContent = 'Copied';
+  setTimeout(() => (button.textContent = exporter.label), 1500);
+}
+
+function renderExporters(): void {
+  exportBar.replaceChildren(
+    ...exporters.map((exporter) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = exporter.label;
+      button.addEventListener('click', () => void copyExport(exporter, button));
       return button;
     }),
   );
@@ -178,6 +207,7 @@ const view = new EditorView({
 savedDoc = view.state.doc;
 cursorLine = view.state.doc.lineAt(view.state.selection.main.head).number;
 render();
+renderExporters();
 updateTitle();
 
 document.getElementById('open')!.addEventListener('click', () => void open());
