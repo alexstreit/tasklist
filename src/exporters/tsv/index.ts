@@ -17,7 +17,8 @@ function row(node: ModelNode, level: number): string {
     if (cell.kind === 'text') return clean(cell.value);
     return cell.hasValue ? String(cell.effective) : '';
   });
-  return [node.outlineNumber, String(level), clean(node.title), ...values, node.done ? 'TRUE' : 'FALSE'].join('\t');
+  // A leading apostrophe makes spreadsheets keep the outline number as text; pasted bare, 1.10 becomes the number 1.1.
+  return [`'${node.outlineNumber}`, String(level), clean(node.title), ...values, node.done ? 'TRUE' : 'FALSE'].join('\t');
 }
 
 export const tsvExporter: Exporter = {

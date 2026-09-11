@@ -287,7 +287,7 @@ describe('exporters', () => {
     button().click();
     await flush();
     expect(writeText).toHaveBeenCalledWith(
-      '#\tlevel\ttitle\test (h)\towner\tnotes\tdone\n1\t1\tAuth\t16\t\t\tFALSE\n1.1\t2\tLogin\t4\talice\t\tTRUE',
+      "#\tlevel\ttitle\test (h)\towner\tnotes\tdone\n'1\t1\tAuth\t16\t\t\tFALSE\n'1.1\t2\tLogin\t4\talice\t\tTRUE",
     );
     expect(button().textContent).toBe('Copied');
     vi.advanceTimersByTime(1500);

@@ -246,6 +246,7 @@ Exporters read the model like renderers do and never compute. The app shell hold
 - `duration` and `number` cells emit `effective` as a plain decimal number of hours (no unit, no mixed-unit string), so Excel treats them as numbers. The header for a duration column is `name (h)`. Empty when `hasValue` is false.
 - `text` cells emit the text as entered. The format forbids tabs and newlines, but the exporter still replaces any with a space.
 - `done` emits `TRUE` or `FALSE`.
+- The outline number is prefixed with `'` so spreadsheets store it as text. Pasted bare, `1.10` is read as the number `1.1` and collides with the tenth child's sibling `1.1`.
 - No totals row: Excel users sum for themselves, and a totals row breaks sorting and filtering.
 
 ## 4. Editor (CodeMirror 6)
