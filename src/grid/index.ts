@@ -45,6 +45,18 @@ function lineAt(text: string, pos: number): number {
   return line;
 }
 
+/** End of `line`'s text, before its line break. */
+function lineEndOf(text: string, line: number): number {
+  let from = 0;
+  for (let n = 1; n < line; n++) {
+    const next = text.indexOf('\n', from);
+    if (next === -1) return text.length;
+    from = next + 1;
+  }
+  const end = text.indexOf('\n', from);
+  return end === -1 ? text.length : end;
+}
+
 export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHooks): GridEditor {
   const bar = document.createElement('div');
   bar.className = 'sheet-toolbar';
@@ -86,6 +98,17 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function cellFor(line: number, column: number): HTMLTableCellElement | null {
     const row = table.querySelector<HTMLTableRowElement>(`tr[data-line="${line}"]`);
     return row?.cells[column + 1] ?? null;
+  }
+
+  /**
+   * Focusing a cell blurs whatever held the focus, and a blur handler may
+   * commit an edit and rebuild the table underneath us. Then the cell we were
+   * focusing is detached and the focus lands nowhere, so resolve it again.
+   */
+  function focusCell(line: number, column: number): void {
+    const td = cellFor(line, column);
+    td?.focus();
+    if (td && !td.isConnected) cellFor(line, column)?.focus();
   }
 
   /** The row the toolbar and the structural keys act on. */
@@ -180,6 +203,9 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.checked = node.done;
+      // The cell is the focusable thing (Space toggles it); a tabbable checkbox
+      // would make Tab walk the checkbox column instead of the grid.
+      box.tabIndex = -1;
       // Done through an ancestor: shown, but only the ancestor's marker can clear it.
       box.disabled = node.done && !node.source.done;
       box.addEventListener('change', () => apply(setDone(buffer.text(), node, box.checked)));
@@ -224,13 +250,52 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     for (const row of table.tBodies[0]?.rows ?? []) row.classList.toggle('selected', row.dataset.line === line);
   }
 
-  function focusCell(node: ModelNode, column: number, fromApi = false): void {
-    at = { anchor: node.span.to, column };
+  /**
+   * Put the place on a cell. The anchor comes from the buffer as it stands,
+   * not from the model, which may predate the edit that led here.
+   */
+  function place(line: number, column: number, fromApi = false): void {
+    at = { anchor: lineEndOf(buffer.text(), line), column };
     held = true;
     markSelection();
-    cellFor(node.line, column)?.focus();
+    focusCell(line, column);
     updateToolbar();
-    hooks.onCursorLine(node.line, fromApi);
+    hooks.onCursorLine(line, fromApi);
+  }
+
+  function clearPlace(): void {
+    at = null;
+    held = false;
+    markSelection();
+    updateToolbar();
+    (document.activeElement as HTMLElement | null)?.blur();
+  }
+
+  function rowIndex(line: number): number {
+    return rows.findIndex((row) => row.node.line === line);
+  }
+
+  function lastColumn(): number {
+    return TITLE + (model?.columns.length ?? 0);
+  }
+
+  /** Move the place `delta` rows, or to the new-task row when it runs off the end. */
+  function step(line: number, delta: number, column: number): void {
+    const next = rows[rowIndex(line) + delta];
+    if (next) place(next.node.line, column);
+    else if (delta > 0) newTask.focus();
+  }
+
+  /** The next or previous editable cell, wrapping across rows. */
+  function tab(line: number, column: number, back: boolean): void {
+    const last = lastColumn();
+    if (back ? column > DONE : column < last) {
+      place(line, column + (back ? -1 : 1));
+      return;
+    }
+    const next = rows[rowIndex(line) + (back ? -1 : 1)];
+    if (next) place(next.node.line, back ? last : DONE);
+    else if (!back) newTask.focus();
   }
 
   /** Put the place back where it was, following the line if it moved. */
@@ -247,7 +312,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (!node) return;
     at = { anchor: node.span.to, column: at.column };
     markSelection();
-    if (held) cellFor(node.line, at.column)?.focus();
+    if (held) focusCell(node.line, at.column);
     updateToolbar();
   }
 
@@ -268,25 +333,40 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     apply(edits);
   }
 
-  function beginEdit(node: ModelNode, column: number): void {
+  /**
+   * Open the cell's editor. `typed` is null when the edit was asked for
+   * without a key (a double-click: select the content), '' for F2 (keep the
+   * content, caret at the end), or the printable key that started it.
+   */
+  function beginEdit(node: ModelNode, column: number, typed: string | null = null): void {
     const raw = rawOf(node, column);
     if (raw === null) return;
-    focusCell(node, column);
+    place(node.line, column);
     const td = cellFor(node.line, column);
     if (!td) return;
     editing = { line: node.line, column };
     const input = document.createElement('input');
     input.className = 'cell-input';
     // Spreadsheet rule: editing shows the text as written, not the computed value.
-    input.value = raw;
+    input.value = typed ? typed : raw;
     td.replaceChildren(input);
     input.focus();
-    input.select();
+    if (typed === null) input.select();
+    else input.setSelectionRange(input.value.length, input.value.length);
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         commit(node, column, input.value);
+        step(node.line, 1, column);
+      } else if (event.key === 'Tab') {
+        event.preventDefault();
+        commit(node, column, input.value);
+        tab(node.line, column, event.shiftKey);
       } else if (event.key === 'Escape') {
+        event.preventDefault();
+        endEdit(node, column);
+      } else if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
+        // Spreadsheet rule again: this cancels the edit, it does not undo the buffer.
         event.preventDefault();
         endEdit(node, column);
       }
@@ -385,15 +465,19 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     },
   ];
 
+  /** Run a structural operation on the current row, if it applies. */
+  function act(id: string): void {
+    const action = actions.find((a) => a.id === id);
+    const node = target();
+    if (action && node && action.enabled(node)) action.run(node);
+  }
+
   const buttons = actions.map((action) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.action = action.id;
     button.textContent = action.label;
-    button.addEventListener('click', () => {
-      const node = target();
-      if (node && action.enabled(node)) action.run(node);
-    });
+    button.addEventListener('click', () => act(action.id));
     bar.append(button);
     return button;
   });
@@ -413,34 +497,112 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
   table.addEventListener('click', (event) => {
     const hit = cellAt(event);
-    if (hit && !editing) focusCell(hit.node, hit.column);
+    if (hit && !editing) place(hit.node.line, hit.column);
   });
   table.addEventListener('dblclick', (event) => {
     const hit = cellAt(event);
     if (hit && hit.column !== DONE && hit.column !== WBS) beginEdit(hit.node, hit.column);
   });
+  // The key table, spec §4b.4. The editing-cell column lives in beginEdit;
+  // this handles a focused cell and a selected row, which differ only where
+  // the table says they do.
+  table.addEventListener('keydown', (event) => {
+    // Cell editors, the draft and new-task rows and the checkbox take their own keys.
+    if ((event.target as HTMLElement).tagName === 'INPUT') return;
+    const node = target();
+    if (!node || !at) return;
+    const column = at.column;
+    const selected = column === WBS;
+    const handled = (): void => event.preventDefault();
+
+    if (event.ctrlKey || event.metaKey) {
+      if (event.key === 'z') handled(), buffer.undo();
+      else if (event.key === 'y') handled(), buffer.redo();
+      return;
+    }
+    if (event.altKey) {
+      if (event.shiftKey && event.key === 'ArrowRight') handled(), act('indent');
+      else if (event.shiftKey && event.key === 'ArrowLeft') handled(), act('outdent');
+      else if (event.key === 'ArrowUp') handled(), act('up');
+      else if (event.key === 'ArrowDown') handled(), act('down');
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowUp':
+        return handled(), step(node.line, -1, column);
+      case 'ArrowDown':
+        return handled(), step(node.line, 1, column);
+      case 'ArrowLeft':
+        return handled(), place(node.line, Math.max(WBS, column - 1));
+      case 'ArrowRight':
+        return handled(), place(node.line, Math.min(lastColumn(), column + 1));
+      case 'Enter':
+        // Unbound on a selected row (§4b.4).
+        if (selected) return;
+        return handled(), step(node.line, 1, column);
+      case 'Tab':
+        // Unbound on a selected row, which is how the keyboard leaves the grid.
+        if (selected) return;
+        return handled(), tab(node.line, column, event.shiftKey);
+      case 'Escape':
+        if (!selected) return;
+        return handled(), clearPlace();
+      case 'Delete':
+        if (selected) return handled(), act('delete');
+        if (rawOf(node, column) === null) return;
+        return handled(), commit(node, column, '');
+      case 'Insert':
+        return handled(), act('insert');
+      case 'F2':
+        return handled(), beginEdit(node, column, '');
+      case ' ':
+        if (column !== DONE) break;
+        return handled(), act('done');
+    }
+    // Any other printable key starts an edit, replacing the cell's content.
+    if (event.key.length === 1) handled(), beginEdit(node, column, event.key);
+  });
+
   table.addEventListener('focusin', () => (held = true));
   table.addEventListener('focusout', (event) => {
     const next = event.relatedTarget as Node | null;
     if (next && !table.contains(next)) held = false;
   });
 
-  for (const [input, submit] of [
-    [draftInput, commitDraft],
-    [newTask, addTask],
-  ] as const) {
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        submit();
-      } else if (event.key === 'Escape' && input === draftInput) {
-        event.preventDefault();
-        draftInput.value = '';
-        commitDraft();
-      }
-    });
-    input.addEventListener('blur', submit);
-  }
+  draftInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitDraft();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      draftInput.value = '';
+      commitDraft();
+    }
+  });
+  draftInput.addEventListener('blur', commitDraft);
+
+  newTask.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addTask();
+      return;
+    }
+    // Back into the grid: up to the last row, or back across it with Shift+Tab.
+    const back = event.key === 'Tab' && event.shiftKey;
+    if (event.key !== 'ArrowUp' && !back) return;
+    const typed = newTask.value.trim() !== '';
+    addTask();
+    const last = rows[rows.length - 1];
+    // A committed task already took the place; with no rows there is nothing to go back to.
+    if (typed || !last) {
+      if (typed) event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    place(last.node.line, back ? lastColumn() : (at?.column ?? TITLE));
+  });
+  newTask.addEventListener('blur', addTask);
 
   return {
     update(next) {
@@ -457,7 +619,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     },
     setCursorLine(line) {
       const node = byLine.get(line);
-      if (node) focusCell(node, at?.column ?? TITLE, true);
+      if (node) place(node.line, at?.column ?? TITLE, true);
     },
     destroy() {
       off();

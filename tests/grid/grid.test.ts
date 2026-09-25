@@ -14,6 +14,7 @@ const WBS = -1;
 const DONE = 0;
 const TITLE = 1;
 const EST = 2;
+const OWNER = 3;
 const NOTES = 4;
 
 let buffer: InMemoryBuffer;
@@ -40,7 +41,11 @@ const row = (line: number) => host.querySelector<HTMLTableRowElement>(`tr[data-l
 const cell = (line: number, column: number) => row(line)!.cells[column + 1];
 const input = () => host.querySelector<HTMLInputElement>('tbody input.cell-input')!;
 const click = (el: Element, type = 'click') => el.dispatchEvent(new MouseEvent(type, { bubbles: true }));
-const press = (el: Element, key: string) => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+function press(el: Element, key: string, init: KeyboardEventInit = {}): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+  el.dispatchEvent(event);
+  return event;
+}
 
 /** Double-click a cell, type, and commit with Enter. */
 function edit(line: number, column: number, value: string): void {
@@ -167,7 +172,11 @@ describe('cell editing', () => {
 describe('focus', () => {
   it('stays on the same cell across an edit and an undo', () => {
     open('Auth | 2d\n    Login | 4h\n');
-    edit(2, EST, '5h');
+    // Committing by leaving the cell, which keeps the place (Enter moves down; §4b.4).
+    click(cell(2, EST), 'dblclick');
+    input().value = '5h';
+    input().dispatchEvent(new FocusEvent('blur'));
+    expect(buffer.text()).toBe('Auth | 2d\n    Login | 5h\n');
     expect(document.activeElement).toBe(cell(2, EST));
     buffer.undo();
     expect(buffer.text()).toBe('Auth | 2d\n    Login | 4h\n');
@@ -321,5 +330,224 @@ describe('rows and structure', () => {
     for (const id of ['insert', 'delete', 'indent', 'outdent', 'up', 'down', 'done']) {
       expect(button(id).disabled).toBe(true);
     }
+  });
+});
+
+// The key table, spec §4b.4. One describe per row of the table.
+describe('keys', () => {
+  const select = (line: number) => click(cell(line, WBS));
+  const focus = (line: number, column: number) => click(cell(line, column));
+  const key = (k: string, init: KeyboardEventInit = {}) => press(document.activeElement!, k, init);
+  const plan = 'Auth | 2d\n    Login | 4h\nAdmin | 1d\n';
+  const newTaskInput = () => host.querySelector<HTMLInputElement>('tr.new-task input')!;
+
+  it('Enter moves down a row, reaches the new-task row, and does nothing on a selected row', () => {
+    open(plan);
+    focus(1, EST);
+    key('Enter');
+    expect(document.activeElement).toBe(cell(2, EST));
+    key('Enter');
+    expect(document.activeElement).toBe(cell(3, EST));
+    // Past the last item row.
+    key('Enter');
+    expect(document.activeElement).toBe(newTaskInput());
+    select(1);
+    key('Enter');
+    expect(document.activeElement).toBe(cell(1, WBS));
+  });
+
+  it('Enter in the new-task row commits and creates the line', () => {
+    open(plan);
+    newTaskInput().value = 'Ops';
+    press(newTaskInput(), 'Enter');
+    expect(buffer.text()).toBe('Auth | 2d\n    Login | 4h\nAdmin | 1d\nOps\n');
+  });
+
+  it('comes back off the new-task row with ArrowUp and Shift+Tab', () => {
+    open(plan);
+    focus(3, EST);
+    key('ArrowDown');
+    expect(document.activeElement).toBe(newTaskInput());
+    key('ArrowUp');
+    expect(document.activeElement).toBe(cell(3, EST));
+    key('ArrowDown');
+    key('Tab', { shiftKey: true });
+    // Shift+Tab mirrors the forward wrap: the last cell of the last row.
+    expect(document.activeElement).toBe(cell(3, NOTES));
+  });
+
+  it('commits from the new-task row when leaving it with text typed', () => {
+    open(plan);
+    newTaskInput().focus();
+    newTaskInput().value = 'Ops';
+    key('ArrowUp');
+    expect(buffer.text()).toBe('Auth | 2d\n    Login | 4h\nAdmin | 1d\nOps\n');
+    expect(document.activeElement).toBe(cell(4, TITLE));
+  });
+
+  it('keeps the checkboxes out of the tab order, so Tab does not walk their column', () => {
+    open(plan);
+    const boxes = [...host.querySelectorAll<HTMLInputElement>('td.check input')];
+    expect(boxes).toHaveLength(3);
+    expect(boxes.map((b) => b.tabIndex)).toEqual([-1, -1, -1]);
+  });
+
+  it('Tab walks the cells and wraps across rows; Shift+Tab wraps back', () => {
+    open(plan);
+    focus(1, DONE);
+    key('Tab');
+    expect(document.activeElement).toBe(cell(1, TITLE));
+    focus(1, NOTES); // the last declared column
+    key('Tab');
+    expect(document.activeElement).toBe(cell(2, DONE));
+    key('Tab', { shiftKey: true });
+    expect(document.activeElement).toBe(cell(1, NOTES));
+    // Not bound on a selected row: that is how the keyboard leaves the grid.
+    select(1);
+    expect(key('Tab').defaultPrevented).toBe(false);
+  });
+
+  it('Tab and Insert do not fall through to the browser', () => {
+    open(plan);
+    focus(1, TITLE);
+    expect(key('Tab').defaultPrevented).toBe(true);
+    focus(1, TITLE);
+    expect(key('Insert').defaultPrevented).toBe(true);
+    focus(1, TITLE);
+    expect(key('ArrowRight', { altKey: true, shiftKey: true }).defaultPrevented).toBe(true);
+    focus(1, TITLE);
+    expect(key('ArrowLeft', { altKey: true, shiftKey: true }).defaultPrevented).toBe(true);
+  });
+
+  it('a printable key starts editing with the content replaced; F2 keeps it, caret at the end', () => {
+    open(plan);
+    focus(1, EST);
+    key('5');
+    expect(input().value).toBe('5');
+    press(input(), 'Escape');
+    focus(1, EST);
+    key('F2');
+    expect(input().value).toBe('2d');
+    expect([input().selectionStart, input().selectionEnd]).toEqual([2, 2]);
+  });
+
+  it('Enter and Tab commit an open editor, then move on', () => {
+    open(plan);
+    focus(1, EST);
+    key('3');
+    expect(input().value).toBe('3');
+    input().value = '3d';
+    press(input(), 'Enter');
+    expect(buffer.text()).toBe('Auth | 3d\n    Login | 4h\nAdmin | 1d\n');
+    expect(document.activeElement).toBe(cell(2, EST));
+    key('F2');
+    input().value = '5h';
+    press(input(), 'Tab');
+    expect(buffer.text()).toBe('Auth | 3d\n    Login | 5h\nAdmin | 1d\n');
+    expect(document.activeElement).toBe(cell(2, OWNER));
+  });
+
+  it('Escape cancels an edit and clears a selection', () => {
+    open(plan);
+    focus(1, EST);
+    key('9');
+    press(input(), 'Escape');
+    expect(buffer.text()).toBe(plan);
+    // Auth overrides its child, so the display carries the child sum back.
+    expect(cell(1, EST).textContent).toBe('2d⟨Σ 4h⟩');
+    select(1);
+    key('Escape');
+    expect(host.querySelectorAll('tr.selected')).toHaveLength(0);
+    expect(host.querySelector<HTMLButtonElement>('button[data-action="delete"]')!.disabled).toBe(true);
+  });
+
+  it('Delete clears a cell, and deletes the line of a selected row', () => {
+    open(plan);
+    focus(1, EST);
+    key('Delete');
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\nAdmin | 1d\n');
+    select(1);
+    key('Delete');
+    expect(buffer.text()).toBe('    Login | 4h\nAdmin | 1d\n');
+  });
+
+  it('Insert opens a draft above the row, from a cell or a selected row', () => {
+    open(plan);
+    focus(2, TITLE);
+    key('Insert');
+    const draft = host.querySelector<HTMLInputElement>('tr.draft input')!;
+    expect(document.activeElement).toBe(draft);
+    draft.value = 'Design';
+    press(draft, 'Enter');
+    expect(buffer.text()).toBe('Auth | 2d\n    Design\n    Login | 4h\nAdmin | 1d\n');
+  });
+
+  it('Alt+Shift+Right/Left indent and outdent the row', () => {
+    open(plan);
+    focus(3, TITLE);
+    key('ArrowRight', { altKey: true, shiftKey: true });
+    expect(buffer.text()).toBe('Auth | 2d\n    Login | 4h\n    Admin | 1d\n');
+    key('ArrowLeft', { altKey: true, shiftKey: true });
+    expect(buffer.text()).toBe(plan);
+  });
+
+  it('Alt+Up/Down move the row line', () => {
+    open(plan);
+    select(3);
+    key('ArrowUp', { altKey: true });
+    expect(buffer.text()).toBe('Auth | 2d\nAdmin | 1d\n    Login | 4h\n');
+    key('ArrowDown', { altKey: true });
+    expect(buffer.text()).toBe(plan);
+  });
+
+  it('Space toggles done on the checkbox cell only', () => {
+    open(plan);
+    focus(2, DONE);
+    key(' ');
+    expect(buffer.text()).toBe('Auth | 2d\n    ~Login | 4h\nAdmin | 1d\n');
+    key(' ');
+    expect(buffer.text()).toBe(plan);
+    // On another cell it is an ordinary printable key.
+    focus(2, TITLE);
+    key(' ');
+    expect(input()).not.toBeNull();
+    press(input(), 'Escape');
+  });
+
+  it('Ctrl+Z and Ctrl+Y undo and redo the buffer, but Ctrl+Z in an editor cancels the edit', () => {
+    open(plan);
+    focus(1, EST);
+    key('Delete');
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\nAdmin | 1d\n');
+    key('z', { ctrlKey: true });
+    expect(buffer.text()).toBe(plan);
+    key('y', { ctrlKey: true });
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\nAdmin | 1d\n');
+    key('z', { ctrlKey: true });
+    // Now with an editor open: the edit is cancelled, the buffer is left alone.
+    focus(2, EST);
+    key('8');
+    expect(input().value).toBe('8');
+    press(input(), 'z', { ctrlKey: true });
+    expect(host.querySelector('tbody input.cell-input')).toBeNull();
+    expect(buffer.text()).toBe(plan);
+  });
+
+  it('arrow keys move the focused cell and the selected row', () => {
+    open(plan);
+    focus(1, TITLE);
+    key('ArrowDown');
+    expect(document.activeElement).toBe(cell(2, TITLE));
+    key('ArrowRight');
+    expect(document.activeElement).toBe(cell(2, EST));
+    key('ArrowLeft');
+    key('ArrowLeft');
+    key('ArrowLeft');
+    // Left of the checkbox is the WBS cell, which is the row selector.
+    expect(document.activeElement).toBe(cell(2, WBS));
+    expect(row(2)!.classList.contains('selected')).toBe(true);
+    key('ArrowUp');
+    expect(row(1)!.classList.contains('selected')).toBe(true);
+    expect(row(2)!.classList.contains('selected')).toBe(false);
   });
 });

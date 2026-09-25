@@ -403,6 +403,8 @@ MS Project conventions; where Project has no default, the text editor's binding 
 
 Insert-above is deliberate: inserting directly **below** a parent at the parent's indent would capture the parent's children; inserting above never does.
 
+Arrow keys move between cells within a row as well as between rows; left of the done checkbox is the WBS cell, so ArrowLeft from the first cell selects the row. Tab and Enter are deliberately unbound on a selected row, and that is the keyboard's way out of the grid: select a row, then Tab leaves for the next control on the page. (Cells are not in the tab order, so the grid is entered by clicking. Full `role="grid"` accessibility is deferred — §7.)
+
 An inserted row is a **draft**: it appears in the grid at the right position and indent, and the buffer gets one complete item line when its title is committed. Escape, or committing nothing, discards it and leaves the buffer untouched. Writing a blank line to the buffer first would not do: a line of only spaces is a blank line, not an item, so there would be no item row to type into.
 
 ### 4b.5 Toolbar

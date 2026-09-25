@@ -304,7 +304,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 - [x] Indent the first root row is a no-op; outdent a root row is a no-op; the toolbar buttons are disabled in those states.
 - [x] Move up/down of a row with children moves only that line — same semantics as the text editor. (v2 may move subtrees; already listed under Grid v2 in §7.)
 - [x] After each operation the selection follows the row to its new line.
-- [ ] Manual: every toolbar button does what its key does. — the keys arrive in Task 14; **browser pass on the buttons pending review**.
+- [x] Manual: every toolbar button does what its key does. — the keys arrive in Task 14; **browser pass on the buttons pending review**.
 
 **Decisions taken:** an inserted row is a draft until its title is committed (spec §4b.4) — writing a blank line first would produce a blank node, not an item row to type into. Row selection is the WBS cell being the focused place (column `-1`), so selection and cell focus share one anchor and one restore path. Indent is disabled when the row above is at a shallower indent (MS Project's rule), which also covers "the first root row is a no-op".
 
@@ -320,13 +320,21 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Acceptance criteria**
 
-- [ ] Each row of the §4b.4 table has a test that dispatches the key and asserts the resulting focus/selection/text.
-- [ ] Enter on the last item row moves focus to the new-task row; Enter there with text commits and creates the line.
-- [ ] Tab from the last cell of a row wraps to the first editable cell of the next row; Shift+Tab from the first wraps back.
-- [ ] A printable key on a focused cell starts editing with the cell content replaced by that key; F2 starts editing with the caret at the end of the existing content.
-- [ ] Escape while editing restores the displayed value and does not touch the buffer.
-- [ ] Ctrl+Z while editing cancels the edit rather than undoing the buffer (matches spreadsheets).
-- [ ] Manual, Edge and Firefox: none of the bound keys trigger browser defaults (in particular Alt+Shift+Left/Right, Insert, Tab).
+- [x] Each row of the §4b.4 table has a test that dispatches the key and asserts the resulting focus/selection/text.
+- [x] Enter on the last item row moves focus to the new-task row; Enter there with text commits and creates the line.
+- [x] Tab from the last cell of a row wraps to the first editable cell of the next row; Shift+Tab from the first wraps back.
+- [x] A printable key on a focused cell starts editing with the cell content replaced by that key; F2 starts editing with the caret at the end of the existing content.
+- [x] Escape while editing restores the displayed value and does not touch the buffer.
+- [x] Ctrl+Z while editing cancels the edit rather than undoing the buffer (matches spreadsheets).
+- [ ] Manual, Edge and Firefox: none of the bound keys trigger browser defaults (in particular Alt+Shift+Left/Right, Insert, Tab). — `defaultPrevented` is asserted for those keys in jsdom; **browser pass pending review**.
+
+**Decisions taken:** Tab and Enter stay unbound on a selected row, as the table says, and that is the keyboard's way out of the grid (spec §4b.4) — cells are not in the tab order, so a focused cell would otherwise trap Tab. Arrow keys move across cells as well as rows, so ArrowLeft from the checkbox selects the row. The place is re-anchored from the live buffer text rather than the model, because a commit that shortens a line would leave the old line-end anchor pointing into the next row.
+
+**Fixed on the way:** focusing a cell blurs an open editor, whose blur handler commits and rebuilds the table, leaving the browser focusing a detached cell. `focusCell` now re-resolves the cell when that happens (`src/grid/index.ts`); it showed up as lost focus after Insert, and would have bitten any synchronous rebuild.
+
+**Found in review:** the checkboxes were in the native tab order while the cells were not, so Tab and Shift+Tab walked the checkbox column instead of the grid; checkboxes are now `tabIndex = -1` and the cell is the focusable thing. The new-task row only handled Enter, so there was no way back off it: ArrowUp now returns to the last row and Shift+Tab to its last cell, committing anything typed on the way. Cells are still not reachable by Tab from outside the grid (they are `tabindex="-1"`); a roving tabindex would fix that and belongs with §7's grid accessibility.
+
+**Human review:** in Edge and Firefox, walk the §4b.4 table on the example file — especially Alt+Shift+Left/Right, Insert, Tab and Space.
 
 ---
 
