@@ -1,12 +1,11 @@
 // App shell: buffer -> analyze -> active renderer, with cursor sync both ways,
-// plus open/save of the buffer as a file.
+// plus open/save of the buffer as a file. The shell owns the buffer and hands
+// it to whichever editor is active (spec §3.7).
 
-import { EditorState, Transaction } from '@codemirror/state';
-import type { Text } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+import { CodeMirrorBuffer } from '../buffer';
 import { analyze } from '../core';
 import type { Exporter, Model, Renderer } from '../core';
-import { planEditor, showDiagnostics } from '../editor';
+import { mountTextEditor } from '../editor';
 import { cursorItemFor, itemLines } from './cursor';
 import { createFileStore } from './files';
 import { tsvExporter } from '../exporters/tsv';
@@ -35,17 +34,11 @@ let cursorLine: number | null = null;
 let highlightedLine: number | null = null;
 let dirty = true;
 let timer: ReturnType<typeof setTimeout> | undefined;
-// Set while a cursor move requested by the preview is dispatched, so it does not scroll the preview.
-let fromPreview = false;
+// True when the editor itself moved the cursor, so the preview scrolls to follow it.
 let editorMovedCursor = false;
 
 function setCursorLine(line: number): void {
-  const { doc } = view.state;
-  if (line > doc.lines) return;
-  fromPreview = true;
-  view.dispatch({ selection: { anchor: doc.line(line).from }, scrollIntoView: true });
-  fromPreview = false;
-  view.focus();
+  editor.setCursorLine(line);
 }
 
 /** Why a renderer cannot show this document; empty when it can. */
@@ -102,10 +95,10 @@ function renderExporters(): void {
 
 function render(): void {
   if (dirty) {
-    model = analyze(view.state.doc.toString());
+    model = analyze(buffer.text());
     lines = itemLines(model);
     dirty = false;
-    showDiagnostics(view, model.diagnostics);
+    editor.showDiagnostics(model.diagnostics);
   }
   if (unmet(active, model).length > 0) {
     // The document changed under the active renderer; fall back to one that can show it.
@@ -130,11 +123,11 @@ function schedule(): void {
   timer = setTimeout(render, DEBOUNCE_MS);
 }
 
-// The buffer as last loaded or saved; the document is unsaved when it differs.
-let savedDoc: Text;
+// The text as last loaded or saved; the document is unsaved when it differs.
+let savedText: string;
 
 function unsaved(): boolean {
-  return !view.state.doc.eq(savedDoc);
+  return buffer.text() !== savedText;
 }
 
 function updateTitle(): void {
@@ -158,55 +151,47 @@ async function open(): Promise<void> {
   }
   if (!file) return;
   // Tabs become 4 spaces on load (spec §2.1); the buffer never holds tabs.
-  view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: file.text.replace(/\t/g, '    ') },
-    selection: { anchor: 0 },
-    annotations: Transaction.addToHistory.of(false),
-  });
-  savedDoc = view.state.doc;
+  buffer.apply([{ from: 0, to: buffer.text().length, insert: file.text.replace(/\t/g, '    ') }], 'load');
+  editor.setCursorLine(1);
+  savedText = buffer.text();
   updateTitle();
   status.textContent = `Opened ${file.name}`;
 }
 
 async function save(as = false): Promise<void> {
-  const doc = view.state.doc;
+  const text = buffer.text();
   let ok: boolean;
   try {
-    ok = as ? await files.saveAs(doc.toString()) : await files.save(doc.toString());
+    ok = as ? await files.saveAs(text) : await files.save(text);
   } catch (e) {
     report('save', e);
     return;
   }
   if (!ok) return;
-  savedDoc = doc;
+  savedText = text;
   updateTitle();
   status.textContent = files.inPlace
     ? `Saved ${files.name}`
     : `Downloaded ${files.name ?? 'untitled.plan'}. This browser cannot write files in place; open the downloaded copy to continue.`;
 }
 
-const view = new EditorView({
-  state: EditorState.create({
-    doc: example,
-    extensions: [
-      keymap.of([{ key: 'Mod-s', run: () => (void save(), true) }]),
-      planEditor(),
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) updateTitle();
-        const line = update.state.doc.lineAt(update.state.selection.main.head).number;
-        const cursorMoved = line !== cursorLine;
-        cursorLine = line;
-        if (update.docChanged) dirty = true;
-        if (cursorMoved && !fromPreview) editorMovedCursor = true;
-        if (update.docChanged || cursorMoved) schedule();
-      }),
-    ],
-  }),
-  parent: document.getElementById('editor')!,
+const buffer = new CodeMirrorBuffer(example);
+const editor = mountTextEditor(buffer, document.getElementById('editor')!, {
+  onCursorLine(line, fromApi) {
+    cursorLine = line;
+    if (!fromApi) editorMovedCursor = true;
+    schedule();
+  },
+  onSave: () => void save(),
 });
 
-savedDoc = view.state.doc;
-cursorLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+buffer.onChange(() => {
+  dirty = true;
+  updateTitle();
+  schedule();
+});
+
+savedText = buffer.text();
 render();
 renderExporters();
 updateTitle();
