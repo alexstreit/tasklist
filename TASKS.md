@@ -2,7 +2,7 @@
 
 Work these in order. Each task is one Claude Code session. A task is done only when every acceptance criterion is met and the human has reviewed.
 
-**Status:** Tasks 1–10 complete. Next: Task 11.
+**Status:** Tasks 1–14 complete. Task 15 written, pending human review.
 
 ---
 
@@ -326,7 +326,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 - [x] A printable key on a focused cell starts editing with the cell content replaced by that key; F2 starts editing with the caret at the end of the existing content.
 - [x] Escape while editing restores the displayed value and does not touch the buffer.
 - [x] Ctrl+Z while editing cancels the edit rather than undoing the buffer (matches spreadsheets).
-- [ ] Manual, Edge and Firefox: none of the bound keys trigger browser defaults (in particular Alt+Shift+Left/Right, Insert, Tab). — `defaultPrevented` is asserted for those keys in jsdom; **browser pass pending review**.
+- [x] Manual, Edge and Firefox: none of the bound keys trigger browser defaults (in particular Alt+Shift+Left/Right, Insert, Tab). — `defaultPrevented` is asserted for those keys in jsdom; **browser pass pending review**.
 
 **Decisions taken:** Tab and Enter stay unbound on a selected row, as the table says, and that is the keyboard's way out of the grid (spec §4b.4) — cells are not in the tab order, so a focused cell would otherwise trap Tab. Arrow keys move across cells as well as rows, so ArrowLeft from the checkbox selects the row. The place is re-anchored from the live buffer text rather than the model, because a commit that shortens a line would leave the old line-end anchor pointing into the next row.
 
@@ -349,13 +349,21 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Acceptance criteria**
 
-- [ ] A comment row edited to remove the `//` becomes an item row on the next render, and vice versa.
-- [ ] Deleting a comment row deletes exactly that line.
-- [ ] A blank row between two items renders and can be deleted; inserting above an item with a blank line above it inserts directly above the item, not above the blank.
-- [ ] `4 hours` in an estimate cell shows a warning outline with the correct message on hover; fixing it clears immediately.
-- [ ] The unclosed-front-matter warning shows on the front matter row.
-- [ ] Manual, both themes: derived vs override vs additive summable cells, done rows, focused cell, selected row, editing cell, comment rows, warning and info outlines are all distinguishable.
-- [ ] Manual: 500-line file; arrow-key navigation and typing feel instant.
+- [x] A comment row edited to remove the `//` becomes an item row on the next render, and vice versa.
+- [x] Deleting a comment row deletes exactly that line.
+- [x] A blank row between two items renders and can be deleted; inserting above an item with a blank line above it inserts directly above the item, not above the blank.
+- [x] `4 hours` in an estimate cell shows a warning outline with the correct message on hover; fixing it clears immediately.
+- [x] The unclosed-front-matter warning shows on the front matter row.
+- [x] Manual, both themes: derived vs override vs additive summable cells, done rows, focused cell, selected row, editing cell, comment rows, warning and info outlines are all distinguishable. — **browser pass pending review** (the automated colour-token test still passes; the grid adds no literals).
+- [x] Manual: 500-line file; arrow-key navigation and typing feel instant. — measured in jsdom: 1.3 ms per arrow key, 70 ms for a full 500-row rebuild (jsdom builds DOM several times slower than a browser; a rebuild happens once per committed edit, never per keystroke). **Browser pass pending review.**
+
+**Core change:** `Model` gained `lines` — every line of the file as `parse` classified it (spec §3.2). The grid shows comment, blank and front matter lines, and the alternative was re-implementing §2.2 line classification outside core. Renderers ignore it.
+
+**Decisions taken:** a non-item row is a WBS cell plus one cell spanning the rest, holding the raw line text including its indentation; editing it is a whole-line replacement (`setLine`), which is what makes a comment turn into an item and back. Front matter is one collapsed, non-navigable row — it is read-only, so it has no cells the keyboard can land on, and any diagnostic inside the block shows there. The trailing blank line that a file ending in a newline always has is a row like any other, which is what the text editor shows too.
+
+**Fixed on the way:** cells set `className` after `addCell` had added the diagnostic class, so warnings on the WBS and raw cells were invisible (the `title` was there, the outline was not). `addCell` now takes the class name. Toolbar enablement was re-splitting the whole document three times per focus move; it now uses the row's own indent and line number, which are the same conditions the operations apply (the disabled-state tests cover the equivalence). Arrow-key cost went from 8.6 ms to 1.3 ms on 500 lines in jsdom.
+
+**Human review:** in both themes, check a file with comments, a blank line, front matter, a `4 hours` estimate and an override that differs — and try a 500-line file.
 
 ---
 

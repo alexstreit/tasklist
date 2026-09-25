@@ -223,6 +223,8 @@ Each item node carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`). Only item 
 
 `compute(tree, columns) → Model`. Pure function. Walks the tree bottom-up and attaches `effective`, `childSum`, `mode`, `hasValue`, `childrenHaveValue`, `done`, `doneSum` and diagnostics to each node, plus document totals. No renderer or exporter performs arithmetic.
 
+The model also carries `lines`: every line of the file in order, exactly as `parse` classified it. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
+
 `analyze(text) → Model` composes `parse`, `parseColumns` and `compute` and is the single entry point the app shell and any tooling call. Nothing outside `src/core/` imports `parse` or `compute` directly (lint-enforced).
 
 `src/core/` has no imports outside itself and the standard library (lint-enforced).
@@ -363,7 +365,7 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 ### 4b.1 Rows
 
 - One row per **item** line. Columns, left to right: WBS (outline number, read-only, doubles as the row selector), done (checkbox), title, then each declared column in order.
-- Comment and blank lines render as greyed full-width rows showing the raw line text. They are editable as raw text and can be selected, deleted and moved like any row. They have no WBS number.
+- Comment, blank and reserved lines render as greyed rows: a WBS cell with no number, then one cell spanning the remaining columns and holding the raw line text, indentation included. They are editable as raw text — editing one into an item line, or an item line into a comment, is an ordinary text edit and the row changes kind on the next render — and they can be selected, deleted and moved like any row.
 - Front matter renders as a single collapsed greyed row at the top, read-only.
 - A read-only **total** row at the bottom shows document `effective` and `doneSum` per summable column.
 - Below the total row is one blank **new task** row. Typing into it inserts a new item line at the end of the document at the indent of the last item line (or indent 0 if none).
@@ -375,7 +377,7 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 - **Summable cells** display the formatted `effective` (empty when `hasValue` is false; muted when `mode` is `derived`). Editing shows the **raw field text** from the file, spreadsheet-formula style. Committing a non-empty value on a parent creates an override; committing an empty value on a parent restores derived. An additive value (`+…`) is shown with a marker and is read-only.
 - **Text cells** display and edit the raw field text.
 - Committing to a column whose field does not yet exist on the line pads the line with empty fields so the value lands in the right position. Trailing empty fields created this way are trimmed when the committed value is itself empty.
-- A cell with a diagnostic has a coloured outline (warning or info) and shows the message on hover. A span-less diagnostic is shown on the row's WBS cell.
+- A cell with a diagnostic has a coloured outline (warning or info) and shows the message on hover. A diagnostic whose span falls in a field marks that field's cell; one with no span, or whose span reaches past the declared columns, marks the row's WBS cell. Anything inside the front matter marks its collapsed row.
 
 ### 4b.3 Selection and focus
 

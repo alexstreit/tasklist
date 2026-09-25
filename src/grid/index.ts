@@ -1,13 +1,12 @@
 // Grid editor. A task sheet over the shared buffer: every change it makes is
-// a text edit like any other. Spec §4b.1–4b.5. Items only; comment, blank and
-// front matter rows come in Task 15.
+// a text edit like any other. Spec §4b.
 
 import { formatDuration } from '../core';
-import type { Cell, Column, Model, ModelNode } from '../core';
+import type { Cell, Column, Diagnostic, Model, ModelNode, Node, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
 import { deleteLines, indent, insertLineAbove, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
-import { appendItem, itemLine, setDone, setField, setTitle } from './edits';
+import { appendItem, itemLine, setDone, setField, setLine, setTitle } from './edits';
 import './grid.css';
 
 /** Cell columns: the WBS cell (which selects the row), the done checkbox, the title, then the declared columns. */
@@ -15,6 +14,11 @@ const WBS = -1;
 const DONE = 0;
 const TITLE = 1;
 const DECLARED = 2;
+
+/** An item line, or any other line shown as one editable full-width cell. */
+type Row =
+  | { kind: 'item'; line: number; span: Span; indent: number; node: ModelNode; depth: number }
+  | { kind: 'line'; line: number; span: Span; indent: number; text: string; blank: boolean };
 
 export interface GridHooks {
   /** `fromApi` is true when the move came from setCursorLine rather than the user. */
@@ -57,6 +61,12 @@ function lineEndOf(text: string, line: number): number {
   return end === -1 ? text.length : end;
 }
 
+function indentOf(text: string): number {
+  return text.length - text.trimStart().length;
+}
+
+const within = (outer: Span, inner: Span): boolean => inner.from >= outer.from && inner.to <= outer.to;
+
 export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHooks): GridEditor {
   const bar = document.createElement('div');
   bar.className = 'sheet-toolbar';
@@ -65,8 +75,12 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   parent.replaceChildren(bar, table);
 
   let model: Model | null = null;
-  let rows: { node: ModelNode; depth: number }[] = [];
-  const byLine = new Map<number, ModelNode>();
+  let rows: Row[] = [];
+  const byLine = new Map<number, Row>();
+  // The front matter block, shown collapsed and read-only above the rows.
+  let frontMatter: { span: Span; text: string; diagnostic?: Diagnostic } | null = null;
+  // Diagnostics by `line:column`; spec §4b.2.
+  let marks = new Map<string, Diagnostic>();
   // Where the grid is: a cell of a row, or its WBS cell, which is what row
   // selection is. Anchored to the end of the line so that edits and inserted
   // lines above it carry the place along (spec §4b.3).
@@ -75,6 +89,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   let editing: { line: number; column: number } | null = null;
   // The cell that is in the page's tab order; every other cell is -1.
   let tabStop: HTMLTableCellElement | null = null;
+  let selectedRow: HTMLTableRowElement | null = null;
   // A row being typed into that is not in the buffer yet: the insert-above
   // row and the new-task row. Nothing is written until a title is committed.
   let draft: { anchor: number; indent: number } | null = null;
@@ -99,7 +114,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
   function cellFor(line: number, column: number): HTMLTableCellElement | null {
     const row = table.querySelector<HTMLTableRowElement>(`tr[data-line="${line}"]`);
-    return row?.cells[column + 1] ?? null;
+    return row?.querySelector<HTMLTableCellElement>(`td[data-column="${column}"]`) ?? null;
   }
 
   /**
@@ -114,22 +129,34 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   }
 
   /** The row the toolbar and the structural keys act on. */
-  function target(): ModelNode | null {
+  function target(): Row | null {
     return at ? (byLine.get(lineAt(buffer.text(), at.anchor)) ?? null) : null;
   }
 
-  function range(node: ModelNode): LineRange {
-    return { fromLine: node.line, toLine: node.line };
+  function range(row: Row): LineRange {
+    return { fromLine: row.line, toLine: row.line };
   }
 
   function apply(edits: readonly TextEdit[]): void {
     if (edits.length > 0) buffer.apply(edits, 'grid');
   }
 
+  /** The cells a row offers, left to right. A non-item line has only its raw cell. */
+  function columnsOf(row: Row): number[] {
+    if (row.kind === 'line') return [WBS, TITLE];
+    return [WBS, DONE, TITLE, ...(model?.columns ?? []).map((_, i) => DECLARED + i)];
+  }
+
+  /** The column to land on when arriving at a row that may not have the one we left. */
+  function nearest(row: Row, column: number): number {
+    return columnsOf(row).includes(column) ? column : TITLE;
+  }
+
   /** The text a cell edits, or null when the cell is not text-editable. */
-  function rawOf(node: ModelNode, column: number): string | null {
-    if (column === TITLE) return node.title;
-    const cell = node.cells[column - DECLARED] as Cell | undefined;
+  function rawOf(row: Row, column: number): string | null {
+    if (row.kind === 'line') return column === TITLE ? row.text : null;
+    if (column === TITLE) return row.node.title;
+    const cell = row.node.cells[column - DECLARED] as Cell | undefined;
     if (!cell) return null;
     if (cell.kind === 'text') return cell.value;
     // An additive value rolls its children in; editing it in place would be a lie.
@@ -155,10 +182,17 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     else if (cell.childrenHaveValue) td.append(muted(`⟨Σ ${format(column, cell.childSum)}⟩`));
   }
 
-  function addCell(row: HTMLTableRowElement, column: number): HTMLTableCellElement {
+  /** `className` is passed in rather than set by the caller, so it cannot wipe the diagnostic class. */
+  function addCell(row: HTMLTableRowElement, line: number, column: number, className = ''): HTMLTableCellElement {
     const td = row.insertCell();
     td.dataset.column = String(column);
     td.tabIndex = -1;
+    td.className = className;
+    const diagnostic = marks.get(`${line}:${column}`);
+    if (diagnostic) {
+      td.classList.add(diagnostic.severity);
+      td.title = diagnostic.message;
+    }
     return td;
   }
 
@@ -172,6 +206,45 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     title.style.paddingLeft = `${0.5 + (draft ? draft.indent / 4 : 0) * 1.25}em`;
     title.append(draftInput);
     columns.forEach(() => row.insertCell());
+  }
+
+  function addItemRow(body: HTMLTableSectionElement, row: Row & { kind: 'item' }, columns: Column[]): void {
+    const { node } = row;
+    const tr = body.insertRow();
+    tr.className = 'item';
+    tr.dataset.line = String(node.line);
+    tr.classList.toggle('done', node.done);
+
+    addCell(tr, node.line, WBS, 'wbs').textContent = node.outlineNumber;
+
+    const check = addCell(tr, node.line, DONE, 'check');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = node.done;
+    // The cell is the focusable thing (Space toggles it); a tabbable checkbox
+    // would make Tab walk the checkbox column instead of the grid.
+    box.tabIndex = -1;
+    // Done through an ancestor: shown, but only the ancestor's marker can clear it.
+    box.disabled = node.done && !node.source.done;
+    box.addEventListener('change', () => apply(setDone(buffer.text(), node, box.checked)));
+    check.append(box);
+
+    const title = addCell(tr, node.line, TITLE, 'title');
+    title.textContent = node.title;
+    title.style.paddingLeft = `${0.5 + row.depth * 1.25}em`;
+
+    node.cells.forEach((cell, i) => fill(addCell(tr, node.line, DECLARED + i), columns[i], cell));
+  }
+
+  /** A comment, blank or reserved line: one full-width cell holding the raw text. */
+  function addLineRow(body: HTMLTableSectionElement, row: Row & { kind: 'line' }, columns: Column[]): void {
+    const tr = body.insertRow();
+    tr.dataset.line = String(row.line);
+    tr.className = row.blank ? 'line blank' : 'line';
+    addCell(tr, row.line, WBS, 'wbs');
+    const raw = addCell(tr, row.line, TITLE, 'raw');
+    raw.colSpan = 2 + columns.length;
+    raw.textContent = row.text;
   }
 
   function build(): void {
@@ -188,41 +261,31 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     }
 
     const body = table.createTBody();
-    byLine.clear();
-    for (const { node, depth } of rows) {
-      if (node.line === draftLine) addDraftRow(body, columns);
-      byLine.set(node.line, node);
-      const row = body.insertRow();
-      row.dataset.line = String(node.line);
-      row.classList.toggle('done', node.done);
-
-      const wbs = addCell(row, WBS);
-      wbs.className = 'wbs';
-      wbs.textContent = node.outlineNumber;
-
-      const check = addCell(row, DONE);
-      check.className = 'check';
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = node.done;
-      // The cell is the focusable thing (Space toggles it); a tabbable checkbox
-      // would make Tab walk the checkbox column instead of the grid.
-      box.tabIndex = -1;
-      // Done through an ancestor: shown, but only the ancestor's marker can clear it.
-      box.disabled = node.done && !node.source.done;
-      box.addEventListener('change', () => apply(setDone(buffer.text(), node, box.checked)));
-      check.append(box);
-
-      const title = addCell(row, TITLE);
-      title.className = 'title';
-      title.textContent = node.title;
-      title.style.paddingLeft = `${0.5 + depth * 1.25}em`;
-
-      node.cells.forEach((cell, i) => fill(addCell(row, DECLARED + i), columns[i], cell));
+    if (frontMatter) {
+      const tr = body.insertRow();
+      tr.className = 'front-matter';
+      tr.insertCell();
+      const cell = tr.insertCell();
+      cell.className = 'raw';
+      cell.colSpan = 2 + columns.length;
+      cell.textContent = frontMatter.text;
+      if (frontMatter.diagnostic) {
+        cell.classList.add(frontMatter.diagnostic.severity);
+        cell.title = frontMatter.diagnostic.message;
+      }
     }
-    // The line the draft was anchored to is no longer an item row (an undo,
-    // say). Keep the draft on screen rather than dropping what was typed.
-    if (draftLine !== null && !rows.some(({ node }) => node.line === draftLine)) addDraftRow(body, columns);
+
+    byLine.clear();
+    selectedRow = null;
+    for (const row of rows) {
+      if (row.line === draftLine) addDraftRow(body, columns);
+      byLine.set(row.line, row);
+      if (row.kind === 'item') addItemRow(body, row, columns);
+      else addLineRow(body, row, columns);
+    }
+    // The line the draft was anchored to is no longer a row (an undo, say).
+    // Keep the draft on screen rather than dropping what was typed.
+    if (draftLine !== null && !byLine.has(draftLine)) addDraftRow(body, columns);
 
     const foot = table.createTFoot();
     const total = foot.insertRow();
@@ -253,12 +316,15 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    * row's WBS cell, which is also its row selector.
    */
   function markPlace(): void {
-    const text = buffer.text();
-    const line = at ? lineAt(text, at.anchor) : null;
-    const selected = at?.column === WBS && line !== null ? String(line) : null;
-    for (const row of table.tBodies[0]?.rows ?? []) row.classList.toggle('selected', row.dataset.line === selected);
+    const line = at ? lineAt(buffer.text(), at.anchor) : null;
+    const row = at?.column === WBS && line !== null ? cellFor(line, WBS)?.parentElement : null;
+    if (row !== selectedRow) {
+      selectedRow?.classList.remove('selected');
+      selectedRow = (row as HTMLTableRowElement | null) ?? null;
+      selectedRow?.classList.add('selected');
+    }
 
-    const stop = line === null ? cellFor(rows[0]?.node.line ?? 0, WBS) : cellFor(line, at?.column ?? WBS);
+    const stop = line === null ? cellFor(rows[0]?.line ?? 0, WBS) : cellFor(line, at?.column ?? WBS);
     if (stop === tabStop) return;
     if (tabStop?.isConnected) tabStop.tabIndex = -1;
     tabStop = stop;
@@ -287,64 +353,55 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   }
 
   function rowIndex(line: number): number {
-    return rows.findIndex((row) => row.node.line === line);
+    return rows.findIndex((row) => row.line === line);
   }
 
-  function lastColumn(): number {
-    return TITLE + (model?.columns.length ?? 0);
+  function lastColumn(row: Row): number {
+    const columns = columnsOf(row);
+    return columns[columns.length - 1];
   }
 
   /** Move the place `delta` rows, or to the new-task row when it runs off the end. */
   function step(line: number, delta: number, column: number): void {
     const next = rows[rowIndex(line) + delta];
-    if (next) place(next.node.line, column);
+    if (next) place(next.line, nearest(next, column));
     else if (delta > 0) newTask.focus();
   }
 
   /** The next or previous editable cell, wrapping across rows. */
-  function tab(line: number, column: number, back: boolean): void {
-    const last = lastColumn();
-    if (back ? column > DONE : column < last) {
-      place(line, column + (back ? -1 : 1));
+  function tab(row: Row, column: number, back: boolean): void {
+    const columns = columnsOf(row).filter((c) => c !== WBS);
+    const i = columns.indexOf(column);
+    const next = columns[i + (back ? -1 : 1)];
+    if (next !== undefined) {
+      place(row.line, next);
       return;
     }
-    const next = rows[rowIndex(line) + (back ? -1 : 1)];
-    if (next) place(next.node.line, back ? last : DONE);
+    const sibling = rows[rowIndex(row.line) + (back ? -1 : 1)];
+    if (sibling) place(sibling.line, back ? lastColumn(sibling) : columnsOf(sibling)[1]);
     else if (!back) newTask.focus();
   }
 
-  /** Put the place back where it was, following the line if it moved. */
-  function restore(): void {
-    if (draft) {
-      draftInput.focus();
-      updateToolbar();
-      return;
-    }
-    if (!at) return;
-    const line = lineAt(buffer.text(), at.anchor);
-    // A deleted row hands the place to whatever took its line, or to the row above.
-    const node = byLine.get(line) ?? [...rows].reverse().find(({ node: n }) => n.line <= line)?.node ?? rows[0]?.node;
-    if (!node) return;
-    at = { anchor: node.span.to, column: at.column };
-    markPlace();
-    if (held) focusCell(node.line, at.column);
-    updateToolbar();
-  }
-
-  function endEdit(node: ModelNode, column: number): void {
+  function endEdit(row: Row, column: number): void {
     editing = null;
-    const td = cellFor(node.line, column);
+    const td = cellFor(row.line, column);
     if (!td) return;
     // Shows the model as it stands; the rebuild after the edit corrects it.
-    if (column === TITLE) td.textContent = node.title;
-    else if (model) fill(td, model.columns[column - DECLARED], node.cells[column - DECLARED]);
+    if (row.kind === 'line') td.textContent = row.text;
+    else if (column === TITLE) td.textContent = row.node.title;
+    else if (model) fill(td, model.columns[column - DECLARED], row.node.cells[column - DECLARED]);
     td.focus();
   }
 
-  function commit(node: ModelNode, column: number, value: string): void {
+  function commit(row: Row, column: number, value: string): void {
     const text = buffer.text();
-    const edits = column === TITLE ? setTitle(text, node, value) : setField(text, node, column - DECLARED, value);
-    endEdit(node, column);
+    const edits =
+      row.kind === 'line'
+        ? setLine(text, row.span, value)
+        : column === TITLE
+          ? setTitle(text, row.node, value)
+          : setField(text, row.node, column - DECLARED, value);
+    endEdit(row, column);
     apply(edits);
   }
 
@@ -353,13 +410,13 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    * without a key (a double-click: select the content), '' for F2 (keep the
    * content, caret at the end), or the printable key that started it.
    */
-  function beginEdit(node: ModelNode, column: number, typed: string | null = null): void {
-    const raw = rawOf(node, column);
+  function beginEdit(row: Row, column: number, typed: string | null = null): void {
+    const raw = rawOf(row, column);
     if (raw === null) return;
-    place(node.line, column);
-    const td = cellFor(node.line, column);
+    place(row.line, column);
+    const td = cellFor(row.line, column);
     if (!td) return;
-    editing = { line: node.line, column };
+    editing = { line: row.line, column };
     const input = document.createElement('input');
     input.className = 'cell-input';
     // Spreadsheet rule: editing shows the text as written, not the computed value.
@@ -371,30 +428,30 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        commit(node, column, input.value);
-        step(node.line, 1, column);
+        commit(row, column, input.value);
+        step(row.line, 1, column);
       } else if (event.key === 'Tab') {
         event.preventDefault();
-        commit(node, column, input.value);
-        tab(node.line, column, event.shiftKey);
+        commit(row, column, input.value);
+        tab(row, column, event.shiftKey);
       } else if (event.key === 'Escape') {
         event.preventDefault();
-        endEdit(node, column);
+        endEdit(row, column);
       } else if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
         // Spreadsheet rule again: this cancels the edit, it does not undo the buffer.
         event.preventDefault();
-        endEdit(node, column);
+        endEdit(row, column);
       }
     });
     input.addEventListener('blur', () => {
-      if (editing?.line === node.line && editing.column === column) commit(node, column, input.value);
+      if (editing?.line === row.line && editing.column === column) commit(row, column, input.value);
     });
   }
 
   // Structural operations. Spec §4b.4; the edits themselves are src/editing's.
 
-  function startDraft(node: ModelNode): void {
-    draft = { anchor: node.span.from, indent: node.indent };
+  function startDraft(row: Row): void {
+    draft = { anchor: row.span.from, indent: row.indent };
     draftInput.value = '';
     build();
     draftInput.focus();
@@ -423,7 +480,9 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function addTask(): void {
     const value = newTask.value;
     newTask.value = '';
-    const edits = appendItem(buffer.text(), value, rows.length > 0 ? rows[rows.length - 1].node.indent : 0);
+    // At the indent of the last item line, not of a trailing comment or blank (§4b.1).
+    const last = [...rows].reverse().find((row) => row.kind === 'item');
+    const edits = appendItem(buffer.text(), value, last?.indent ?? 0);
     if (edits.length === 0) return;
     buffer.apply(edits, 'grid');
     at = { anchor: edits[0].from + edits[0].insert.length - 1, column: TITLE };
@@ -431,60 +490,80 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     restore();
   }
 
+  /** Put the place back where it was, following the line if it moved. */
+  function restore(): void {
+    if (draft) {
+      draftInput.focus();
+      updateToolbar();
+      return;
+    }
+    if (!at) return;
+    const line = lineAt(buffer.text(), at.anchor);
+    // A deleted row hands the place to whatever took its line, or to the row above.
+    const row = byLine.get(line) ?? [...rows].reverse().find((r) => r.line <= line) ?? rows[0];
+    if (!row) return;
+    at = { anchor: lineEndOf(buffer.text(), row.line), column: nearest(row, at.column) };
+    markPlace();
+    if (held) focusCell(row.line, at.column);
+    updateToolbar();
+  }
+
   /**
    * The toolbar (§4b.5). A button is enabled only when its operation would
    * change something, which for most of them is "the edit is not empty".
    */
-  const actions: { id: string; label: string; run(node: ModelNode): void; enabled(node: ModelNode): boolean }[] = [
+  const actions: { id: string; label: string; run(row: Row): void; enabled(row: Row): boolean }[] = [
     { id: 'insert', label: 'Insert row', run: startDraft, enabled: () => true },
     {
       id: 'delete',
       label: 'Delete row',
-      run: (node) => apply(deleteLines(buffer.text(), range(node))),
+      run: (row) => apply(deleteLines(buffer.text(), range(row))),
       enabled: () => true,
     },
     {
       id: 'indent',
       label: 'Indent',
-      run: (node) => apply(indent(buffer.text(), range(node))),
+      run: (row) => apply(indent(buffer.text(), range(row))),
       // Only a row that has a row above it at the same or greater indent can move deeper.
-      enabled: (node) => {
-        const previous = rows[rows.findIndex((r) => r.node.line === node.line) - 1];
-        return previous !== undefined && previous.node.indent >= node.indent;
+      enabled: (row) => {
+        const previous = rows[rowIndex(row.line) - 1];
+        return previous !== undefined && previous.indent >= row.indent;
       },
     },
     {
       id: 'outdent',
       label: 'Outdent',
-      run: (node) => apply(outdent(buffer.text(), range(node))),
-      enabled: (node) => outdent(buffer.text(), range(node)).length > 0,
+      run: (row) => apply(outdent(buffer.text(), range(row))),
+      // The same conditions the operations use, without re-reading the document
+      // on every focus move: there is indentation to remove, a line above, a line below.
+      enabled: (row) => row.indent > 0,
     },
     {
       id: 'up',
       label: 'Move up',
-      run: (node) => apply(moveUp(buffer.text(), range(node))),
-      enabled: (node) => moveUp(buffer.text(), range(node)).length > 0,
+      run: (row) => apply(moveUp(buffer.text(), range(row))),
+      enabled: (row) => row.line > 1,
     },
     {
       id: 'down',
       label: 'Move down',
-      run: (node) => apply(moveDown(buffer.text(), range(node))),
-      enabled: (node) => moveDown(buffer.text(), range(node)).length > 0,
+      run: (row) => apply(moveDown(buffer.text(), range(row))),
+      enabled: (row) => row.line < (model?.lines.length ?? 0),
     },
     {
       id: 'done',
       label: 'Toggle done',
-      run: (node) => apply(setDone(buffer.text(), node, !node.done)),
+      run: (row) => row.kind === 'item' && apply(setDone(buffer.text(), row.node, !row.node.done)),
       // A row done through an ancestor has no marker of its own to clear.
-      enabled: (node) => !node.done || node.source.done,
+      enabled: (row) => row.kind === 'item' && (!row.node.done || row.node.source.done),
     },
   ];
 
   /** Run a structural operation on the current row, if it applies. */
   function act(id: string): void {
     const action = actions.find((a) => a.id === id);
-    const node = target();
-    if (action && node && action.enabled(node)) action.run(node);
+    const row = target();
+    if (action && row && action.enabled(row)) action.run(row);
   }
 
   const buttons = actions.map((action) => {
@@ -498,36 +577,29 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   });
 
   function updateToolbar(): void {
-    const node = draft ? null : target();
-    buttons.forEach((button, i) => (button.disabled = node === null || !actions[i].enabled(node)));
+    const row = draft ? null : target();
+    buttons.forEach((button, i) => (button.disabled = row === null || !actions[i].enabled(row)));
   }
 
-  function cellAt(event: Event): { node: ModelNode; column: number } | null {
+  function cellAt(event: Event): { row: Row; column: number } | null {
     const td = (event.target as HTMLElement).closest('td');
     const line = Number(td?.parentElement && (td.parentElement as HTMLTableRowElement).dataset.line);
-    const node = byLine.get(line);
-    if (!td || !node || td.dataset.column === undefined) return null;
-    return { node, column: Number(td.dataset.column) };
+    const row = byLine.get(line);
+    if (!td || !row || td.dataset.column === undefined) return null;
+    return { row, column: Number(td.dataset.column) };
   }
 
-  table.addEventListener('click', (event) => {
-    const hit = cellAt(event);
-    if (hit && !editing) place(hit.node.line, hit.column);
-  });
-  table.addEventListener('dblclick', (event) => {
-    const hit = cellAt(event);
-    if (hit && hit.column !== DONE && hit.column !== WBS) beginEdit(hit.node, hit.column);
-  });
   // The key table, spec §4b.4. The editing-cell column lives in beginEdit;
   // this handles a focused cell and a selected row, which differ only where
   // the table says they do.
   table.addEventListener('keydown', (event) => {
     // Cell editors, the draft and new-task rows and the checkbox take their own keys.
     if ((event.target as HTMLElement).tagName === 'INPUT') return;
-    const node = target();
-    if (!node || !at) return;
+    const row = target();
+    if (!row || !at) return;
     const column = at.column;
     const selected = column === WBS;
+    const columns = columnsOf(row);
     const handled = (): void => event.preventDefault();
 
     if (event.ctrlKey || event.metaKey) {
@@ -545,51 +617,59 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
     switch (event.key) {
       case 'ArrowUp':
-        return handled(), step(node.line, -1, column);
+        return handled(), step(row.line, -1, column);
       case 'ArrowDown':
-        return handled(), step(node.line, 1, column);
+        return handled(), step(row.line, 1, column);
       case 'ArrowLeft':
-        return handled(), place(node.line, Math.max(WBS, column - 1));
+        return handled(), place(row.line, columns[Math.max(0, columns.indexOf(column) - 1)]);
       case 'ArrowRight':
-        return handled(), place(node.line, Math.min(lastColumn(), column + 1));
+        return handled(), place(row.line, columns[Math.min(columns.length - 1, columns.indexOf(column) + 1)]);
       case 'Enter':
         // Unbound on a selected row (§4b.4).
         if (selected) return;
-        return handled(), step(node.line, 1, column);
+        return handled(), step(row.line, 1, column);
       case 'Tab':
         // Unbound on a selected row, which is how the keyboard leaves the grid.
         if (selected) return;
-        return handled(), tab(node.line, column, event.shiftKey);
+        return handled(), tab(row, column, event.shiftKey);
       case 'Escape':
         if (!selected) return;
         return handled(), clearPlace();
       case 'Delete':
         if (selected) return handled(), act('delete');
-        if (rawOf(node, column) === null) return;
-        return handled(), commit(node, column, '');
+        if (rawOf(row, column) === null) return;
+        return handled(), commit(row, column, '');
       case 'Insert':
         return handled(), act('insert');
       case 'F2':
-        return handled(), beginEdit(node, column, '');
+        return handled(), beginEdit(row, column, '');
       case ' ':
         if (column !== DONE) break;
         return handled(), act('done');
     }
     // Any other printable key starts an edit, replacing the cell's content.
-    if (event.key.length === 1) handled(), beginEdit(node, column, event.key);
+    if (event.key.length === 1) handled(), beginEdit(row, column, event.key);
   });
 
+  table.addEventListener('click', (event) => {
+    const hit = cellAt(event);
+    if (hit && !editing) place(hit.row.line, hit.column);
+  });
+  table.addEventListener('dblclick', (event) => {
+    const hit = cellAt(event);
+    if (hit && hit.column !== DONE && hit.column !== WBS) beginEdit(hit.row, hit.column);
+  });
   table.addEventListener('focusin', (event) => {
     held = true;
     // The keyboard can land on the tab stop without going through a click.
     const hit = cellAt(event);
     if (!hit || editing) return;
-    if (at && at.column === hit.column && lineAt(buffer.text(), at.anchor) === hit.node.line) return;
-    place(hit.node.line, hit.column);
+    if (at && at.column === hit.column && lineAt(buffer.text(), at.anchor) === hit.row.line) return;
+    place(hit.row.line, hit.column);
   });
   table.addEventListener('focusout', (event) => {
     const next = event.relatedTarget as Node | null;
-    if (next && !table.contains(next)) held = false;
+    if (next && !table.contains(next as unknown as globalThis.Node)) held = false;
   });
 
   draftInput.addEventListener('keydown', (event) => {
@@ -622,26 +702,78 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       return;
     }
     event.preventDefault();
-    place(last.node.line, back ? lastColumn() : (at?.column ?? TITLE));
+    place(last.line, back ? lastColumn(last) : nearest(last, at?.column ?? TITLE));
   });
   newTask.addEventListener('blur', addTask);
+
+  /** Every line of the file becomes a row; front matter collapses into one. */
+  function readModel(next: Model): void {
+    const text = buffer.text();
+    const depths = new Map<number, number>();
+    const visit = (node: ModelNode, depth: number): void => {
+      depths.set(node.line, depth);
+      node.children.forEach((child) => visit(child, depth + 1));
+    };
+    next.roots.forEach((root) => visit(root, 0));
+    const items = new Map<number, ModelNode>();
+    const collect = (node: ModelNode): void => void (items.set(node.line, node), node.children.forEach(collect));
+    next.roots.forEach(collect);
+
+    rows = [];
+    frontMatter = null;
+    const block: Node[] = [];
+    for (const node of next.lines) {
+      if (node.kind === 'front-matter') {
+        block.push(node);
+        continue;
+      }
+      const item = node.kind === 'item' ? items.get(node.line) : undefined;
+      if (item) {
+        rows.push({ kind: 'item', line: node.line, span: node.span, indent: item.indent, node: item, depth: depths.get(node.line) ?? 0 });
+      } else {
+        const raw = text.slice(node.span.from, node.span.to);
+        rows.push({ kind: 'line', line: node.line, span: node.span, indent: indentOf(raw), text: raw, blank: node.kind === 'blank' });
+      }
+    }
+    if (block.length > 0) {
+      const span = { from: block[0].span.from, to: block[block.length - 1].span.to };
+      frontMatter = { span, text: text.slice(span.from, span.to).split('\n').join(' ') };
+    }
+
+    // Diagnostics land on the cell their span belongs to; the rest on the WBS
+    // cell, and anything inside the front matter on its collapsed row (§4b.2).
+    marks = new Map();
+    const lineRows = new Map(rows.map((row) => [row.line, row]));
+    for (const diagnostic of next.diagnostics) {
+      const row = lineRows.get(diagnostic.line);
+      if (!row) {
+        if (frontMatter && !frontMatter.diagnostic) frontMatter.diagnostic = diagnostic;
+        continue;
+      }
+      const key = `${diagnostic.line}:${columnFor(row, diagnostic)}`;
+      if (!marks.has(key)) marks.set(key, diagnostic);
+    }
+  }
+
+  function columnFor(row: Row, diagnostic: Diagnostic): number {
+    if (!diagnostic.span) return WBS;
+    if (row.kind === 'line') return TITLE;
+    if (within(row.node.titleSpan, diagnostic.span)) return TITLE;
+    const i = row.node.cells.findIndex((cell) => cell.span && within(cell.span, diagnostic.span as Span));
+    return i >= 0 ? DECLARED + i : WBS;
+  }
 
   return {
     update(next) {
       model = next;
-      rows = [];
-      const visit = (node: ModelNode, depth: number): void => {
-        rows.push({ node, depth });
-        node.children.forEach((child) => visit(child, depth + 1));
-      };
-      next.roots.forEach((root) => visit(root, 0));
+      readModel(next);
       build();
       restore();
       updateToolbar();
     },
     setCursorLine(line) {
-      const node = byLine.get(line);
-      if (node) place(node.line, at?.column ?? TITLE, true);
+      const row = byLine.get(line);
+      if (row) place(row.line, nearest(row, at?.column ?? TITLE), true);
     },
     destroy() {
       off();

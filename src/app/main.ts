@@ -198,6 +198,18 @@ const editors = [
   { id: 'text', label: 'Text', mount: (): PlanEditor => mountTextEditor(buffer, editorHost, { onCursorLine, onSave: () => void save() }) },
   { id: 'grid', label: 'Grid', mount: (): PlanEditor => mountGrid(buffer, editorHost, { onCursorLine }) },
 ];
+// Which editor was last used. A per-viewer convenience: it may be unavailable
+// (private browsing), and nothing depends on it.
+const EDITOR_KEY = 'plan.editor';
+
+function lastEditor(): (typeof editors)[number] {
+  try {
+    return editors.find((kind) => kind.id === localStorage.getItem(EDITOR_KEY)) ?? editors[0];
+  } catch {
+    return editors[0];
+  }
+}
+
 let editorKind = editors[0];
 let editor: PlanEditor | undefined;
 
@@ -217,13 +229,18 @@ function renderEditorTabs(): void {
 function mountEditor(kind: (typeof editors)[number]): void {
   editor?.destroy();
   editorKind = kind;
+  try {
+    localStorage.setItem(EDITOR_KEY, kind.id);
+  } catch {
+    // Storage is not available; the app just opens in the default editor next time.
+  }
   editor = kind.mount();
   // When an analysis is already pending the new editor fills on the next render.
   if (!dirty) editor.update(model);
   renderEditorTabs();
 }
 
-mountEditor(editorKind);
+mountEditor(lastEditor());
 
 buffer.onChange(() => {
   dirty = true;

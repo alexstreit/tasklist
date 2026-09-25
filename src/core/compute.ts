@@ -103,5 +103,5 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
   });
 
   diagnostics.sort((a, b) => a.line - b.line);
-  return { columns, roots, totals, diagnostics };
+  return { columns, roots, lines: tree.nodes, totals, diagnostics };
 }

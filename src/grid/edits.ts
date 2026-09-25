@@ -2,7 +2,7 @@
 // out. Spec §4b.2. Only the edited field's own characters move; everything
 // else on the line, including its alignment, is left alone.
 
-import type { ModelNode } from '../core';
+import type { ModelNode, Span } from '../core';
 import type { TextEdit } from '../buffer';
 
 /** The format has no escaping, so characters that would change the structure are dropped. */
@@ -81,6 +81,16 @@ export function setDone(text: string, node: ModelNode, done: boolean): TextEdit[
   if (done === node.source.done) return [];
   // Removing takes the whitespace between the marker and the title with it.
   return done ? [{ from: at, to: at, insert: '~' }] : [{ from: at, to: node.titleSpan.from, insert: '' }];
+}
+
+/**
+ * Replace a whole line. Comment and blank rows are edited as raw text
+ * (spec §4b.1), so nothing here is trimmed or stripped but the characters
+ * that would split one line into two.
+ */
+export function setLine(text: string, span: Span, value: string): TextEdit[] {
+  const line = value.replace(/[\n\r\t]+/g, ' ').trimEnd();
+  return line === text.slice(span.from, span.to) ? [] : [{ from: span.from, to: span.to, insert: line }];
 }
 
 /** A complete item line at `indent`, or null when nothing was typed. */

@@ -319,7 +319,9 @@ describe('editor toggle', () => {
     expect(titles()).toEqual(['Auth', 'Login']);
     editorButton('Grid').click();
     expect(pane().querySelector('.cm-editor')).toBeNull();
-    expect(pane().querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(pane().querySelectorAll('tbody tr.item')).toHaveLength(2);
+    // Remembered for next time (a convenience; nothing depends on it).
+    expect(localStorage.getItem('plan.editor')).toBe('grid');
     expect(titles()).toEqual(['Auth', 'Login']);
   });
 
@@ -333,6 +335,7 @@ describe('editor toggle', () => {
     expect(titles()).toEqual(['Auth', 'Sign in']);
 
     editorButton('Text').click();
+    expect(localStorage.getItem('plan.editor')).toBe('text');
     view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
     expect(view.state.doc.toString()).toBe('Auth | 2d\n    ~Sign in | 4h | alice\n');
     ctrlZ();

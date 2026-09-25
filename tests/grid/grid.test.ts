@@ -38,7 +38,10 @@ afterEach(() => {
 });
 
 const row = (line: number) => host.querySelector<HTMLTableRowElement>(`tr[data-line="${line}"]`);
-const cell = (line: number, column: number) => row(line)!.cells[column + 1];
+// Cells are addressed the way the grid addresses them: a comment or blank row
+// has only a WBS cell and one raw cell, so positions do not line up.
+const cell = (line: number, column: number) =>
+  row(line)!.querySelector<HTMLTableCellElement>(`td[data-column="${column}"]`)!;
 const input = () => host.querySelector<HTMLInputElement>('tbody input.cell-input')!;
 const click = (el: Element, type = 'click') => el.dispatchEvent(new MouseEvent(type, { bubbles: true }));
 function press(el: Element, key: string, init: KeyboardEventInit = {}): KeyboardEvent {
@@ -57,7 +60,7 @@ function edit(line: number, column: number, value: string): void {
 describe('rows', () => {
   it('shows one row per item with its outline number, title and computed values', () => {
     open(example);
-    const titles = [...host.querySelectorAll<HTMLTableRowElement>('tbody tr')].map((r) => r.cells[TITLE + 1].textContent);
+    const titles = [...host.querySelectorAll<HTMLTableRowElement>('tbody tr.item')].map((r) => r.cells[TITLE + 1].textContent);
     expect(titles).toEqual(['Auth', 'Login page', 'Password reset', 'OAuth (Google)', 'Consent screen', 'Token refresh', 'Admin', 'User list']);
     expect(row(5)!.cells[0].textContent).toBe('1');
     // Auth overrides its children, so the cell carries the child sum alongside.
@@ -218,7 +221,7 @@ describe('rows and structure', () => {
   const select = (line: number) => click(cell(line, WBS));
   const button = (id: string) => host.querySelector<HTMLButtonElement>(`.sheet-toolbar button[data-action="${id}"]`)!;
   const draft = () => host.querySelector<HTMLInputElement>('tr.draft input')!;
-  const outline = () => [...host.querySelectorAll<HTMLTableRowElement>('tbody tr[data-line]')].map((r) => r.cells[0].textContent);
+  const outline = () => [...host.querySelectorAll<HTMLTableRowElement>('tbody tr.item')].map((r) => r.cells[0].textContent);
 
   function insert(title: string): void {
     button('insert').click();
@@ -348,7 +351,9 @@ describe('keys', () => {
     expect(document.activeElement).toBe(cell(2, EST));
     key('Enter');
     expect(document.activeElement).toBe(cell(3, EST));
-    // Past the last item row.
+    // Line 4 is the blank line the trailing newline leaves; it has only a raw cell.
+    key('Enter');
+    expect(document.activeElement).toBe(cell(4, TITLE));
     key('Enter');
     expect(document.activeElement).toBe(newTaskInput());
     select(1);
@@ -365,15 +370,15 @@ describe('keys', () => {
 
   it('comes back off the new-task row with ArrowUp and Shift+Tab', () => {
     open(plan);
-    focus(3, EST);
+    focus(4, TITLE); // the trailing blank line, the last row
     key('ArrowDown');
     expect(document.activeElement).toBe(newTaskInput());
     key('ArrowUp');
-    expect(document.activeElement).toBe(cell(3, EST));
+    expect(document.activeElement).toBe(cell(4, TITLE));
     key('ArrowDown');
     key('Tab', { shiftKey: true });
     // Shift+Tab mirrors the forward wrap: the last cell of the last row.
-    expect(document.activeElement).toBe(cell(3, NOTES));
+    expect(document.activeElement).toBe(cell(4, TITLE));
   });
 
   it('commits from the new-task row when leaving it with text typed', () => {
@@ -571,5 +576,119 @@ describe('keys', () => {
     key('ArrowUp');
     expect(row(1)!.classList.contains('selected')).toBe(true);
     expect(row(2)!.classList.contains('selected')).toBe(false);
+  });
+});
+
+// Comment, blank and front matter rows, and diagnostics on cells. Spec §4b.1–4b.2.
+describe('non-item rows', () => {
+  const select = (line: number) => click(cell(line, WBS));
+  const button = (id: string) => host.querySelector<HTMLButtonElement>(`.sheet-toolbar button[data-action="${id}"]`)!;
+  const raw = (line: number) => row(line)!.querySelector<HTMLTableCellElement>('td.raw')!;
+
+  it('shows a comment line as one full-width row of raw text, with no outline number', () => {
+    open('Auth | 2d\n    // dropped for now\nAdmin | 1d\n');
+    expect(row(2)!.classList.contains('line')).toBe(true);
+    expect(raw(2).textContent).toBe('    // dropped for now');
+    expect(cell(2, WBS).textContent).toBe('');
+    expect(raw(2).colSpan).toBe(2 + 3);
+  });
+
+  it('turns a comment row into an item row when the // goes, and back again', () => {
+    open('Auth | 2d\n    // Audit log | 2d\n');
+    click(cell(2, TITLE), 'dblclick');
+    expect(input().value).toBe('    // Audit log | 2d');
+    input().value = '    Audit log | 2d';
+    press(input(), 'Enter');
+    expect(buffer.text()).toBe('Auth | 2d\n    Audit log | 2d\n');
+    expect(row(2)!.classList.contains('item')).toBe(true);
+    expect(cell(2, WBS).textContent).toBe('1.1');
+    expect(cell(2, EST).textContent).toBe('2d');
+    // And back: the row becomes a comment again.
+    click(cell(2, TITLE), 'dblclick');
+    input().value = '    // Audit log | 2d';
+    press(input(), 'Enter');
+    expect(row(2)!.classList.contains('line')).toBe(true);
+  });
+
+  it('deletes exactly the comment line', () => {
+    open('Auth | 2d\n// note\nAdmin | 1d\n');
+    select(2);
+    button('delete').click();
+    expect(buffer.text()).toBe('Auth | 2d\nAdmin | 1d\n');
+  });
+
+  it('renders a blank line between two items, and deletes it', () => {
+    open('Auth | 2d\n\nAdmin | 1d\n');
+    expect(row(2)!.classList.contains('blank')).toBe(true);
+    select(2);
+    button('delete').click();
+    expect(buffer.text()).toBe('Auth | 2d\nAdmin | 1d\n');
+  });
+
+  it('inserts directly above the item, not above the blank line before it', () => {
+    open('Auth | 2d\n\nAdmin | 1d\n');
+    select(3);
+    button('insert').click();
+    const draft = host.querySelector<HTMLInputElement>('tr.draft input')!;
+    draft.value = 'Ops';
+    press(draft, 'Enter');
+    expect(buffer.text()).toBe('Auth | 2d\n\nOps\nAdmin | 1d\n');
+  });
+
+  it('moves a comment row like any other row', () => {
+    open('Auth | 2d\n// note\nAdmin | 1d\n');
+    select(2);
+    button('down').click();
+    expect(buffer.text()).toBe('Auth | 2d\nAdmin | 1d\n// note\n');
+  });
+
+  it('collapses the front matter into one read-only row', () => {
+    open('---\ncolumns: est:duration | owner:text | notes:text\n---\nAuth | 2d\n');
+    const front = host.querySelector<HTMLTableRowElement>('tr.front-matter')!;
+    expect(front.querySelector('td.raw')!.textContent).toBe('--- columns: est:duration | owner:text | notes:text ---');
+    // Not a row the grid navigates or edits.
+    expect(front.querySelectorAll('[data-column]')).toHaveLength(0);
+    expect(row(4)!.classList.contains('item')).toBe(true);
+  });
+});
+
+describe('diagnostics', () => {
+  it('outlines the offending cell and shows the message on hover, and clears when it is fixed', () => {
+    open('Auth | 4 hours\n');
+    const est = cell(1, EST);
+    expect(est.classList.contains('warning')).toBe(true);
+    expect(est.title).toBe('unparseable duration: "4 hours"');
+    click(est, 'dblclick');
+    input().value = '4h';
+    press(input(), 'Enter');
+    expect(cell(1, EST).classList.contains('warning')).toBe(false);
+    expect(cell(1, EST).title).toBe('');
+  });
+
+  it('marks an override that differs from its children as info, on the cell it belongs to', () => {
+    open('Auth | 2d\n    Login | 4h\n');
+    expect(cell(1, EST).classList.contains('info')).toBe(true);
+    expect(cell(1, EST).title).toBe('override differs from children (2d vs 4h)');
+  });
+
+  it('puts a diagnostic with no span on the row WBS cell', () => {
+    open('Auth | 2d | bob | note | extra\n');
+    // "more fields than columns" spans a field beyond the declared columns.
+    expect(cell(1, WBS).classList.contains('warning')).toBe(true);
+    expect(cell(1, WBS).title).toBe('more fields than declared columns; extra fields are ignored');
+  });
+
+  it('shows the unclosed front matter warning on the front matter row', () => {
+    open('---\ncolumns: est:duration\nAuth | 2d\n');
+    const front = host.querySelector<HTMLTableRowElement>('tr.front-matter')!.querySelector<HTMLTableCellElement>('td.raw')!;
+    expect(front.classList.contains('warning')).toBe(true);
+    expect(front.title).toBe('front matter not closed');
+  });
+
+  it('marks a reserved # line on its raw cell', () => {
+    open('# heading\nAuth | 2d\n');
+    const cellForLine = row(1)!.querySelector<HTMLTableCellElement>('td.raw')!;
+    expect(cellForLine.classList.contains('warning')).toBe(true);
+    expect(cellForLine.title).toBe("'#' lines are reserved for future headings");
   });
 });
