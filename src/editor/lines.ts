@@ -2,6 +2,8 @@
 // keymap. Mirrors spec §2.2 for everything except front matter, which needs
 // document position and is handled by the language mode's parser state.
 
+export { indentOf } from '../editing/lines';
+
 export type LineKind = 'blank' | 'comment' | 'reserved' | 'item';
 
 export function lineKind(text: string): LineKind {
@@ -12,6 +14,3 @@ export function lineKind(text: string): LineKind {
   return 'item';
 }
 
-export function indentOf(text: string): number {
-  return text.length - text.trimStart().length;
-}

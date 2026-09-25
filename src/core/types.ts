@@ -134,6 +134,10 @@ export interface DocumentTotal {
 export interface Model {
   columns: Column[];
   roots: ModelNode[];
+  /** Every line of the file in order, as parsed. Lossless, like the tree: an
+   *  editor showing the file needs the comment, blank and front matter lines
+   *  too, and must not classify them again for itself. */
+  lines: readonly Node[];
   /** Aligned with `columns`; null for text columns. */
   totals: (DocumentTotal | null)[];
   diagnostics: Diagnostic[];

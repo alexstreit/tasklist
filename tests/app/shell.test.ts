@@ -43,7 +43,7 @@ beforeAll(async () => {
   Range.prototype.getBoundingClientRect = () => new DOMRect();
   Element.prototype.scrollIntoView = scroll;
   document.body.innerHTML =
-    '<button id="open"></button><button id="save"></button><button id="save-as"></button><span id="filename"></span><span id="status"></span>' +
+    '<button id="open"></button><button id="save"></button><button id="save-as"></button><nav id="editors"></nav><span id="filename"></span><span id="status"></span>' +
     '<div id="editor"></div><section id="preview"><nav id="renderers"></nav><nav id="exporters"></nav><div id="host"></div></section>';
   vi.useFakeTimers();
   await import('../../src/app/main');
@@ -300,5 +300,47 @@ describe('exporters', () => {
     await flush();
     expect(status()).toBe('Could not copy: Write permission denied.');
     expect(button().textContent).toBe('Copy for Excel');
+  });
+});
+
+// Spec §3.4: one buffer, one editor mounted at a time.
+describe('editor toggle', () => {
+  const editorButton = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('#editors button')].find((b) => b.textContent === label)!;
+  const pane = () => document.getElementById('editor')!;
+  const gridCell = (line: number, column: number) =>
+    pane().querySelector<HTMLTableRowElement>(`tr[data-line="${line}"]`)!.cells[column + 1];
+  const ctrlZ = () =>
+    view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', keyCode: 90, ctrlKey: true, bubbles: true, cancelable: true }));
+
+  it('swaps the text editor for the grid and keeps the preview working', () => {
+    // Earlier tests left the table renderer showing; the tree names rows in cells[1].
+    [...document.querySelectorAll<HTMLButtonElement>('#renderers button')].find((b) => b.textContent === 'Tree')!.click();
+    expect(titles()).toEqual(['Auth', 'Login']);
+    editorButton('Grid').click();
+    expect(pane().querySelector('.cm-editor')).toBeNull();
+    expect(pane().querySelectorAll('tbody tr.item')).toHaveLength(2);
+    // Remembered for next time (a convenience; nothing depends on it).
+    expect(localStorage.getItem('plan.editor')).toBe('grid');
+    expect(titles()).toEqual(['Auth', 'Login']);
+  });
+
+  it('carries a grid edit back to the text editor, undoable across the switch', () => {
+    const before = 'Auth | 2d\n    ~Login | 4h | alice\n';
+    gridCell(2, 1).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    const input = pane().querySelector<HTMLInputElement>('tbody input.cell-input')!;
+    input.value = 'Sign in';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    vi.advanceTimersByTime(60);
+    expect(titles()).toEqual(['Auth', 'Sign in']);
+
+    editorButton('Text').click();
+    expect(localStorage.getItem('plan.editor')).toBe('text');
+    view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
+    expect(view.state.doc.toString()).toBe('Auth | 2d\n    ~Sign in | 4h | alice\n');
+    ctrlZ();
+    vi.advanceTimersByTime(60);
+    expect(view.state.doc.toString()).toBe(before);
+    expect(titles()).toEqual(['Auth', 'Login']);
   });
 });
