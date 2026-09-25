@@ -72,6 +72,15 @@ export class CodeMirrorBuffer implements PlanBuffer {
     return this.view;
   }
 
+  /** Unmount the current editor's view, leaving the document and its history intact. */
+  destroyView(): void {
+    if (!this.view) return;
+    const view = this.view;
+    this.view = null;
+    this.dispatch(this.state.update({ effects: this.mounted.reconfigure([]) }));
+    view.destroy();
+  }
+
   private as(origin: string, body: (dispatch: (tr: Transaction) => void) => void): void {
     this.origin = origin;
     try {

@@ -246,6 +246,16 @@ interface Renderer {
 
 Exactly one editor is active at a time. Every editor writes to the shared `PlanBuffer` (§3.7); switching editors unmounts one and mounts the other over the same buffer. There is no editor-owned model that serialises back to text.
 
+```ts
+interface PlanEditor {
+  update(model: Model): void; // a fresh model for the buffer's current text
+  setCursorLine(line: number): void;
+  destroy(): void;
+}
+```
+
+The shell mounts one editor, hands it every new model, and destroys it when the other is chosen. It holds the editors in a list, exactly as it holds renderers and exporters, and special-cases neither. Undo survives a switch because the history belongs to the buffer, not to the editor.
+
 ### 3.5 Multi-user (future, stated now so nothing blocks it)
 
 The shared thing is the text buffer, not the model. A CRDT over the text (e.g. Yjs, via `y-codemirror.next`) gives collaboration without the sync layer knowing anything about the format. Each client parses and computes locally. Under collaboration, undo is replaced by a per-user undo manager behind `PlanBuffer.undo()`.
@@ -369,7 +379,7 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 
 ### 4b.3 Selection and focus
 
-- Exactly one of: a focused cell (navigation), an editing cell (input open), or a selected row (structural operations). Clicking a WBS cell selects the row; clicking any other cell focuses it.
+- Exactly one of: a focused cell (navigation), an editing cell (input open), or a selected row (structural operations). Clicking a WBS cell selects the row; clicking any other cell focuses it, and double-clicking it starts editing. From the keyboard, editing starts as in §4b.4.
 - One selected row at a time.
 - After every buffer change the grid rebuilds and restores focus to the same line and column, using `mapPos` when the change moved lines.
 

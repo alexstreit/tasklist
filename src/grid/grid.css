@@ -1,0 +1,13 @@
+.plan-sheet { border-collapse: collapse; width: 100%; font-size: 13px; }
+.plan-sheet th, .plan-sheet td { padding: 3px 10px; text-align: left; white-space: nowrap; border-right: 1px solid var(--border-soft); }
+.plan-sheet th { color: var(--fg-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+.plan-sheet tbody tr:hover { background: var(--hover); }
+.plan-sheet tr.done { color: var(--done-fg); text-decoration: line-through; }
+.plan-sheet td.wbs { color: var(--fg-muted); user-select: none; text-align: right; }
+.plan-sheet td.check { text-align: center; }
+.plan-sheet td.derived { color: var(--fg-muted); }
+.plan-sheet td:focus { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+.plan-sheet .muted { color: var(--fg-faint); margin-left: 0.5em; font-size: 0.9em; }
+.plan-sheet tr.total td { border-top: 1px solid var(--border); font-weight: 600; }
+.plan-sheet tr.new-task td { border-top: 1px solid var(--border-soft); }
+.plan-sheet .cell-input { width: 100%; box-sizing: border-box; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--accent-border); border-radius: 2px; padding: 1px 4px; }

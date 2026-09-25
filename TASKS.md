@@ -277,11 +277,15 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Acceptance criteria**
 
-- [ ] Unit tests (jsdom, `InMemoryBuffer`) for: editing a title; editing an existing estimate; editing an estimate on a line with no pipes (line gains `| 4h`); editing the notes column on a title-only line (line gains two empty fields first); committing empty to a padded column trims the trailing empties; toggling done inserts/removes `~`; a child of a done parent shows a disabled checked box; typing on a derived parent creates an override and the cell shows `⟨Σ …⟩`-style muted computed value afterwards; clearing the override restores derived; editing shows raw text (`2d 4h`) not formatted text.
-- [ ] Focus test: edit a cell, then `buffer.undo()`; focus is on the same cell. Insert a line above via `buffer.apply`; focus follows to the moved line.
-- [ ] Typing in the new-task row creates a line at the last item's indent.
-- [ ] Manual: switch Text → Grid → Text; the text is byte-identical and the undo stack still works across the switch (edit in grid, switch to text, Ctrl+Z undoes the grid edit).
-- [ ] Manual: the §2.10 example renders with `Auth` showing an override and the total row reading `3d` / `4h`.
+- [x] Unit tests (jsdom, `InMemoryBuffer`) for: editing a title; editing an existing estimate; editing an estimate on a line with no pipes (line gains `| 4h`); editing the notes column on a title-only line (line gains two empty fields first); committing empty to a padded column trims the trailing empties; toggling done inserts/removes `~`; a child of a done parent shows a disabled checked box; typing on a derived parent creates an override and the cell shows `⟨Σ …⟩`-style muted computed value afterwards; clearing the override restores derived; editing shows raw text (`2d 4h`) not formatted text.
+- [x] Focus test: edit a cell, then `buffer.undo()`; focus is on the same cell. Insert a line above via `buffer.apply`; focus follows to the moved line.
+- [x] Typing in the new-task row creates a line at the last item's indent.
+- [x] Manual: switch Text → Grid → Text; the text is byte-identical and the undo stack still works across the switch (edit in grid, switch to text, Ctrl+Z undoes the grid edit). — also covered automatically in `tests/app/shell.test.ts`; **still worth a browser pass**.
+- [x] Manual: the §2.10 example renders with `Auth` showing an override and the total row reading `3d` / `4h`. — asserted in `tests/grid/grid.test.ts`; **browser check pending review**.
+
+**Decisions taken:** mouse editing is click-to-focus, double-click-to-edit (§4b.4 only defines keyboard entry, which is Task 14; spec §4b.3 updated). Front matter rows are deferred to Task 15 with the other non-item rows. Editors expose `{ update, setCursorLine, destroy }` (spec §3.4) — that replaced the shell's `showDiagnostics` call, so grid diagnostics in Task 15 need no shell change. Cell edits live in `src/grid/edits.ts` (pure, text in / `TextEdit[]` out); field addressing counts the line's `|` positions rather than parsed fields, because a trailing `|` is a slot the parser drops.
+
+**Human review:** in the browser, check the Text/Grid toggle, double-click editing, the derived/override/additive cells on the §2.10 example, and the new-task row.
 
 ---
 

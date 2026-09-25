@@ -6,6 +6,7 @@ import { CodeMirrorBuffer } from '../buffer';
 import { analyze } from '../core';
 import type { Exporter, Model, Renderer } from '../core';
 import { mountTextEditor } from '../editor';
+import { mountGrid } from '../grid';
 import { cursorItemFor, itemLines } from './cursor';
 import { createFileStore } from './files';
 import { tsvExporter } from '../exporters/tsv';
@@ -18,10 +19,19 @@ import './style.css';
 
 const DEBOUNCE_MS = 50;
 
+/** What the shell needs from whichever editor is mounted. Spec §3.4. */
+interface PlanEditor {
+  update(model: Model): void;
+  setCursorLine(line: number): void;
+  destroy(): void;
+}
+
 const renderers: Renderer[] = [treeRenderer, tableRenderer, ganttRenderer];
 const exporters: Exporter[] = [tsvExporter];
 let active = renderers[0];
 const host = document.getElementById('host')!;
+const editorHost = document.getElementById('editor')!;
+const editorTabs = document.getElementById('editors')!;
 const tabs = document.getElementById('renderers')!;
 const exportBar = document.getElementById('exporters')!;
 const files = createFileStore();
@@ -38,7 +48,13 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let editorMovedCursor = false;
 
 function setCursorLine(line: number): void {
-  editor.setCursorLine(line);
+  editor?.setCursorLine(line);
+}
+
+function onCursorLine(line: number, fromApi: boolean): void {
+  cursorLine = line;
+  if (!fromApi) editorMovedCursor = true;
+  schedule();
 }
 
 /** Why a renderer cannot show this document; empty when it can. */
@@ -98,7 +114,7 @@ function render(): void {
     model = analyze(buffer.text());
     lines = itemLines(model);
     dirty = false;
-    editor.showDiagnostics(model.diagnostics);
+    editor?.update(model);
   }
   if (unmet(active, model).length > 0) {
     // The document changed under the active renderer; fall back to one that can show it.
@@ -152,7 +168,7 @@ async function open(): Promise<void> {
   if (!file) return;
   // Tabs become 4 spaces on load (spec §2.1); the buffer never holds tabs.
   buffer.apply([{ from: 0, to: buffer.text().length, insert: file.text.replace(/\t/g, '    ') }], 'load');
-  editor.setCursorLine(1);
+  editor?.setCursorLine(1);
   savedText = buffer.text();
   updateTitle();
   status.textContent = `Opened ${file.name}`;
@@ -176,14 +192,38 @@ async function save(as = false): Promise<void> {
 }
 
 const buffer = new CodeMirrorBuffer(example);
-const editor = mountTextEditor(buffer, document.getElementById('editor')!, {
-  onCursorLine(line, fromApi) {
-    cursorLine = line;
-    if (!fromApi) editorMovedCursor = true;
-    schedule();
-  },
-  onSave: () => void save(),
-});
+
+// One editor is mounted at a time, over the one buffer (spec §3.4).
+const editors = [
+  { id: 'text', label: 'Text', mount: (): PlanEditor => mountTextEditor(buffer, editorHost, { onCursorLine, onSave: () => void save() }) },
+  { id: 'grid', label: 'Grid', mount: (): PlanEditor => mountGrid(buffer, editorHost, { onCursorLine }) },
+];
+let editorKind = editors[0];
+let editor: PlanEditor | undefined;
+
+function renderEditorTabs(): void {
+  editorTabs.replaceChildren(
+    ...editors.map((kind) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = kind.label;
+      button.classList.toggle('active', kind === editorKind);
+      button.addEventListener('click', () => mountEditor(kind));
+      return button;
+    }),
+  );
+}
+
+function mountEditor(kind: (typeof editors)[number]): void {
+  editor?.destroy();
+  editorKind = kind;
+  editor = kind.mount();
+  // When an analysis is already pending the new editor fills on the next render.
+  if (!dirty) editor.update(model);
+  renderEditorTabs();
+}
+
+mountEditor(editorKind);
 
 buffer.onChange(() => {
   dirty = true;

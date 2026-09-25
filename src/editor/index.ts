@@ -5,7 +5,7 @@ import { EditorState } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import type { CodeMirrorBuffer } from '../buffer';
-import type { Diagnostic } from '../core';
+import type { Model } from '../core';
 import { planDiagnostics, showDiagnostics } from './diagnostics';
 import { planFolding } from './folding';
 import { planKeys } from './keymap';
@@ -33,9 +33,11 @@ export function planEditor(): Extension {
 }
 
 export interface TextEditor {
+  /** A fresh model for the buffer's current text. */
+  update(model: Model): void;
   /** Put the cursor on a line; reported back through `onCursorLine` as not editor-driven. */
   setCursorLine(line: number): void;
-  showDiagnostics(diagnostics: readonly Diagnostic[]): void;
+  destroy(): void;
 }
 
 export interface TextEditorHooks {
@@ -74,8 +76,11 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
       fromApi = false;
       view.focus();
     },
-    showDiagnostics(diagnostics) {
-      showDiagnostics(view, diagnostics);
+    update(model) {
+      showDiagnostics(view, model.diagnostics);
+    },
+    destroy() {
+      buffer.destroyView();
     },
   };
 }
