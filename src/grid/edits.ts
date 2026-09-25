@@ -83,10 +83,16 @@ export function setDone(text: string, node: ModelNode, done: boolean): TextEdit[
   return done ? [{ from: at, to: at, insert: '~' }] : [{ from: at, to: node.titleSpan.from, insert: '' }];
 }
 
+/** A complete item line at `indent`, or null when nothing was typed. */
+export function itemLine(indent: number, title: string): string | null {
+  const value = clean(title);
+  return value === '' ? null : `${' '.repeat(indent)}${value}`;
+}
+
 /** A new item line at the end of the document, at `indent` spaces. Spec §4b.1. */
 export function appendItem(text: string, title: string, indent: number): TextEdit[] {
-  const value = clean(title);
-  if (value === '') return [];
+  const line = itemLine(indent, title);
+  if (line === null) return [];
   const prefix = text === '' || text.endsWith('\n') ? '' : '\n';
-  return [{ from: text.length, to: text.length, insert: `${prefix}${' '.repeat(indent)}${value}\n` }];
+  return [{ from: text.length, to: text.length, insert: `${prefix}${line}\n` }];
 }

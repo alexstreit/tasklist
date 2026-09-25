@@ -1,3 +1,6 @@
+.sheet-toolbar { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border-soft); position: sticky; top: 0; background: var(--bg); z-index: 1; }
+.sheet-toolbar button { font: inherit; font-size: 13px; border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 2px 10px; cursor: pointer; }
+.sheet-toolbar button:disabled { color: var(--fg-faint); cursor: not-allowed; }
 .plan-sheet { border-collapse: collapse; width: 100%; font-size: 13px; }
 .plan-sheet th, .plan-sheet td { padding: 3px 10px; text-align: left; white-space: nowrap; border-right: 1px solid var(--border-soft); }
 .plan-sheet th { color: var(--fg-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
@@ -8,6 +11,8 @@
 .plan-sheet td.derived { color: var(--fg-muted); }
 .plan-sheet td:focus { outline: 2px solid var(--accent-border); outline-offset: -2px; }
 .plan-sheet .muted { color: var(--fg-faint); margin-left: 0.5em; font-size: 0.9em; }
+.plan-sheet tr.selected td { background: var(--accent-bg); }
+.plan-sheet tr.draft td { background: var(--near-row-bg); }
 .plan-sheet tr.total td { border-top: 1px solid var(--border); font-weight: 600; }
 .plan-sheet tr.new-task td { border-top: 1px solid var(--border-soft); }
 .plan-sheet .cell-input { width: 100%; box-sizing: border-box; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--accent-border); border-radius: 2px; padding: 1px 4px; }

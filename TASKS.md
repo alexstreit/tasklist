@@ -299,12 +299,16 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Acceptance criteria**
 
-- [ ] Insert above a parent creates a sibling before it; the parent keeps its children. Insert above a first child creates a new first child. Assert on resulting text.
-- [ ] Delete a parent row: its children re-attach to the previous item at a shallower indent (or become roots), matching text-mode deletion. Assert on text and on the new outline numbers.
-- [ ] Indent the first root row is a no-op; outdent a root row is a no-op; the toolbar buttons are disabled in those states.
-- [ ] Move up/down of a row with children moves only that line — same semantics as the text editor. (v2 may move subtrees; note it in §7.)
-- [ ] After each operation the selection follows the row to its new line.
-- [ ] Manual: every toolbar button does what its key does.
+- [x] Insert above a parent creates a sibling before it; the parent keeps its children. Insert above a first child creates a new first child. Assert on resulting text.
+- [x] Delete a parent row: its children re-attach to the previous item at a shallower indent (or become roots), matching text-mode deletion. Assert on text and on the new outline numbers.
+- [x] Indent the first root row is a no-op; outdent a root row is a no-op; the toolbar buttons are disabled in those states.
+- [x] Move up/down of a row with children moves only that line — same semantics as the text editor. (v2 may move subtrees; already listed under Grid v2 in §7.)
+- [x] After each operation the selection follows the row to its new line.
+- [ ] Manual: every toolbar button does what its key does. — the keys arrive in Task 14; **browser pass on the buttons pending review**.
+
+**Decisions taken:** an inserted row is a draft until its title is committed (spec §4b.4) — writing a blank line first would produce a blank node, not an item row to type into. Row selection is the WBS cell being the focused place (column `-1`), so selection and cell focus share one anchor and one restore path. Indent is disabled when the row above is at a shallower indent (MS Project's rule), which also covers "the first root row is a no-op".
+
+**Human review:** in the browser, walk the toolbar on the §2.10 example — insert above a parent and above a first child, delete a parent, indent/outdent, move a parent row, toggle done.
 
 ---
 

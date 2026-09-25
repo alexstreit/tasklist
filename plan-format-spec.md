@@ -403,9 +403,11 @@ MS Project conventions; where Project has no default, the text editor's binding 
 
 Insert-above is deliberate: inserting directly **below** a parent at the parent's indent would capture the parent's children; inserting above never does.
 
+An inserted row is a **draft**: it appears in the grid at the right position and indent, and the buffer gets one complete item line when its title is committed. Escape, or committing nothing, discards it and leaves the buffer untouched. Writing a blank line to the buffer first would not do: a line of only spaces is a blank line, not an item, so there would be no item row to type into.
+
 ### 4b.5 Toolbar
 
-Buttons for Insert row, Delete row, Indent, Outdent, Move up, Move down, Toggle done. Each mirrors a key above and is enabled only when it applies. The editor toggle (Text / Grid) is in the app toolbar.
+Buttons for Insert row, Delete row, Indent, Outdent, Move up, Move down, Toggle done. Each mirrors a key above and is enabled only when it applies: indent only when the row above is at the same or a greater indent (a row directly below its parent is already as deep as it can usefully go), outdent only on an indented row, move up and move down only when there is a line to swap with, toggle done only on a row whose `~` is its own. All of them are disabled when nothing is selected. The toolbar acts on the current row, whether it is selected by its WBS cell or holds the focused cell. The editor toggle (Text / Grid) is in the app toolbar.
 
 ## 5. Preview
 

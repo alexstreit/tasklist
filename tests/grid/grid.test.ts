@@ -10,6 +10,7 @@ import type { GridEditor } from '../../src/grid';
 import example from '../../examples/example.plan?raw';
 
 // Cell columns, as the grid numbers them.
+const WBS = -1;
 const DONE = 0;
 const TITLE = 1;
 const EST = 2;
@@ -200,5 +201,125 @@ describe('new task row', () => {
     const adder = host.querySelector<HTMLInputElement>('tr.new-task input')!;
     press(adder, 'Enter');
     expect(buffer.text()).toBe('Auth | 2d\n');
+  });
+});
+
+// Structure and selection. Spec §4b.4–4b.5; the edits are src/editing's.
+describe('rows and structure', () => {
+  const select = (line: number) => click(cell(line, WBS));
+  const button = (id: string) => host.querySelector<HTMLButtonElement>(`.sheet-toolbar button[data-action="${id}"]`)!;
+  const draft = () => host.querySelector<HTMLInputElement>('tr.draft input')!;
+  const outline = () => [...host.querySelectorAll<HTMLTableRowElement>('tbody tr[data-line]')].map((r) => r.cells[0].textContent);
+
+  function insert(title: string): void {
+    button('insert').click();
+    draft().value = title;
+    press(draft(), 'Enter');
+  }
+
+  it('selects a row through its WBS cell', () => {
+    open('Auth\n    Login | 4h\n');
+    select(2);
+    expect(row(2)!.classList.contains('selected')).toBe(true);
+    // Focusing a cell in another row moves the selection off it.
+    click(cell(1, TITLE));
+    expect(host.querySelectorAll('tr.selected')).toHaveLength(0);
+  });
+
+  it('inserts a sibling above a parent, which keeps its children', () => {
+    open('Auth\n    Login | 4h\nAdmin\n');
+    select(1);
+    insert('Setup');
+    expect(buffer.text()).toBe('Setup\nAuth\n    Login | 4h\nAdmin\n');
+    expect(outline()).toEqual(['1', '2', '2.1', '3']);
+    // The place lands on the row that was just created.
+    expect(document.activeElement).toBe(cell(1, TITLE));
+  });
+
+  it('inserts a new first child above a first child', () => {
+    open('Auth\n    Login | 4h\n');
+    select(2);
+    insert('Design');
+    expect(buffer.text()).toBe('Auth\n    Design\n    Login | 4h\n');
+    expect(outline()).toEqual(['1', '1.1', '1.2']);
+  });
+
+  it('leaves the buffer alone when the draft is abandoned', () => {
+    open('Auth\n');
+    select(1);
+    button('insert').click();
+    press(draft(), 'Escape');
+    expect(buffer.text()).toBe('Auth\n');
+    expect(host.querySelector('tr.draft')).toBeNull();
+  });
+
+  it('deletes a row and re-attaches its children to the previous item', () => {
+    open('Auth\n    Login | 4h\n        Deep | 1h\nAdmin\n');
+    select(2);
+    button('delete').click();
+    expect(buffer.text()).toBe('Auth\n        Deep | 1h\nAdmin\n');
+    expect(outline()).toEqual(['1', '1.1', '2']);
+    // The selection lands on the row that took the deleted line.
+    expect(row(2)!.cells[TITLE + 1].textContent).toBe('Deep');
+    expect(row(2)!.classList.contains('selected')).toBe(true);
+  });
+
+  it('indents and outdents a row, and disables the buttons where they would do nothing', () => {
+    open('Auth\n    Login | 4h\n    Reset | 1h\n');
+    select(1);
+    // Nothing above the first root row to become its parent.
+    expect(button('indent').disabled).toBe(true);
+    expect(button('outdent').disabled).toBe(true);
+    select(3);
+    expect(button('indent').disabled).toBe(false);
+    button('indent').click();
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\n        Reset | 1h\n');
+    expect(outline()).toEqual(['1', '1.1', '1.1.1']);
+    button('outdent').click();
+    button('outdent').click();
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\nReset | 1h\n');
+    expect(button('outdent').disabled).toBe(true);
+  });
+
+  it('a row directly below its parent cannot indent further', () => {
+    open('Auth\n    Login | 4h\n');
+    select(2);
+    expect(button('indent').disabled).toBe(true);
+  });
+
+  it('moves a row with children by itself, and the selection goes with it', () => {
+    open('Auth\n    Login | 4h\nAdmin\n');
+    select(1);
+    button('down').click();
+    expect(buffer.text()).toBe('    Login | 4h\nAuth\nAdmin\n');
+    expect(row(2)!.cells[TITLE + 1].textContent).toBe('Auth');
+    expect(row(2)!.classList.contains('selected')).toBe(true);
+    button('up').click();
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\nAdmin\n');
+    expect(row(1)!.classList.contains('selected')).toBe(true);
+  });
+
+  it('disables move up on the first line and move down on the last', () => {
+    open('Auth\nAdmin');
+    select(1);
+    expect([button('up').disabled, button('down').disabled]).toEqual([true, false]);
+    select(2);
+    expect([button('up').disabled, button('down').disabled]).toEqual([false, true]);
+  });
+
+  it('toggles done from the toolbar, and refuses on a row done through its parent', () => {
+    open('~Auth\n    Login | 4h\n');
+    select(2);
+    expect(button('done').disabled).toBe(true);
+    select(1);
+    button('done').click();
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\n');
+  });
+
+  it('disables every button when nothing is selected', () => {
+    open('Auth\n');
+    for (const id of ['insert', 'delete', 'indent', 'outdent', 'up', 'down', 'done']) {
+      expect(button(id).disabled).toBe(true);
+    }
   });
 });
