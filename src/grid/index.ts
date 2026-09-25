@@ -73,6 +73,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   let at: { anchor: number; column: number } | null = null;
   let held = false; // the grid holds the browser focus
   let editing: { line: number; column: number } | null = null;
+  // The cell that is in the page's tab order; every other cell is -1.
+  let tabStop: HTMLTableCellElement | null = null;
   // A row being typed into that is not in the buffer yet: the insert-above
   // row and the new-task row. Nothing is written until a title is committed.
   let draft: { anchor: number; indent: number } | null = null;
@@ -241,13 +243,26 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     adder.insertCell();
     adder.insertCell().append(newTask);
     columns.forEach(() => adder.insertCell());
-    markSelection();
+    markPlace();
   }
 
-  /** Row selection is the WBS cell being the current place; mark it without rebuilding. */
-  function markSelection(): void {
-    const line = at && at.column === WBS ? String(lineAt(buffer.text(), at.anchor)) : null;
-    for (const row of table.tBodies[0]?.rows ?? []) row.classList.toggle('selected', row.dataset.line === line);
+  /**
+   * Show where the grid is: the selected-row class, and the roving tab stop —
+   * the one cell in the table that is in the page's tab order, so the keyboard
+   * can reach the grid and leave it again. With no place yet, that is the first
+   * row's WBS cell, which is also its row selector.
+   */
+  function markPlace(): void {
+    const text = buffer.text();
+    const line = at ? lineAt(text, at.anchor) : null;
+    const selected = at?.column === WBS && line !== null ? String(line) : null;
+    for (const row of table.tBodies[0]?.rows ?? []) row.classList.toggle('selected', row.dataset.line === selected);
+
+    const stop = line === null ? cellFor(rows[0]?.node.line ?? 0, WBS) : cellFor(line, at?.column ?? WBS);
+    if (stop === tabStop) return;
+    if (tabStop?.isConnected) tabStop.tabIndex = -1;
+    tabStop = stop;
+    if (stop) stop.tabIndex = 0;
   }
 
   /**
@@ -257,7 +272,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function place(line: number, column: number, fromApi = false): void {
     at = { anchor: lineEndOf(buffer.text(), line), column };
     held = true;
-    markSelection();
+    markPlace();
     focusCell(line, column);
     updateToolbar();
     hooks.onCursorLine(line, fromApi);
@@ -266,7 +281,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function clearPlace(): void {
     at = null;
     held = false;
-    markSelection();
+    markPlace();
     updateToolbar();
     (document.activeElement as HTMLElement | null)?.blur();
   }
@@ -311,7 +326,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const node = byLine.get(line) ?? [...rows].reverse().find(({ node: n }) => n.line <= line)?.node ?? rows[0]?.node;
     if (!node) return;
     at = { anchor: node.span.to, column: at.column };
-    markSelection();
+    markPlace();
     if (held) focusCell(node.line, at.column);
     updateToolbar();
   }
@@ -564,7 +579,14 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (event.key.length === 1) handled(), beginEdit(node, column, event.key);
   });
 
-  table.addEventListener('focusin', () => (held = true));
+  table.addEventListener('focusin', (event) => {
+    held = true;
+    // The keyboard can land on the tab stop without going through a click.
+    const hit = cellAt(event);
+    if (!hit || editing) return;
+    if (at && at.column === hit.column && lineAt(buffer.text(), at.anchor) === hit.node.line) return;
+    place(hit.node.line, hit.column);
+  });
   table.addEventListener('focusout', (event) => {
     const next = event.relatedTarget as Node | null;
     if (next && !table.contains(next)) held = false;

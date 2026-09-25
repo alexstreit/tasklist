@@ -385,6 +385,28 @@ describe('keys', () => {
     expect(document.activeElement).toBe(cell(4, TITLE));
   });
 
+  it('keeps exactly one cell in the tab order, and moves it with the place', () => {
+    open(plan);
+    const stops = () => [...host.querySelectorAll<HTMLElement>('td[tabindex="0"]')];
+    // Nothing placed yet: the way in is the first row's selector.
+    expect(stops()).toEqual([cell(1, WBS)]);
+    focus(2, EST);
+    expect(stops()).toEqual([cell(2, EST)]);
+    key('ArrowDown');
+    expect(stops()).toEqual([cell(3, EST)]);
+    // And it survives a rebuild.
+    key('Delete');
+    expect(stops()).toEqual([cell(3, EST)]);
+  });
+
+  it('takes the place from a cell the keyboard focuses directly', () => {
+    open(plan);
+    cell(1, WBS).focus();
+    expect(row(1)!.classList.contains('selected')).toBe(true);
+    key('ArrowDown');
+    expect(row(2)!.classList.contains('selected')).toBe(true);
+  });
+
   it('keeps the checkboxes out of the tab order, so Tab does not walk their column', () => {
     open(plan);
     const boxes = [...host.querySelectorAll<HTMLInputElement>('td.check input')];

@@ -332,7 +332,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Fixed on the way:** focusing a cell blurs an open editor, whose blur handler commits and rebuilds the table, leaving the browser focusing a detached cell. `focusCell` now re-resolves the cell when that happens (`src/grid/index.ts`); it showed up as lost focus after Insert, and would have bitten any synchronous rebuild.
 
-**Found in review:** the checkboxes were in the native tab order while the cells were not, so Tab and Shift+Tab walked the checkbox column instead of the grid; checkboxes are now `tabIndex = -1` and the cell is the focusable thing. The new-task row only handled Enter, so there was no way back off it: ArrowUp now returns to the last row and Shift+Tab to its last cell, committing anything typed on the way. Cells are still not reachable by Tab from outside the grid (they are `tabindex="-1"`); a roving tabindex would fix that and belongs with §7's grid accessibility.
+**Found in review:** the checkboxes were in the native tab order while the cells were not, so Tab and Shift+Tab walked the checkbox column instead of the grid; checkboxes are now `tabIndex = -1` and the cell is the focusable thing. The new-task row only handled Enter, so there was no way back off it: ArrowUp now returns to the last row and Shift+Tab to its last cell, committing anything typed on the way. The grid now carries a roving tab stop (spec §4b.4): one cell is in the page's tab order and follows the place, so the keyboard enters the grid once and leaves once; focusing that cell from the keyboard places the grid there.
 
 **Human review:** in Edge and Firefox, walk the §4b.4 table on the example file — especially Alt+Shift+Left/Right, Insert, Tab and Space.
 
