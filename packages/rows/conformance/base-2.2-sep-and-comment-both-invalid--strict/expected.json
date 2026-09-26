@@ -1,0 +1,8 @@
+{
+  "spec": ["base §2.2", "base §6 modes"],
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "invalid-sep", "line": 2 },
+    { "class": "structural", "code": "invalid-comment", "line": 3 }
+  ]
+}

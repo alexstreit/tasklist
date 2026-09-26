@@ -1,0 +1,11 @@
+{
+  "spec": ["ext §7: bools compare with false before true"],
+  "needs": ["extensions", "types"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "out-of-order", "line": 7 }],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "b": "false" } },
+    { "line": 6, "lead": "B", "values": { "b": "true" } },
+    { "line": 7, "lead": "C", "values": { "b": "false" } }
+  ]
+}

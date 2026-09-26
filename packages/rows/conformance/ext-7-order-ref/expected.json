@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §7: references compare by locator text, by code point, never by their targets' positions"],
+  "needs": ["extensions", "types"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "out-of-order", "line": 7 }],
+  "rows": [
+    { "line": 5, "lead": "A", "id": "z" },
+    { "line": 6, "lead": "B", "values": { "dep": "#z" }, "id": "y" },
+    { "line": 7, "lead": "C", "values": { "dep": "#y" }, "id": "x" },
+    { "line": 8, "lead": "D", "values": { "dep": "#z" } }
+  ]
+}

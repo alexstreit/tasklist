@@ -1,7 +1,6 @@
 {
-  "spec": ["ext §7: order of enum values"],
+  "spec": ["ext §7: enum values compare in declaration order"],
   "needs": ["extensions", "types"],
-  "disputed": true,
   "failed": false,
   "errors": [{ "class": "validation", "code": "out-of-order", "line": 7 }],
   "rows": [

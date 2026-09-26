@@ -6,46 +6,7 @@ Where a question says a rule has "no class", the class matters because strict mo
 
 ---
 
-## Q20. `sep` and `comment` both set, and in conflict
-
-**Cases:** `base-2.2-sep-and-comment-both-set` (+ `--strict`).
-**Spec:** base §2.2 ("If the comment marker in use contains `sep`, the key the file set is invalid"), added for Q6.
-
-The Q6 rule blames whichever key the file set. With `sep: /` and `comment: //`, the file set both. Falling back on `comment` doesn't help, because its default `//` also contains `/`.
-
-- **A (used).** `sep` is invalid and falls back to `|`. `comment` is then checked against `|`. It can only be invalid if it contains `|`, and then its default `//` is safe. Checking in that order always ends.
-- **B.** `comment` is invalid. Its default must then also be checked against `sep`, which fails here, so `sep` falls back too: two errors for one conflict.
-
-## Q21. How `order` compares bool, enum and ref values
-
-**Cases:** `ext-7-order-enum`.
-**Spec:** ext §7 (numbers, dates, datetimes, text and durations are covered; the others aren't).
-
-- Enum. **Used:** declaration order, so `low, high, mid` is out of order at `mid` for `enum[low,mid,high]`. The alternative is code points, the same as text: then `high` sorts before `low`, and the error is on `high` instead.
-- Bool: `false` before `true` seems the obvious choice. No case yet.
-- Ref: by locator text by code point, or not orderable, so `order` on a `ref` column is a structural error. No case yet.
-
-## Q22. An unclosed `[` in a declaration
-
-**Cases:** `base-4-unclosed-bracket` (+ `--strict`).
-**Spec:** base §4 ("A delimiter inside `[...]` does not separate declarations"), added for Q7; base §6 (malformed type).
-
-In `columns: level:enum[low,high | est`, the `[` is never closed. Does it protect the rest of the line?
-
-- **A (used).** No. Protection needs a closing `]`, so the line splits at `|` as if there were no bracket: `level` is a malformed type, read as `text`, and `est` is a column. A missing `]` costs one column, not all of them.
-- **B.** Yes. Everything from `[` to the end of the value is one declaration, and the malformed type swallows `est`.
-
-The same question applies to whitespace between options.
-
-## Q23. Which line a marker-column type error goes on
-
-**Cases:** `ext-5-marker-column-not-bool` (+ `--strict`).
-**Spec:** ext §5 ("A declared marker column that is not `bool` is a structural error"); ext §10.
-
-The conflict is between two keys: `markers: done=~` and `columns: done:text`.
-
-- **A (used).** On the `markers:` line. The marker entry is what gets ignored.
-- **B.** On the `columns:` line, where the wrong type is written.
+None open.
 
 ---
 
@@ -85,13 +46,13 @@ The conflict is between two keys: `markers: done=~` and `columns: done:text`.
 
 **Decision:** the key the file set is at fault. `sep: /` with no `comment` key makes `sep` invalid.
 **Spec changed:** base §2.2 (a paragraph after the key table).
-**Cases:** `base-2.2-sep-in-default-comment` (+ `--strict`). Writing the rule down raised Q20, for a file that sets both keys.
+**Cases:** `base-2.2-sep-in-default-comment` (+ `--strict`). Q20 settled the case where the file sets both keys, and replaced this wording.
 
 ### Q7. `enum[…]` values and a `,` delimiter
 
 **Decision:** brackets protect their contents from both the delimiter and the whitespace between options. Enum values are trimmed and can't contain `,` or `]`.
 **Spec changed:** base §4 (declarations and options); base §5 (new paragraph: Enum).
-**Cases:** `base-4-enum-with-comma-sep` now declares a working enum and has no errors, so its strict variant is gone. `base-5-enum-whitespace` is new. `base-6-fm-malformed-type` now puts its unclosed `enum[` last, so that it doesn't depend on Q22, which this decision raised.
+**Cases:** `base-4-enum-with-comma-sep` now declares a working enum and has no errors, so its strict variant is gone. `base-5-enum-whitespace` is new. `base-6-fm-malformed-type` now puts its unclosed `enum[` last, so that it tests only the malformed type; the unclosed bracket was settled separately, as Q22.
 
 ### Q8. Whitespace between a closing quote and stray text
 
@@ -145,7 +106,7 @@ The conflict is between two keys: `markers: done=~` and `columns: done:text`.
 
 **Decision:** the table as used. Every choice follows the pattern the base already set. Each rule is stated where it is defined, and all the extension errors, including those with a class already, are collected in a new recovery table.
 **Spec changed:** ext intro; §3.1 (invalid key), §4.1 (duplicate table names), §4.2 (wrong-table prefix), §4.3 (lead `ref` options), §5 (invalid marker entries; marker column not `bool`), §6.1 (nest column), §7 (unknown `order` column), §8 (conformance points to §10); new §10 Errors. §10 is at the end, so that §8 and §9, and the case names citing them, keep their numbers.
-**Cases:** `ext-3.1-invalid-id`, `ext-4.1-duplicate-table-name`, `ext-4.2-wrong-table`, `anchors-3-locators`, `ext-4.3-lead-ref-options`, `ext-5-invalid-marker`, `ext-5-marker-column-not-bool`, `ext-6.1-nest-column-not-ref`, `ext-7-order-unknown-column`, each with its `--strict` variant where it has one. `ext-5-marker-column-not-bool` is still disputed, but only over which line carries its error (Q23).
+**Cases:** `ext-3.1-invalid-id`, `ext-4.1-duplicate-table-name`, `ext-4.2-wrong-table`, `anchors-3-locators`, `ext-4.3-lead-ref-options`, `ext-5-invalid-marker`, `ext-5-marker-column-not-bool`, `ext-6.1-nest-column-not-ref`, `ext-7-order-unknown-column`, each with its `--strict` variant where it has one. Which line carries the `ext-5-marker-column-not-bool` error was settled separately, as Q23.
 
 ### Q17. An anchor and a key value that differ
 
@@ -162,5 +123,29 @@ The conflict is between two keys: `markers: done=~` and `columns: done:text`.
 ### Q19. Order checking
 
 **Decision:** each row is compared with the previous row, and null values are skipped. Text compares by code point. Durations compare in minutes where the column can convert both values, and a pair that can't be converted is skipped. With `nest`, only siblings are compared.
-**Spec changed:** ext §7. The rule is written as "compared with the previous row whose value is not null", which is what skipping nulls means for the row after one. The spec also says numbers compare numerically and dates and datetimes chronologically; neither was in question. Bool, enum and ref are Q21.
+**Spec changed:** ext §7. The rule is written as "compared with the previous row whose value is not null", which is what skipping nulls means for the row after one. The spec also says numbers compare numerically and dates and datetimes chronologically; neither was in question. Bool, enum and ref were settled as Q21.
 **Cases:** `ext-7-order-which-row` is no longer disputed. `ext-7-order-nulls`, `ext-7-order-text-code-points`, `ext-7-order-durations` and `ext-7-order-siblings` are new.
+
+### Q20. `sep` and `comment` both set, and in conflict
+
+**Decision:** blame `sep`, because it is the only rule that always settles. `sep` is checked on its own first, then `comment` against the resulting `sep`. If they conflict, and the file set `sep`, `sep` falls back to its default, and `comment` is then checked against `|`. Blaming `comment` instead could leave the file with no valid comment marker: with `sep: /`, the default `//` conflicts too.
+**Spec changed:** base §2.2 (the paragraph after the key table, which replaces the Q6 wording).
+**Cases:** `base-2.2-sep-and-comment-both-set` (+ `--strict`). `base-2.2-sep-and-comment-both-invalid` (+ `--strict`) is new: `sep: /` with `comment: "|/"` makes both invalid, so the file reads with `|` and `//`.
+
+### Q21. How `order` compares bool, enum and ref values
+
+**Decision:** enums compare in declaration order, and bools with `false` before `true`. References compare by locator text, by code point, and never by the target row's position; otherwise a row's validity would depend on whether a reference resolves, and on the order of another table.
+**Spec changed:** ext §7.
+**Cases:** `ext-7-order-enum`. `ext-7-order-bool` and `ext-7-order-ref` are new. The ref case would pass if compared by target position, and fails by locator text, so it tells the two readings apart.
+
+### Q22. An unclosed `[` in a declaration
+
+**Decision:** it protects nothing. Otherwise one typo swallows every column declared after it and shifts every positional cell in the file.
+**Spec changed:** base §4.
+**Cases:** `base-4-unclosed-bracket` (+ `--strict`).
+
+### Q23. Which line a marker-column type error goes on
+
+**Decision:** on the `markers:` line. The recovery ignores the marker entry, so the error belongs where the ignored entry is written.
+**Spec changed:** ext §5, §10.
+**Cases:** `ext-5-marker-column-not-bool` (+ `--strict`).

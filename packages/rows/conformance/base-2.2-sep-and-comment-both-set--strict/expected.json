@@ -1,6 +1,5 @@
 {
   "spec": ["base §2.2 sep, comment", "base §6 modes"],
-  "disputed": true,
   "failed": true,
   "errors": [{ "class": "structural", "code": "invalid-sep", "line": 2 }]
 }

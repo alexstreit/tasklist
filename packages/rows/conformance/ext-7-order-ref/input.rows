@@ -1,0 +1,8 @@
+---
+order: dep
+columns: dep:ref
+---
+A {#z}
+B {#y} | #z
+C {#x} | #y
+D | #z

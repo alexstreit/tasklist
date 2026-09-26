@@ -40,7 +40,7 @@ All keys are optional. Unknown keys are ignored. Keys beginning `x-` are for pri
 | `lead`    | `name:text`   | Declaration of the lead column (§4).                                         |
 | `columns` | —             | Declarations of the remaining columns, in order (§4).                        |
 
-If the comment marker in use contains `sep`, the key the file set is invalid. For example, `sep: /` with no `comment` key makes `sep` invalid, because the default comment `//` contains `/`.
+`sep` is checked on its own first, and `comment` is then checked against the resulting `sep`. If the comment marker in use contains a `sep` that the file set, `sep` is invalid and falls back to `|`, even when the file also set `comment`. Blaming `comment` would not always settle the conflict, because its default `//` can conflict too. `comment` is then checked against `|`, and falls back to `//` if it contains it. So `sep: /` is invalid with or without `comment: //`, and `comment: a|b` is invalid with the default `sep`.
 
 ### 2.3 Profiles
 
@@ -78,7 +78,7 @@ A row MUST NOT have more unnamed cells than declared columns (lead plus `columns
 
 ## 4. Column declarations
 
-`lead` declares the lead column; `columns` declares the rest, separated by the delimiter. A delimiter inside `[...]` does not separate declarations. Each declaration is:
+`lead` declares the lead column; `columns` declares the rest, separated by the delimiter. A delimiter inside `[...]` does not separate declarations. A `[` without a matching `]` protects nothing, so one typo can't swallow the declarations after it. Each declaration is:
 
 ```
 name[:type][ option]...

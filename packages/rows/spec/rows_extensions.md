@@ -127,7 +127,7 @@ markers: done=~ blocked=!
 - Entries are `NAME=CHAR`, separated by whitespace. `CHAR` is one character that is not alphanumeric, whitespace, `"`, `#`, `{`, `\`, `=`, the delimiter, or the first character of the comment marker. An entry that breaks this is a structural error, and is ignored.
 - Markers are recognised at the start of the lead value, after the indent, in any order. They are removed from the lead value, together with any whitespace that follows them. The rest of the lead cell is read as usual and may be quoted.
 - A marker repeated in one row is a structural error. The repeat, and everything after it, is part of the lead value.
-- A marker sets its column to `true`. If the column is not declared, it is implicitly `NAME:bool default=false`. A declared marker column that is not `bool` is a structural error. Its marker entry is ignored, and the column is read as declared.
+- A marker sets its column to `true`. If the column is not declared, it is implicitly `NAME:bool default=false`. A declared marker column that is not `bool` is a structural error, reported on the `markers` line. Its marker entry is ignored, and the column is read as declared.
 - A row with a marker and an explicit `false` in the same column is a validation error.
 - A lead value beginning with a declared marker character that is not meant as a marker is quoted.
 
@@ -188,7 +188,7 @@ If an indented row also has a value in the parent column, the two MUST agree; ot
 - Under `position`, a tool exporting to a store without row order MUST store the order, and restore it on import.
 - Under `COLUMN`, a row out of order is a validation error, and writers MUST keep rows sorted.
 - Each row is compared with the previous row whose value is not null. When `nest` is set, only siblings are compared: rows with the same parent, or top-level rows. A row that sorts before the one it is compared with is out of order.
-- Null values are skipped. Numbers compare numerically, dates and datetimes chronologically, and text by Unicode code point. Durations compare in minutes where the column can convert both values (base §5); a pair that can't be converted is skipped.
+- Null values are skipped. Numbers compare numerically, dates and datetimes chronologically, and text by Unicode code point. Durations compare in minutes where the column can convert both values (base §5); a pair that can't be converted is skipped. Enum values compare in declaration order, and bools with `false` before `true`. References compare by their locator text, by code point, and never by their targets' positions, so a row's order doesn't depend on whether a reference resolves or on the order of another table.
 - An `order` naming no column is a structural error on the `order` line, and is read as `position`.
 - Canonical form is the file as written; order needs no rewriting.
 
@@ -289,7 +289,7 @@ Every error this document defines. Recovery follows base §6: recovery comes fir
 | Lead `ref` column with `many` or `qualifier` (§4.3)                    | Structural | Option ignored.                                                                                      |
 | Invalid marker entry (§5)                                              | Structural | Entry ignored. One error per entry.                                                                  |
 | Marker repeated in one row (§5)                                        | Structural | The repeat, and everything after it, is part of the lead value.                                      |
-| Declared marker column that is not `bool` (§5)                         | Structural | Marker entry ignored. Column read as declared.                                                       |
+| Declared marker column that is not `bool` (§5)                         | Structural | Reported on the `markers` line. Marker entry ignored. Column read as declared.                       |
 | Marker and an explicit `false` in the same column (§5)                 | Validation | Both kept.                                                                                           |
 | Nest column not a `ref` to the current table, or with options (§6.1)   | Structural | Reported on the `nest` line. Indentation still nests; the column is read as declared.                |
 | Indent breaking the rules of §6.2                                      | Structural | Attached to the nearest preceding row with a smaller indent, or top-level. Opens its own level.      |

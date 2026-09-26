@@ -1,7 +1,6 @@
 {
-  "spec": ["ext §5: a declared marker column that is not bool"],
+  "spec": ["ext §5: a declared marker column that is not bool, reported on the markers line"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": false,
   "errors": [{ "class": "structural", "code": "marker-column-not-bool", "line": 2 }],
   "columns": [

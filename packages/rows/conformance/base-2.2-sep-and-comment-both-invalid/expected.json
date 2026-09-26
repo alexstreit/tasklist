@@ -1,0 +1,9 @@
+{
+  "spec": ["base §2.2: sep is checked first, then comment against the resulting sep"],
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "invalid-sep", "line": 2 },
+    { "class": "structural", "code": "invalid-comment", "line": 3 }
+  ],
+  "rows": [{ "line": 6, "lead": "A / b" }]
+}
