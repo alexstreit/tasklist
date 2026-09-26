@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../../src/core';
-import { deleteLines, indent, insertLineAbove, moveDown, moveUp, outdent, toggleComment } from '../../src/editing';
+import { deleteLines, indent, moveDown, moveUp, outdent, toggleComment } from '../../src/editing';
 import type { LineRange } from '../../src/editing';
 import type { TextEdit } from '../../src/buffer';
 
@@ -62,13 +62,6 @@ describe('moveUp / moveDown', () => {
     const text = 'a\nbb\nc\n';
     // The only edits are the removal and reinsertion of the neighbouring line.
     expect(moveUp(text, range(2)).every((e) => e.to <= 2 || e.from >= 5)).toBe(true);
-  });
-});
-
-describe('insertLineAbove', () => {
-  it('inserts a line above the range, with the content it is given', () => {
-    expect(applied('a\nb\n', insertLineAbove('a\nb\n', range(2), '    '))).toBe('a\n    \nb\n');
-    expect(applied('a\nb\n', insertLineAbove('a\nb\n', range(1)))).toBe('\na\nb\n');
   });
 });
 

@@ -186,7 +186,7 @@ Each item carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`), computed from t
 
 `compute(tree, columns) → Model`. Pure function. Walks the tree bottom-up and attaches `effective`, `childSum`, `mode`, `hasValue`, `childrenHaveValue`, `done`, `doneSum` and diagnostics to each node, plus document totals. No renderer or exporter performs arithmetic.
 
-The model carries the rows document it was read from (`doc`), so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. Renderers ignore it.
+The model carries the rows document it was read from (`doc`), so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
 
 The model also carries `lines`: every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
 
@@ -290,7 +290,7 @@ Structural edits are pure functions in `src/editing/`:
 ```ts
 type LineRange = { fromLine: number; toLine: number }; // 1-based, inclusive
 function indent(text: string, r: LineRange): TextEdit[];
-// likewise: outdent, moveUp, moveDown, insertLineAbove, deleteLines, toggleComment
+// likewise: outdent, moveUp, moveDown, deleteLines, toggleComment
 ```
 
 Both the text editor keymap and the grid call them; neither reimplements them. The text editor derives the range from its selection; the grid from its selected row.

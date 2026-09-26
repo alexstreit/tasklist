@@ -20,6 +20,12 @@ const noCodeMirror = {
   message: 'CodeMirror may only be imported from src/editor/ and src/buffer/CodeMirrorBuffer.ts.',
 };
 
+// Renderers and exporters read computed fields, never the rows document (spec §3.2).
+const noRows = {
+  regex: '^rows$',
+  message: 'Renderers and exporters read computed model fields; Model.doc and rows are for editors only.',
+};
+
 // The app reaches the rows library only through its entry point (packages/rows/DESIGN.md §2).
 const rowsEntryOnly = {
   regex: '^rows/|(^|/)packages/rows(/|$)',
@@ -45,7 +51,8 @@ export default [
       },
     ],
   ),
-  restrict(['src/app/**/*.ts', 'src/renderers/**/*.ts', 'src/exporters/**/*.ts', 'src/editing/**/*.ts', 'src/buffer/**/*.ts'], [analyzeOnly, noParseRows, noCodeMirror, rowsEntryOnly]),
+  restrict(['src/app/**/*.ts', 'src/editing/**/*.ts', 'src/buffer/**/*.ts'], [analyzeOnly, noParseRows, noCodeMirror, rowsEntryOnly]),
+  restrict(['src/renderers/**/*.ts', 'src/exporters/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows]),
   restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['src/grid/**/*.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['tests/**/*.ts'], [rowsEntryOnly]),

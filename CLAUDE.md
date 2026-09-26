@@ -48,6 +48,7 @@ Enforce the `core/` boundary with an ESLint `no-restricted-imports` rule or equi
 7. **One editor at a time.** Switching editors re-parses the buffer.
 8. **Units are fixed in the MVP**: bare number = hours, `1d = 8h`, `1w = 5d`. Store durations internally as hours.
 9. **Defaults must work with no front matter**: `columns: est:duration | owner:text | notes:text`.
+10. **`Model.doc` is for editors only.** Renderers and exporters read computed fields, never `doc`. `src/renderers/` and `src/exporters/` may not import `rows` (lint-enforced).
 
 ## Conventions
 

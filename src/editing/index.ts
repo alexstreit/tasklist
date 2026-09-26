@@ -59,12 +59,6 @@ export function moveDown(text: string, range: LineRange): TextEdit[] {
   ];
 }
 
-/** A new line above the range, carrying `content`. */
-export function insertLineAbove(text: string, range: LineRange, content = ''): TextEdit[] {
-  const { from } = lines(text)[range.fromLine - 1];
-  return [{ from, to: from, insert: `${content}\n` }];
-}
-
 /**
  * Delete the range's lines with their line breaks. Children of a deleted
  * parent keep their indentation and so re-attach to the previous shallower

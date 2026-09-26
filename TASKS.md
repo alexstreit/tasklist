@@ -263,6 +263,8 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 - [x] No file outside `src/editor/` and `src/buffer/CodeMirrorBuffer.ts` imports from `@codemirror/*` (lint-enforced, and verified by a probe).
 - [x] `git diff --stat` for `src/renderers/` and `src/core/` is empty.
 
+**Superseded by Task 22:** `insertLineAbove` is deleted; the grid inserts rows with rows' `insertRow`.
+
 **Decisions taken:** keymap tests that asserted identity with CodeMirror's commands now point at the commands in `src/editor/keymap.ts`; the line commands act on the main selection range only (multi-cursor line edits were never a documented behaviour); `origin: 'load'` clears the undo history in both buffers (spec §3.7) — previously undo after Open replayed edits from the previous document.
 
 **Human review:** in the browser, check Alt+Up/Down, Tab/Shift+Tab, Ctrl+/ and Ctrl+Z/Ctrl+Y against Task 2's acceptance list.
@@ -625,7 +627,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - `tests/grid/edits.test.ts`: rewritten for `EditResult` and the rows rules: named rather than padded cells, quoting, anchors kept, `done=true` removed, `insertItem` refusals.
 - `tests/grid/grid.test.ts`: "pads a title-only line…" now expects `Auth | notes=later`. "turns a comment row into an item row…, and back again" drops the "back again": `// Audit log` typed into a title is quoted.
 
-**Not done, deliberately:** `insertLineAbove` in `src/editing` has no caller in `src/` now (the grid uses `insertRow`). It stays because spec §3.8 lists it. The `@lezer/highlight` devDependency is unused by `src/`. Removing it would touch the lockfile, so that's left for review.
+**Cleanups after review:** `Model.doc` is for editors only (spec §3.2, CLAUDE.md non-negotiable 10); lint forbids `src/renderers/` and `src/exporters/` from importing `rows`. `insertLineAbove`, which had no caller left, is deleted with its tests and removed from spec §3.8. The `@lezer/highlight` devDependency is removed.
 
 **Spec questions:** none opened. The DESIGN §7 addition describes existing parser behaviour.
 
