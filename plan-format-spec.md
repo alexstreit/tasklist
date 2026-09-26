@@ -1,108 +1,72 @@
 # Plan File — Specification
 
+**Depends on:** rows 0.6, rows extensions 0.3, Text Anchors 0.2.
+
 A text-driven project estimating tool. The plan is a plain text file; the app is one or more editors over that file plus one or more read-only renderers and exporters of it.
 
 ## 1. Principles
 
 - **Text is canonical.** The file is the data model. Everything else is derived from it and nothing writes to it except through text edits.
+- **A plan is a rows file.** The generic format is rows; this spec adds the plan profile and roll-ups. Plan behaviour that belongs in rows goes into rows.
 - **Indentation is the tree.** No bullets, no brackets.
-- **Terse by default, tunable by front matter.** A file with no header must work with sane defaults.
+- **Terse by default, tunable by front matter.** The plan profile supplies sane defaults; a file can override any of them.
 - **One write path.** Every editor (the text editor, the grid editor) produces text edits against the same buffer. Only one editor is active at a time.
 - **Compute once, render many.** Roll-ups are calculated in one pass and attached to the tree; renderers and exporters only read.
 
 ## 2. File format
 
-### 2.1 Encoding and whitespace
+A plan file is a **rows** file (base 0.6 and extensions 0.3, in `packages/rows/spec/`) read in tolerant mode with the **plan profile**. This section covers only what the plan adds. Everything else, including tokenising, quoting, named cells, errors and recovery, comes from the rows specs and the `rows` library.
 
-- UTF-8, LF line endings (CRLF normalised on load).
-- Indentation is **spaces only**. Tabs are converted to 4 spaces on load and on paste.
-- Trailing whitespace is ignored. Blank lines are ignored and preserved.
+### 2.1 The plan profile
 
-### 2.2 Line types
-
-Each line is exactly one of:
-
-| Line                   | Recognised by                                                                      |
-| ---------------------- | ---------------------------------------------------------------------------------- |
-| Front matter delimiter | `---` alone on a line, only at the very top of the file                            |
-| Front matter content   | Any line between the two delimiters (or to end of file if unclosed)                |
-| Blank                  | Only whitespace                                                                    |
-| Comment                | First non-space character sequence is `//`                                         |
-| Comment (markdown)     | Line starts with `<!--` and ends with `-->`                                        |
-| Reserved               | First non-space character is `#` — raises a warning (reserved for future headings) |
-| Item                   | Anything else                                                                      |
-
-### 2.3 Item grammar
+`profile: plan` names the profile published as `profiles/plan.rows`:
 
 ```
-item     := indent [ "~" ] title { "|" field }
-indent   := " "*
-title    := text without "|"
-field    := text without "|"   (leading/trailing whitespace trimmed)
+---
+lead: title:text
+nest: parent
+markers: done=~
+columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text
+---
 ```
 
-- `~` immediately after the indent marks the item **done**. Whitespace between `~` and the title is allowed.
-- Fields are **positional** and map to the columns declared in the front matter, in order. The title is column 0 and is implicit.
-- A missing field is empty. A single trailing `|` is permitted and produces nothing; interior empty fields are kept.
-- More fields than declared columns → warning; the extra fields are ignored.
-- `|` cannot appear in a title or field (no escaping yet).
+- A file with no `profile:` key uses the plan profile when its name ends in `.plan`, or when it has no name yet (a new, unsaved document). Other files are read as plain rows files.
+- The tool writes `profile: plan` into the frontmatter of every file it creates, so the file says what it is even if it is renamed.
+- Exports, and later canonical form, write the resolved keys out in full.
+- A file may override any key the profile sets. A file's own `columns:` replaces the whole column list, including options, so a duration column declared there needs its own `unit=h hpd=8 dpw=5` (§2.6).
 
-### 2.4 Hierarchy
+### 2.2 Normalisation
 
-The parent of an item is the nearest preceding item with a strictly smaller indent. "Any deeper is a child" — the exact number of spaces doesn't matter.
+UTF-8, with any BOM stripped and CRLF turned into LF. Tabs in indentation become 4 spaces on load and on paste, before the text reaches the buffer. Rows would otherwise count each tab as one space.
+
+### 2.3 Lines
+
+Every line is frontmatter, blank, a comment (`//`) or a row (rows base §1, §3). A row with errors is still a row. HTML comments are no longer comments: a line beginning `<!--` is a row, with an info diagnostic and a fix that turns it into `//`.
+
+### 2.4 Items and hierarchy
+
+Every row is an **item**. Its title is the lead value, with markers and anchors removed. The hierarchy is rows nesting (extensions §6): indent levels are relative, the rules are strict, and recovery is tolerant.
 
 ```
 A               (indent 0)
         B       (indent 8, child of A)
-    C           (indent 4, child of A — sibling of B, not its child)
+    C           (indent 4) structural error; recovered as child of A, sibling of B
 ```
 
-The third case is legal and raises no diagnostic.
+The recovered tree is the one the plan tool always built. The only change is that the case is now reported. A row may also give its parent by name (`parent=#id`), which needs the parent to have an anchor.
 
-### 2.5 Front matter
+### 2.5 Done
 
-Optional. Must begin on line 1 with `---` and end with the next `---`. Contents are simple `key: value` lines. The only key currently is `columns`.
+An item is done when its `done` marker (`~`) is present or `done=true` is set by name. Done is inherited as in §2.8.
 
-```
----
-columns: est:duration | owner:text | notes:text
----
-```
+### 2.6 Estimates
 
-Each column is `name:type`. Names must be unique and contain no `|` or `:`.
+The summable columns are `duration` and `number` columns. Every other type, including text, bool, date, datetime, enum and ref, is shown as written and never summed.
 
-**Default when absent or when `columns` is not given:**
-
-```
-columns: est:duration | owner:text | notes:text
-```
-
-Unknown keys raise a warning and are ignored, so future keys (`calendar`, `unit`, roles) degrade gracefully in older builds.
-
-If the opening `---` is never closed, the rest of the file is treated as front matter and a single warning is raised on line 1. Per-line unknown-key warnings are suppressed in that case.
-
-### 2.6 Column types
-
-| Type       | Parses                                                    | Roll-up | Display                                |
-| ---------- | --------------------------------------------------------- | ------- | -------------------------------------- |
-| `duration` | see below                                                 | sum     | mixed units, largest first: `1w 2d 4h` |
-| `number`   | non-negative decimal number, optionally prefixed with `+` | sum     | as entered                             |
-| `text`     | anything                                                  | none    | as entered                             |
-
-**Duration grammar.** A `duration` is one or more terms, each a number followed by a unit (`h`, `d`, `w`), with optional whitespace between number and unit and between terms. Each unit may appear at most once, in any order. A value consisting of a single bare number is hours. A bare number anywhere in a multi-term value is an error, since `4 2d` is too easily misread as `4h 2d`. A leading `+` applies to the whole value.
-
-| Valid                       | Hours       | Invalid                    | Reason                  |
-| --------------------------- | ----------- | -------------------------- | ----------------------- |
-| `4`                         | 4           | `4 2d`, `2d 4`, `2 d 4`    | bare number in compound |
-| `4h`, `4 h`                 | 4           | `2d 2d`                    | repeated unit           |
-| `2d 4h`, `4h 2d`, `2 d 4 h` | 20          | `2dh`, `d 2`, `4x`, `1..5` | unparseable             |
-| `1w 2d 4h`                  | 60          |                            |                         |
-| `+2d 4h`                    | additive 20 |                            |                         |
-| `1.5d 4h`                   | 16          |                            |                         |
-
-Units are fixed: `1d = 8h`, `1w = 5d = 40h`. Internally every duration is stored in hours.
-
-An invalid value in a `duration` or `number` field raises a warning (with the specific message where one exists) and is treated as empty.
+- A duration converts to hours using its column's `hpd` and `dpw`, with minutes at 60. If a value has a term its column can't convert, such as `1d` without `hpd`, the value is treated as empty and gets a warning. The warning has a fix that adds `unit=h hpd=8 dpw=5` to the column declaration.
+- A bare number is valid only when the column has `unit=` (the profile sets `unit=h`). Without it, the value is a rows validation error, and the same fix applies.
+- A leading `+` makes the value **additive** (§2.7). A leading `-` isn't supported yet: the value is treated as empty, with a warning.
+- `number` columns follow the same sign rules.
 
 ### 2.7 Roll-up semantics
 
@@ -111,8 +75,8 @@ For each node and each summable column, compute an **effective value**:
 ```
 childSum = sum(effective value of each child)          // 0 if no children
 
-if field is empty:          effective = childSum
-elif field starts with "+": effective = childSum + value   // additive
+if cell is empty:           effective = childSum
+elif value has sign "+":    effective = childSum + value   // additive
 else:                       effective = value              // override
 ```
 
@@ -129,9 +93,9 @@ A parent with an estimate whose children have no estimates raises no diagnostic 
 
 Leaves with `+` behave as `0 + value`, i.e. the same as an override. No diagnostic.
 
-### 2.8 Done
+### 2.8 Done inheritance and done sums
 
-- A node is **done** if it has the `~` prefix or any ancestor does. Children of a done parent are implicitly done.
+- A node is **done** if it is marked done (§2.5) or any ancestor is. Children of a done parent are implicitly done.
 - No status roll-up: a parent with all children done is **not** automatically done.
 - Per node and per summable column, compute `doneSum`:
 
@@ -144,28 +108,25 @@ else:             doneSum = sum(doneSum of children)
 
 ### 2.9 Diagnostics
 
-All diagnostics carry a line number, a severity, a message, and optionally a span. Severities: `warning`, `info`.
+Every diagnostic carries a line, a severity, a code, a message, a span where one exists, and optional **fixes**, each a label plus `TextEdit[]`.
 
-| Condition                                                                         | Severity                           |
-| --------------------------------------------------------------------------------- | ---------------------------------- |
-| Tabs converted on load                                                            | info (see note)                    |
-| Line starts with `#`                                                              | warning                            |
-| More fields than columns                                                          | warning                            |
-| Unparseable duration/number                                                       | warning                            |
-| Bare number in compound duration (`bare number not allowed in compound duration`) | warning                            |
-| Unknown front matter key (suppressed when front matter is unclosed)               | warning                            |
-| Unknown column type                                                               | warning (column treated as `text`) |
-| Duplicate column name                                                             | warning                            |
-| Front matter opened but not closed (line 1, span on the opening `---`)            | warning                            |
-| Override differs from child sum (only when `childrenHaveValue`)                   | info                               |
+| Source                                                                                      | Severity |
+| ------------------------------------------------------------------------------------------- | -------- |
+| rows syntax or structural error (e.g. unterminated quote, overflow cells, bad indent level) | error    |
+| rows validation error (e.g. `4 hours` in a duration column, a dangling `#ref`)              | warning  |
+| Duration term the column can't convert, or a negative value (§2.6)                          | warning  |
+| Unknown frontmatter key that is not rows base, a rows extension key, or `x-`                | info     |
+| Line beginning `<!--` (§2.3)                                                                | info     |
+| Tabs converted on load                                                                      | info     |
+| Override differs from child sum (only when `childrenHaveValue`)                             | info     |
 
-Note: the editors convert tabs before text reaches the buffer (on paste and on file open), so the tab diagnostic is reachable from `parse` and tests but not normally from the UI. This is by design.
+Rows ignores unknown keys silently. The plan tool reports them as info, because in a hand-edited file an unknown key is usually a typo, such as `colums:`.
 
 ### 2.10 Example
 
 ```
 ---
-columns: est:duration | owner:text | notes:text
+profile: plan
 ---
 // Q4 auth work. Estimates are rough.
 Auth                        | 2d
@@ -193,7 +154,7 @@ Computed:
 | 2.1   | User list      | 1d          | —           | override                 | 0       |
 |       | **Document**   | **3d**      |             |                          | **4h**  |
 
-The fixture lives at `examples/example.plan` and is shared by tests and the app.
+The fixture lives at `examples/example.plan` and is shared by tests and the app. It is also a rows conformance case.
 
 ## 3. Architecture
 
@@ -201,23 +162,23 @@ The fixture lives at `examples/example.plan` and is shared by tests and the app.
             ┌──────────── PlanBuffer (one per document) ────────────┐
             │                                                        │
  editors ───┤ apply(edits) / undo / redo            onChange ────────┼──► analyze ──► model ──► renderer(s)
- text, grid │                                                        │    (parse →            tree, table
-            └────────────────────────────────────────────────────────┘     parseColumns →      (future: gantt)
+ text, grid │                                                        │    (parseRows →        tree, table
+            └────────────────────────────────────────────────────────┘     readPlan →          (future: gantt)
                                                                             compute)        ──► exporter(s)
-                                                                                                TSV
+   edits come from src/editing (line ops) and the rows edit API (cells)                         TSV
 ```
 
-### 3.1 Parse
+### 3.1 Read
 
-`parse(text) → Tree`. Pure function. Every node records the line it came from and the character span of each field (absolute offsets into the normalised text), so that:
+`parseRows(text, { profiles: { plan }, defaultProfile })` from the `rows` library (§3.9) returns a lossless `RowsDocument`: every line classified, every row with its indent, markers, anchors, cells and overflow, all as spans into the text, plus the parent relation and every error.
+
+`readPlan(doc) → Tree` is the plan layer. It turns rows into items and reads summable cells as hours (§2.6), carrying the rows spans through unchanged, so that:
 
 - the preview can highlight the node under the cursor,
 - diagnostics point at the right column,
-- the grid editor can turn "change this cell" into a precise text replacement without touching anything else on the line.
+- the grid can ask the rows edit API for a precise replacement.
 
-Comments, blank lines, reserved lines and front matter are retained as non-item nodes so the tree is a lossless representation of the file.
-
-Each item node carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`). Only item nodes are counted; other line types consume no numbers. Outline numbers are structural references and shift when lines are inserted above; they are not stable IDs.
+Each item carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`), computed from the rows parent relation. Only rows are counted. Outline numbers are structural references and shift when lines are inserted above them. They are not stable IDs; anchors are.
 
 ### 3.2 Compute
 
@@ -225,9 +186,9 @@ Each item node carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`). Only item 
 
 The model also carries `lines`: every line of the file in order, exactly as `parse` classified it. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
 
-`analyze(text) → Model` composes `parse`, `parseColumns` and `compute` and is the single entry point the app shell and any tooling call. Nothing outside `src/core/` imports `parse` or `compute` directly (lint-enforced).
+`analyze(text, filename?) → Model` composes `parseRows`, `readPlan` and `compute` and is the single entry point the app shell and any tooling call. Nothing outside `src/core/` imports the rows parser, `readPlan` or `compute` directly (lint-enforced).
 
-`src/core/` has no imports outside itself and the standard library (lint-enforced).
+`src/core/` imports nothing outside itself, the standard library and the `rows` package (lint-enforced).
 
 ### 3.3 Renderers
 
@@ -330,11 +291,23 @@ function indent(text: string, r: LineRange): TextEdit[];
 
 Both the text editor keymap and the grid call them; neither reimplements them. The text editor derives the range from its selection; the grid from its selected row.
 
+### 3.9 The rows library
+
+`packages/rows/` is an npm workspace package with its specs in `spec/`, its design in `DESIGN.md`, and a language-neutral conformance suite in `conformance/`. It has zero runtime dependencies and imports nothing from the app. The app imports it only through its `index.ts`. It moves to its own repository once the specs reach 1.0.
+
+What the plan tool uses:
+
+- `parseRows` for reading (§3.1);
+- `tokenizeLine` for highlighting (§4.1);
+- `setLead`, `setCell`, `setMarker` and `insertRow` for every cell-level edit from the grid (§4b.2).
+
+The line operations in `src/editing/` stay in the app. They work on whole lines and don't depend on the format, except `toggleComment`, which takes the comment marker from the document.
+
 ## 4. Text editor (CodeMirror 6)
 
 ### 4.1 Language mode
 
-Highlighting for: done lines (dimmed, including implicitly done descendants), comment lines, the `~` prefix, column separators, duration values, `+` prefix, front matter block.
+Tokens come from the rows library's `tokenizeLine`, the same tokenizer the parser uses. Highlighting covers: done lines (dimmed, including implicitly done descendants), comment lines, markers, anchors (`{#id}`), delimiters, cell names (`owner=`), quoted values and their escapes, duration values, the `+` sign, and the frontmatter block.
 
 ### 4.2 Folding
 
@@ -356,7 +329,7 @@ Indent-based folding on items that have child items. Indented comment lines foll
 
 ### 4.4 Diagnostics
 
-Via `@codemirror/lint`, fed from the model produced by the shell's single `analyze()` call (no second analysis). Diagnostics with a span underline only that span; span-less diagnostics get a gutter marker only. Hover shows the model's message verbatim. The reserved `#` warning comes through this path, not the tokenizer.
+Via `@codemirror/lint`, fed from the model produced by the shell's single `analyze()` call (no second analysis). Severities `error`, `warning` and `info` map to the lint severities of the same names. Diagnostics with a span underline only that span; span-less diagnostics get a gutter marker only. Hover shows the model's message verbatim. A diagnostic's fixes appear as lint actions, and applying one dispatches its edits through the buffer with origin `text-editor`.
 
 ## 4b. Grid editor
 
@@ -365,19 +338,22 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 ### 4b.1 Rows
 
 - One row per **item** line. Columns, left to right: WBS (outline number, read-only, doubles as the row selector), done (checkbox), title, then each declared column in order.
-- Comment, blank and reserved lines render as greyed rows: a WBS cell with no number, then one cell spanning the remaining columns and holding the raw line text, indentation included. They are editable as raw text — editing one into an item line, or an item line into a comment, is an ordinary text edit and the row changes kind on the next render — and they can be selected, deleted and moved like any row.
+- Comment and blank lines render as greyed rows: a WBS cell with no number, then one cell spanning the remaining columns and holding the raw line text, indentation included. They are editable as raw text — editing one into an item line, or an item line into a comment, is an ordinary text edit and the row changes kind on the next render — and they can be selected, deleted and moved like any row.
 - Front matter renders as a single collapsed greyed row at the top, read-only.
 - A read-only **total** row at the bottom shows document `effective` and `doneSum` per summable column.
 - Below the total row is one blank **new task** row. Typing into it inserts a new item line at the end of the document at the indent of the last item line (or indent 0 if none).
 
 ### 4b.2 Cells
 
-- **Title** edits replace the title span.
-- **Done** checkbox inserts or removes the `~` marker. A child of a done parent shows a checked, disabled checkbox.
-- **Summable cells** display the formatted `effective` (empty when `hasValue` is false; muted when `mode` is `derived`). Editing shows the **raw field text** from the file, spreadsheet-formula style. Committing a non-empty value on a parent creates an override; committing an empty value on a parent restores derived. An additive value (`+…`) is shown with a marker and is read-only.
-- **Text cells** display and edit the raw field text.
-- Committing to a column whose field does not yet exist on the line pads the line with empty fields so the value lands in the right position. Trailing empty fields created this way are trimmed when the committed value is itself empty.
-- A cell with a diagnostic has a coloured outline (warning or info) and shows the message on hover. A diagnostic whose span falls in a field marks that field's cell; one with no span, or whose span reaches past the declared columns, marks the row's WBS cell. Anything inside the front matter marks its collapsed row.
+Every cell edit goes through the rows edit API (§3.9). The grid never builds row text itself.
+
+- **Title** edits call `setLead`, which keeps the indent, markers and anchors, and quotes the title when it would otherwise read as a marker, an anchor or a heading.
+- **Done** checkbox calls `setMarker(done)`. A child of a done parent shows a checked, disabled checkbox.
+- **Summable cells** display the formatted `effective` (empty when `hasValue` is false; muted when `mode` is `derived`). Editing shows the **raw cell text** from the file, spreadsheet-formula style. Committing a non-empty value on a parent creates an override; committing an empty value on a parent restores derived. An additive value (`+…`) is shown with a marker and is read-only.
+- **Text cells** display and edit the decoded text. A `|` or a leading `"` typed into a cell is quoted automatically.
+- Writing a column that the row doesn't set yet follows `setCell`'s rules: append it positionally if it is the next slot, otherwise write it as a named cell (`notes=…`). The grid never pads with empty cells. Clearing a cell removes it, or empties it if later cells depend on its position.
+- A cell with a diagnostic has a coloured outline (error, warning or info) and shows the message on hover. A diagnostic whose span falls in a cell marks that cell. One with no span, or on overflow cells, marks the row's WBS cell. Anything inside the frontmatter marks its collapsed row.
+- Implicit columns (`parent`, and `id` when identity is on) are not shown in v1.
 
 ### 4b.3 Selection and focus
 
@@ -440,24 +416,22 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
 ## 6. Persistence and deployment
 
 - Single user, files on disk. Open/save via the File System Access API where available, falling back to file input and download.
+- Open accepts `.plan` and `.rows`. Save As defaults to `.plan`. A new document starts as `---\nprofile: plan\n---\n`.
 - Save writes the buffer as-is. Nothing re-serialises from the tree. A saved file is byte-identical to the opened one except for tab-to-space and CRLF-to-LF normalisation.
 - In contexts where the API is unavailable or blocked (e.g. a cross-origin iframe such as the VS Code Simple Browser), failures are reported visibly, never swallowed.
 - Deployed as a static build to GitHub Pages via GitHub Actions on push to the `deploy` branch (`git push origin main:deploy`). Vite `base` is `/tasklist/` under Actions and `/` locally.
 
 ## 7. Deferred
 
-Listed so the syntax leaves room:
-
-- Additional prefix markers (`?` uncertain, `!` blocked, `-` dropped)
+- Plan meanings for more markers, such as `?` uncertain, `!` blocked and `-` dropped. The syntax is already available through `markers:`.
 - Estimate ranges / confidence, PERT roll-up
-- Named fields (`est=4h`) alongside positional
-- Markdown headings (`#`) as un-indented parents
+- Markdown headings (`# `) as un-indented parents. Rows reserves the form.
 - Status roll-up (all children done ⇒ parent done)
-- Custom units and calendar in front matter (`unit:`, `calendar:`)
-- Column **roles** (`start:date(role=start)`) for renderers such as Gantt
+- Column **roles** for renderers such as Gantt; dependencies from `deps:ref many qualifier=lag:duration`
 - Additional roll-up types: `max`, `count`, `done%`, `remaining`
-- Negative additive values
-- `\|` escaping
+- Negative values and negative additive values
+- Showing and editing anchors, IDs and `ref` columns in the grid
+- rows `include` resolution (needs directory access in the browser), canonical form export, ID minting
 - Renderers: Gantt; exports to Excel files, Word, HTML, MS Project
 - Manual light/dark toggle
 - Multi-user via text CRDT

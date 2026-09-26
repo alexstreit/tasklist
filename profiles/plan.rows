@@ -1,0 +1,9 @@
+---
+lead: title:text
+nest: parent
+markers: done=~
+columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text
+---
+// The plan profile. Only the frontmatter above is used; this body is ignored.
+// Referenced as `profile: plan` by the plan tool, which has these keys built in.
+// Files meant for exchange can use `profile: ./plan.rows` instead.

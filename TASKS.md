@@ -2,7 +2,7 @@
 
 Work these in order. Each task is one Claude Code session. A task is done only when every acceptance criterion is met and the human has reviewed.
 
-**Status:** Tasks 1–14 complete. Task 15 written, pending human review.
+**Status:** Tasks 1–14 complete. Task 15 written, pending human review. Next: Task 16 (rows library).
 
 ---
 
@@ -364,6 +364,147 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 **Fixed on the way:** cells set `className` after `addCell` had added the diagnostic class, so warnings on the WBS and raw cells were invisible (the `title` was there, the outline was not). `addCell` now takes the class name. Toolbar enablement was re-splitting the whole document three times per focus move; it now uses the row's own indent and line number, which are the same conditions the operations apply (the disabled-state tests cover the equivalence). Arrow-key cost went from 8.6 ms to 1.3 ms on 500 lines in jsdom.
 
 **Human review:** in both themes, check a file with comments, a blank line, front matter, a `4 hours` estimate and an override that differs — and try a 500-line file.
+
+---
+
+## Task 16 — Workspace, specs and conformance suite
+
+No implementation code. This task turns the specs into tests before anything is built, so spec bugs surface as failing fixtures rather than as design arguments halfway through the parser.
+
+**Deliverables**
+
+- npm workspaces: the app stays at the root; `packages/rows/` gets its own `package.json` (no runtime dependencies), `tsconfig`, and Vitest config. `npm test` at the root runs both.
+- `packages/rows/spec/`: `rows.md` (0.6), `rows_extensions.md` (0.3), `text_anchors.md` (0.2). `packages/rows/DESIGN.md` from `rows-library-design.md`.
+- `profiles/plan.rows` at the repo root.
+- `packages/rows/conformance/`: cases per DESIGN §8, plus a runner (`conformance.test.ts`) that loads every case and, for now, expects `parseRows` to be missing (the suite is skipped until Task 17).
+- ESLint: `packages/rows/src` imports nothing outside itself; the app imports `rows` only through its entry point.
+- CLAUDE.md: add the rows boundary rules above; add "rows behaviour lives in `packages/rows` and its specs — if the plan tool needs different behaviour, change the spec first."
+
+**Acceptance criteria**
+
+- [ ] A case exists for every example in all three specs, every row of both recovery tables in base §6, and every error named in extensions §3–§7.
+- [ ] Every structural-error case has a strict variant expecting `failed: true`.
+- [ ] `examples/example.plan` (with `profile: plan`) is a case, run with the plan profile supplied as a built-in named profile.
+- [ ] `expected.json` files were written by hand from the specs, not generated.
+- [ ] `npm test` is green at the root; the app's tests are unchanged.
+
+**Human review:** read the `expected.json` files. Each one is a claim about what the spec means; any you disagree with is a spec change.
+
+---
+
+## Task 17 — rows: frontmatter, schema and tokenizer
+
+**Deliverables**
+
+- `parseRows` per DESIGN §4, up to typed values: normalisation, frontmatter grammar (base §2.1), keys, profiles (named via `profiles`, paths via `resolveProfile`, the forbidden-key list in §2.3), column declarations and options (base §4), `tokenizeLine`, cells, quoting and escapes, named cells, overflow, both recovery tables, strict and tolerant modes.
+- Every span per DESIGN §4. Stable error codes in `errors.ts`.
+- `Value` for `text` only in this task; other types come in Task 18.
+
+**Acceptance criteria**
+
+- [ ] All base conformance cases that don't depend on types or extensions pass.
+- [ ] Property test: for generated files, the concatenation of every `Line`'s text with newlines reproduces `doc.text` exactly.
+- [ ] Every cell's `valueFrom..valueTo` slice, decoded, equals its `text`.
+- [ ] `tokenizeLine` and `parseRows` agree on every token boundary for every conformance input.
+- [ ] Strict mode never throws.
+
+---
+
+## Task 18 — rows: types and validation
+
+**Deliverables**
+
+- Typed values for every base type, including the duration grammar with `unit=`, `hpd=` and `dpw=`; `durationToMinutes`.
+- `required`, `unique`, `default=` and invalid-option recovery.
+- Unknown and malformed types per base §5 and §6.
+
+**Acceptance criteria**
+
+- [ ] All base conformance cases pass.
+- [ ] Duration table: `4h`, `4 h`, `1d 4h`, `2 d 4 h`, `+2d 4h`, `1.5d 4h`, `-30m` valid; `4 2d`, `2d 4`, `1d1d`, `2dh`, `d 2`, `4x` invalid; `4` valid only with `unit=`.
+- [ ] `durationToMinutes` converts m↔h always, d↔h only with `hpd`, w↔d only with `dpw`, and otherwise reports which option is missing.
+- [ ] A `default=` that doesn't match its type is a structural error and the option is ignored.
+
+---
+
+## Task 19 — rows: extensions
+
+**Deliverables**
+
+- Implicit columns (extensions §2); key and anchors including aliases and the "identity applies only when…" rule (§3); markers (§5); nesting with tolerant recovery and "a recovered row opens its own indent" (§6); `ref` columns within the file, with `many` and `qualifier` (§4.2–4.3); `order` (§7).
+- `include` is parsed but never resolved in v1: each include is a structural error and references into it are validation errors, per §4.1.
+
+**Acceptance criteria**
+
+- [ ] All conformance cases pass, including the plan example.
+- [ ] The `A / B / C / D` nesting example in extensions §6.2 gives exactly the tree the spec describes, in tolerant mode, and fails in strict mode.
+- [ ] `~ Login page`, `~~Login`, `"~Login page"` and `~!Login page` match the extensions §5 examples.
+- [ ] A file with a declared `id:number` column and no anchors and no `key:` has no identity and no uniqueness check on `id`.
+- [ ] Cycles via the parent column are validation errors and do not hang the parser.
+
+---
+
+## Task 20 — rows: edit API
+
+**Deliverables**
+
+- `setLead`, `setCell`, `setMarker`, `insertRow` and `formatValue` per DESIGN §6.
+
+**Acceptance criteria**
+
+- [ ] The property test in DESIGN §6 runs over at least 1,000 generated documents and edits per function.
+- [ ] `setLead` on `    ~Login page {#login} | 4h` changes only the title; the indent, marker, anchor and cells are untouched.
+- [ ] `setLead` with a title beginning `~` (when `~` is a marker), `# ` or ending `{#x}` produces a quoted lead that reads back as that exact title.
+- [ ] `setCell` on `Auth | 2d` for `notes` (third column) writes `notes=…`, not padding; for `owner` (next slot) writes ` | bob`.
+- [ ] `setCell` with a value containing `|` quotes it.
+- [ ] `setCell(null)` on a trailing cell removes it and its delimiter; on an interior cell empties it.
+- [ ] `setMarker(done, false)` on `~Login` removes the `~`; on a row with `done=true` by name removes the named cell.
+
+---
+
+## Task 21 — Plan core on rows
+
+Replace the plan's own parser with the rows library. `compute`, renderers and exporters should not need to change beyond the type of the tree they read.
+
+**Deliverables**
+
+- `readPlan(doc) → Tree` per spec §2.4–§2.6 and §3.1, with outline numbers from the rows parent relation.
+- `analyze(text, filename?)` per spec §3.2; the plan profile built in as a named profile; `defaultProfile` applied per spec §2.1.
+- Diagnostics per spec §2.9, including the `error` severity and the `fixes` field; the three fixes in §2.3 and §2.6.
+- `Model.lines` built from rows lines; the `reserved` line kind is gone.
+- The old `parse`, `parseColumns` and duration parser are deleted.
+- Spec updated wherever the implementation disagreed.
+
+**Acceptance criteria**
+
+- [ ] The §2.10 example computes exactly the table in the spec.
+- [ ] Every compute, renderer and exporter test passes. Tests that asserted old parse behaviour are rewritten against the new spec, and each rewrite is listed in the task notes with the reason.
+- [ ] A legacy file (no `profile:`, `columns: est:duration | owner:text`, values `2d` and `4`) opened as `.plan` shows the conversion warnings, and applying the fix makes them disappear and the totals appear.
+- [ ] `<!-- note -->` shows an info with a working fix to `// note`.
+- [ ] The `0 / 8 / 4` file gives the same tree and outline numbers as before, plus one structural error.
+- [ ] Unclosed frontmatter leaves every row visible.
+
+---
+
+## Task 22 — Editors on rows
+
+**Deliverables**
+
+- Text editor highlighting from `tokenizeLine` (spec §4.1); the old tokenizer is deleted.
+- Lint severities including `error`; fixes as lint actions (spec §4.4). Theme tokens for the error colour in both themes.
+- Grid cell edits through the rows edit API (spec §4b.2); `src/grid/edits.ts` shrinks to calls into it. Error outlines in the grid.
+- Open accepts `.plan` and `.rows`; Save As defaults to `.plan`; new documents start with `profile: plan` (spec §6).
+- `toggleComment` takes its marker from the document.
+
+**Acceptance criteria**
+
+- [ ] Highlighting distinguishes markers, anchors, cell names, quoted values and escapes, and never disagrees with the parser (a test runs both over every conformance input).
+- [ ] In the grid, typing `a | b` into notes produces `notes="a | b"` or a quoted positional cell, and reads back as `a | b`.
+- [ ] Renaming a titled row with an anchor in the grid keeps the anchor.
+- [ ] Toggling done in the grid on a row with markers and anchors changes only the marker.
+- [ ] Lint action "Add unit=h hpd=8 dpw=5" is undoable with one Ctrl+Z.
+- [ ] The colour-token test still passes.
+- [ ] Manual, both themes: error, warning and info are distinguishable in the text editor and the grid.
 
 ---
 
