@@ -1,0 +1,9 @@
+{
+  "spec": ["ext §4.3", "base §6 modes"],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    { "class": "validation", "code": "unknown-type", "line": 2 },
+    { "class": "structural", "code": "malformed-type", "line": 2 }
+  ]
+}

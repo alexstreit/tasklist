@@ -17,6 +17,7 @@ export interface ScannedCell extends Span {
   text: string | null;
   escapes: Span[];
   end: number; // where scanning stopped: the next delimiter, or the end of the line
+  closeTo?: number; // just after the closing quote, for a closed quoted cell
 }
 
 export interface ScanError extends Span {
@@ -24,8 +25,25 @@ export interface ScanError extends Span {
   message: string;
 }
 
+export interface ScannedMarker extends Span {
+  name: string;
+  char: string;
+}
+
+export interface ScannedAnchor extends Span {
+  id: string; // the span is the `#ID`
+}
+
+/** What the extensions add to a line: marker characters by name. Null for a base-only parse. */
+export interface ExtensionContext {
+  markers: Map<string, string>; // char → column name
+}
+
 export interface ScannedRow {
   indent: { width: number; from: number; to: number };
+  markers: ScannedMarker[];
+  anchors: ScannedAnchor[];
+  anchorGroups: Span[];
   lead: ScannedCell;
   cells: ScannedCell[];
   delimiters: number[];
@@ -37,6 +55,11 @@ const NAMED = /^[A-Za-z_][A-Za-z0-9_-]*=/;
 const HEADING = /^#+( |$)/;
 // base §9: one or more {...} groups after the closing quote of a lead cell.
 const LEAD_GROUPS = /^([ \t]*\{[^{}]*\})+$/;
+// Text Anchors §1, §2: an anchor group, and a run of them preceded by whitespace (ext §3.2).
+const ID = '[A-Za-z0-9][A-Za-z0-9_-]*';
+const GROUP = `\\{[ \\t]*#${ID}(?:[ \\t]+#${ID})*[ \\t]*\\}`;
+const TRAILING_ANCHORS = new RegExp(`(?:^|[ \\t]+)(${GROUP}(?:[ \\t]*${GROUP})*)$`);
+const TRAILING_ANCHORS_AFTER_QUOTE = new RegExp(`[ \\t]+(${GROUP}(?:[ \\t]*${GROUP})*)$`);
 
 export type BodyLineKind = 'blank' | 'comment' | 'row';
 
@@ -46,7 +69,7 @@ export function classifyBodyLine(text: string, comment: string): BodyLineKind {
   return text.startsWith(comment, start) ? 'comment' : 'row';
 }
 
-export function scanRow(text: string, sep: string): ScannedRow {
+export function scanRow(text: string, sep: string, ext: ExtensionContext | null = null): ScannedRow {
   const errors: ScanError[] = [];
   const indentTo = trimStartIndex(text);
   const indent = { width: indentTo, from: 0, to: indentTo };
@@ -133,15 +156,53 @@ export function scanRow(text: string, sep: string): ScannedRow {
       out += rest;
       valueTo = restTo;
     }
-    return { from, to: valueTo, valueFrom, valueTo, name, quoted: true, text: out, escapes, end };
+    return { from, to: valueTo, valueFrom, valueTo, name, quoted: true, text: out, escapes, end, closeTo: afterQuote };
   };
+
+  // ext §5: markers at the start of the lead value, in any order, each with the whitespace after it.
+  const markers: ScannedMarker[] = [];
+  let leadStart = indentTo;
+  while (ext && ext.markers.has(text[leadStart])) {
+    const char = text[leadStart];
+    if (markers.some((m) => m.char === char)) {
+      errors.push({ code: 'repeated-marker', message: `Marker ${char} repeated; the repeat and the rest are the lead value.`, from: leadStart, to: leadStart + 1 });
+      break;
+    }
+    markers.push({ name: ext.markers.get(char)!, char, from: leadStart, to: leadStart + 1 });
+    leadStart = trimStartIndex(text, leadStart + 1);
+  }
 
   let lead: ScannedCell;
   if (text[indentTo] === sep) {
     errors.push({ code: 'row-begins-with-delimiter', message: 'Row begins with the delimiter; the lead is null.', from: indentTo, to: indentTo + 1 });
     lead = { from: indentTo, to: indentTo, valueFrom: indentTo, valueTo: indentTo, name: null, quoted: false, text: null, escapes: [], end: indentTo };
   } else {
-    lead = scanCell(indentTo, true);
+    lead = { ...scanCell(leadStart, true), from: indentTo };
+  }
+
+  // ext §3.2: anchor groups at the end of the lead cell, after an unquoted value or a closing quote.
+  const anchors: ScannedAnchor[] = [];
+  const anchorGroups: Span[] = [];
+  // An unterminated quote has no closing quote, so nothing can follow it.
+  if (ext && lead.text !== null && (!lead.quoted || lead.closeTo !== undefined)) {
+    const quotedRest = lead.quoted && lead.closeTo !== undefined;
+    const base = quotedRest ? lead.closeTo! : lead.valueFrom;
+    const m = (quotedRest ? TRAILING_ANCHORS_AFTER_QUOTE : TRAILING_ANCHORS).exec(text.slice(base, lead.valueTo));
+    if (m) {
+      const groupsFrom = base + m.index + m[0].length - m[1].length;
+      for (const g of text.slice(groupsFrom, lead.valueTo).matchAll(/\{[^}]*\}/g)) {
+        const gFrom = groupsFrom + g.index!;
+        anchorGroups.push({ from: gFrom, to: gFrom + g[0].length });
+        for (const id of g[0].matchAll(new RegExp(`#(${ID})`, 'g'))) {
+          anchors.push({ id: id[1], from: gFrom + id.index!, to: gFrom + id.index! + id[0].length });
+        }
+      }
+      const removed = lead.valueTo - (base + m.index);
+      const valueTo = base + m.index;
+      const decoded = lead.text.slice(0, lead.text.length - removed);
+      lead = { ...lead, valueTo, text: quotedRest || decoded !== '' ? decoded : null };
+      if (!lead.quoted && valueTo === lead.valueFrom) lead.text = null;
+    }
   }
 
   const cells: ScannedCell[] = [];
@@ -155,7 +216,7 @@ export function scanRow(text: string, sep: string): ScannedRow {
     cells.push(cell);
     pos = cell.end;
   }
-  return { indent, lead, cells, delimiters, errors };
+  return { indent, markers, anchors, anchorGroups, lead, cells, delimiters, errors };
 }
 
 export type FrontmatterLineKind = 'fm-close' | 'fm-blank' | 'fm-comment' | 'fm-entry' | 'fm-malformed';
@@ -194,11 +255,15 @@ export interface LineContext {
   sep: string;
   comment: string;
   state?: LineState; // default 'body'
+  markers?: Map<string, string>; // char → column name; omit for a base-only parse
+  extensions?: boolean; // default true
 }
 
 export type TokenType =
   | 'indent'
+  | 'marker'
   | 'lead'
+  | 'anchor'
   | 'delimiter'
   | 'name'
   | 'equals'
@@ -254,7 +319,8 @@ export function tokenizeLine(text: string, ctx: LineContext): LineTokens {
   if (kind === 'comment') {
     return { kind, tokens: [{ type: 'comment', from: trimStartIndex(text), to: text.length }], next: 'body' };
   }
-  return { kind, tokens: rowTokens(scanRow(text, ctx.sep)), next: 'body' };
+  const ext = ctx.extensions === false ? null : { markers: ctx.markers ?? new Map<string, string>() };
+  return { kind, tokens: rowTokens(scanRow(text, ctx.sep, ext)), next: 'body' };
 }
 
 function rowTokens(row: ScannedRow): Token[] {
@@ -265,7 +331,9 @@ function rowTokens(row: ScannedRow): Token[] {
       tokens.push({ type, from: cell.valueFrom, to: cell.valueTo, quoted: cell.quoted, ...(cell.quoted ? { escapes: cell.escapes } : {}) });
     }
   };
+  for (const m of row.markers) tokens.push({ type: 'marker', from: m.from, to: m.to });
   value('lead', row.lead);
+  for (const g of row.anchorGroups) tokens.push({ type: 'anchor', from: g.from, to: g.to });
   row.delimiters.forEach((at, i) => {
     tokens.push({ type: 'delimiter', from: at, to: at + 1 });
     const cell = row.cells[i];

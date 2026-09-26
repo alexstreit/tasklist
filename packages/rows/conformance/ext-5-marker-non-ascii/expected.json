@@ -1,0 +1,15 @@
+{
+  "spec": ["ext §5: CHAR is not alphanumeric"],
+  "stage": "extensions",
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "invalid-marker", "line": 2 },
+    { "class": "structural", "code": "invalid-marker", "line": 2 }
+  ],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "s", "type": "bool", "implicit": true }
+  ],
+  "rows": [{ "line": 4, "lead": "éclair", "markers": ["s"] }]
+}

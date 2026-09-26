@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §4.3", "base §6 modes"],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "structural", "code": "invalid-option-value", "line": 2 }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "spec": ["ext §4.3: a qualifier is written like a declaration, NAME[:TYPE], defaulting to text (by analogy with base §4)"],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "unknown-type", "line": 2 },
+    { "class": "structural", "code": "malformed-type", "line": 2 }
+  ],
+  "rows": [{ "line": 4, "lead": "X", "values": { "f": "#x hello", "g": "#x 3d", "h": "#x any" }, "id": "x" }]
+}

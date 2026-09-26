@@ -2,7 +2,7 @@
 // recovery table in base §6.
 import { rowsError } from './errors';
 import type { PhysicalLine } from './text';
-import { scanRow, type ScannedCell } from './tokenize';
+import type { ScannedCell, ScannedRow } from './tokenize';
 import type { Cell, Column, Row, RowsError, Schema } from './types';
 import { readValue } from './values';
 
@@ -25,9 +25,8 @@ function asUnnamed(s: ScannedCell, line: string): ScannedCell {
   return { ...s, name: null, quoted: false, valueFrom: s.from, valueTo: s.to, text: line.slice(s.from, s.to), escapes: [] };
 }
 
-export function buildRow(line: PhysicalLine, schema: Schema): Row {
+export function buildRow(line: PhysicalLine, schema: Schema, scan: ScannedRow): Row {
   const base = line.from;
-  const scan = scanRow(line.text, schema.sep);
   const errors: RowsError[] = scan.errors.map((e) => rowsError(e.code, line.line, e.message, base + e.from, base + e.to));
   const columns = schema.columns;
   const cells: (Cell | null)[] = columns.map(() => null);
@@ -36,6 +35,8 @@ export function buildRow(line: PhysicalLine, schema: Schema): Row {
   cells[0] = lead;
 
   let next = 1; // the next positional column
+  // Implicit columns follow the declared ones and are set only by name (ext §2).
+  const positional = columns.filter((c) => !c.implicit).length;
   let named = false;
   let unnamedAfterNamed = false;
   let tooMany = false;
@@ -65,11 +66,11 @@ export function buildRow(line: PhysicalLine, schema: Schema): Row {
       if (!unnamedAfterNamed) at('unnamed-after-named', 'Unnamed cell after a named cell; kept as overflow.');
       unnamedAfterNamed = true;
       overflow.push(toCell(s, base, null));
-    } else if (next < columns.length) {
+    } else if (next < positional) {
       cells[next] = toCell(s, base, columns[next]);
       next++;
     } else {
-      if (!tooMany) at('too-many-cells', `More cells than the ${columns.length} columns; the extras are kept as overflow.`);
+      if (!tooMany) at('too-many-cells', `More cells than the ${positional} columns; the extras are kept as overflow.`);
       tooMany = true;
       overflow.push(toCell(s, base, null));
     }
@@ -94,9 +95,9 @@ export function buildRow(line: PhysicalLine, schema: Schema): Row {
     from: line.from,
     to: line.to,
     indent: { width: scan.indent.width, from: base + scan.indent.from, to: base + scan.indent.to },
-    markers: [],
+    markers: scan.markers.map((m) => ({ name: m.name, char: m.char, from: base + m.from, to: base + m.to })),
     lead,
-    anchors: [],
+    anchors: scan.anchors.map((a) => ({ id: a.id, from: base + a.from, to: base + a.to })),
     cells,
     overflow,
     id: null,

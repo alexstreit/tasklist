@@ -22,10 +22,13 @@ const FM_LINES = [
   'sep: ;', 'sep: ,', 'sep: /', 'sep: ab', 'comment: #', 'comment: --', 'comment: "a|b"', 'table: t', 'table: "q\\"x"',
   'columns: est | owner | notes', 'columns: a:enum[x, y] | b', 'columns: 2bad | dup | dup', 'columns: x:number unit=h |',
   'lead: task', 'profile: p', 'profile: ./q.rows', 'profile: missing', 'format: rows/2', '# c', '', '  x : y', 'bad line', 'k:',
+  'markers: done=~ blocked=!', 'markers: x=# ok=+', 'nest: parent', 'nest: est', 'key: id', 'key:', 'order: est', 'order: -name',
+  'include: a.rows | b.rows as t', 'columns: dep:ref many qualifier=lag:duration | parent | est:number',
 ];
 const FRAGMENTS = [
   'Auth', 'Login page', '  ', '\t', ' | ', '|', ';', ',', '/', '"', '\\"', '\\\\', '\\n', '\\q', '"quoted | cell"', '""',
   'notes=', 'owner=bob', 'est=2d', 'ratio=1', 'name=x', '= ', '#', '# ', '{#a}', '{x}', '//', '--', '~', '2d', 'x', ' ',
+  '!', '+', '{#b #c}', ' {#a}', '#a', '#b +2d, #a', 'parent=#a', 'parent=#b', 'id=a', 'dep=#c', '    ', '        ',
 ];
 
 function generate(random: () => number): string {
@@ -56,8 +59,28 @@ const PROFILES: ParseOptions = {
   resolveProfile: (path) => (path === './q.rows' ? '---\ncolumns q\ncolumns: c\n---\n' : undefined),
 };
 
+/** Nested files whose rows reference each other, so parents, cycles and refs are exercised. */
+function generateNested(random: () => number): string {
+  const pick = <T,>(xs: T[]) => xs[Math.floor(random() * xs.length)];
+  const ids = ['a', 'b', 'c', 'd', 'A'];
+  const lines = ['---', 'nest: parent', 'markers: done=~', pick(['order: n', 'order: -dep', 'key: id', '# none']), 'columns: n:number | dep:ref many', '---'];
+  const rows = 1 + Math.floor(random() * 8);
+  for (let i = 0; i < rows; i++) {
+    let line = pick(['', '', '  ', '    ', '        ', '\t']) + pick(['', '~', '~~']) + `R${i}`;
+    if (random() < 0.6) line += ` {#${pick(ids)}}`;
+    line += ` | ${pick(['1', '2', 'x', ''])}`;
+    if (random() < 0.5) line += ` | #${pick(ids)}, #${pick(ids)} +1d`;
+    if (random() < 0.6) line += ` | parent=#${pick(ids)}`;
+    lines.push(line);
+  }
+  return lines.join('\n') + '\n';
+}
+
 const random = mulberry32(17);
-const generated = Array.from({ length: 2000 }, () => ({ text: generate(random), options: PROFILES }));
+const generated = [
+  ...Array.from({ length: 3000 }, () => ({ text: generate(random), options: PROFILES })),
+  ...Array.from({ length: 1000 }, () => ({ text: generateNested(random), options: {} })),
+];
 
 const conformance = fileURLToPath(new URL('../conformance/', import.meta.url));
 const conformanceInputs = readdirSync(conformance, { withFileTypes: true })
@@ -136,6 +159,13 @@ describe('parseRows properties', () => {
 
 describe('tokenizeLine agrees with parseRows', () => {
   const span = (t: { from: number; to: number }) => [t.from, t.to];
+  // The context a highlighter builds from the latest parsed document.
+  const contextOf = (doc: RowsDocument, options: ParseOptions) => ({
+    sep: doc.schema.sep,
+    comment: doc.schema.comment,
+    markers: new Map(doc.schema.markers.map((m) => [m.char, m.name])),
+    extensions: options.extensions,
+  });
 
   it('on every line kind', () => {
     for (const { text, options } of inputs) {
@@ -143,7 +173,7 @@ describe('tokenizeLine agrees with parseRows', () => {
       if (doc.errors.some((e) => e.code === 'unclosed-frontmatter')) continue; // a highlighter can't know (tokenize.ts)
       let state: LineState = 'start';
       for (const l of doc.lines) {
-        const t = tokenizeLine(doc.text.slice(l.from, l.to), { sep: doc.schema.sep, comment: doc.schema.comment, state });
+        const t = tokenizeLine(doc.text.slice(l.from, l.to), { ...contextOf(doc, options), state });
         expect(t.kind, JSON.stringify(text)).toBe(l.kind);
         state = t.next;
       }
@@ -154,7 +184,7 @@ describe('tokenizeLine agrees with parseRows', () => {
     for (const { text, options } of inputs) {
       const doc = parseRows(text, options);
       for (const row of doc.rows) {
-        const tokens = tokenizeLine(doc.text.slice(row.from, row.to), { sep: doc.schema.sep, comment: doc.schema.comment }).tokens.map(
+        const tokens = tokenizeLine(doc.text.slice(row.from, row.to), contextOf(doc, options)).tokens.map(
           (t): Token => ({ ...t, from: t.from + row.from, to: t.to + row.from }),
         );
         const indent = tokens.find((t) => t.type === 'indent');
@@ -167,6 +197,10 @@ describe('tokenizeLine agrees with parseRows', () => {
           else if (t.type !== 'indent') groups[groups.length - 1].push(t);
         }
         const [leadGroup, ...cellGroups] = groups;
+        expect(leadGroup.filter((t) => t.type === 'marker').map(span)).toEqual(row.markers.map(span));
+        const anchorTokens = leadGroup.filter((t) => t.type === 'anchor');
+        for (const a of row.anchors) expect(anchorTokens.some((t) => t.from <= a.from && a.to <= t.to)).toBe(true);
+        expect(anchorTokens.length > 0).toBe(row.anchors.length > 0);
         const leadToken = leadGroup.find((t) => t.type === 'lead');
         expect(leadToken ? span(leadToken) : [row.lead.valueFrom, row.lead.valueFrom]).toEqual([row.lead.valueFrom, row.lead.valueTo]);
 

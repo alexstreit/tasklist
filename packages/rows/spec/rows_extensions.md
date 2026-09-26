@@ -1,8 +1,10 @@
 # rows — Extensions
 
-**Version 0.4 (draft)**
+**Version 0.5 (draft)**
 
 This document defines identity, references, includes, markers, nesting, and row order for rows files. It uses the keys and forms reserved by the base format (base §9), and binds the Text Anchors specification to rows. Error classes, recovery, and modes are as in base §6. §10 lists every error this document defines.
+
+The base rule for keys with a default (base §6) applies to the keys here. An empty `key:` or `order:` is a structural error, and its default (`id`, `position`) applies. An empty `nest:`, `markers:` or `include:` declares nothing, and is not an error.
 
 A file that uses these extensions MUST be read by a parser that implements them. A base-only parser will tokenise it, but in strict mode may reject it, for example because `id=auth` names a column only an extension declares.
 
@@ -92,7 +94,7 @@ locator   = [ TABLE ] "#" ID
 | `many`                | The cell may hold several references, separated by commas.                                                 |
 | `qualifier=NAME:TYPE` | Each reference may carry a qualifier: the text after whitespace up to the next comma, validated as `TYPE`. |
 
-A qualifier on a column without `qualifier`, or several references in a column without `many`, is a validation error. A lead `ref` column MUST NOT use either option; an option that breaks this is a structural error, and is ignored. Where `sep` is `,`, a cell with several references is quoted.
+A qualifier on a column without `qualifier`, or several references in a column without `many`, is a validation error. A lead `ref` column MUST NOT use either option; an option that breaks this is a structural error, and is ignored. The options otherwise follow base §4: on a column that isn't a `ref`, `many` given a value, or `qualifier` given none, each is a structural error, and the option is ignored. A qualifier is written like a declaration, `NAME[:TYPE]`, with the type defaulting to `text`; a malformed or unknown type is reported as it would be for a column, and read as `text`. Where `sep` is `,`, a cell with several references is quoted.
 
 ```
 columns: owner:ref[people] | deps:ref many qualifier=lag:duration
@@ -124,7 +126,7 @@ It has one row per reference, in source row and cell order. `NAME:TYPE` is prese
 markers: done=~ blocked=!
 ```
 
-- Entries are `NAME=CHAR`, separated by whitespace. `CHAR` is one character that is not alphanumeric, whitespace, `"`, `#`, `{`, `\`, `=`, the delimiter, or the first character of the comment marker. An entry that breaks this is a structural error, and is ignored.
+- Entries are `NAME=CHAR`, separated by whitespace. `CHAR` is one character that is not alphanumeric, whitespace, `"`, `#`, `{`, `\`, `=`, the delimiter, or the first character of the comment marker. An entry that breaks this is a structural error, and is ignored. So is a repeated name or character: as with a repeated `enum` value (base §5), the later entry is ignored.
 - Markers are recognised at the start of the lead value, after the indent, in any order. They are removed from the lead value, together with any whitespace that follows them. The rest of the lead cell is read as usual and may be quoted.
 - A marker repeated in one row is a structural error. The repeat, and everything after it, is part of the lead value.
 - A marker sets its column to `true`. If the column is not declared, it is implicitly `NAME:bool default=false`. A declared marker column that is not `bool` is a structural error, reported on the `markers` line. Its marker entry is ignored, and the column is read as declared.
@@ -188,7 +190,7 @@ If an indented row also has a value in the parent column, the two MUST agree; ot
 - Under `position`, a tool exporting to a store without row order MUST store the order, and restore it on import.
 - Under `COLUMN`, a row out of order is a validation error, and writers MUST keep rows sorted.
 - Each row is compared with the previous row whose value is not null. When `nest` is set, only siblings are compared: rows with the same parent, or top-level rows. A row that sorts before the one it is compared with is out of order.
-- Null values are skipped. Numbers compare numerically, dates and datetimes chronologically, and text by Unicode code point. Durations compare in minutes where the column can convert both values (base §5); a pair that can't be converted is skipped. Enum values compare in declaration order, and bools with `false` before `true`. References compare by their locator text, by code point, and never by their targets' positions, so a row's order doesn't depend on whether a reference resolves or on the order of another table.
+- Null values are skipped. Numbers compare numerically, dates and datetimes chronologically, and text by Unicode code point. Durations compare in minutes where the column can convert both values (base §5); a pair that can't be converted is skipped. Enum values compare in declaration order, and bools with `false` before `true`. As for equality (base §5), two values that don't match their column compare as their text; a valid value and an invalid one, like durations that can't be converted, are skipped. References compare by their locator text, by code point, and never by their targets' positions, so a row's order doesn't depend on whether a reference resolves or on the order of another table.
 - An `order` naming no column is a structural error on the `order` line, and is read as `position`.
 - Canonical form is the file as written; order needs no rewriting.
 

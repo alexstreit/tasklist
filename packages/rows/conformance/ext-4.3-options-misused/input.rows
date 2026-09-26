@@ -1,0 +1,4 @@
+---
+columns: a:text many | b:number qualifier=x:duration | c:ref many=yes | d:ref qualifier | e:ref qualifier=2x
+---
+A

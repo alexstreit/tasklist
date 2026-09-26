@@ -1,0 +1,9 @@
+{
+  "spec": ["ext intro", "base §6 modes"],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "empty-value", "line": 2 },
+    { "class": "structural", "code": "empty-value", "line": 3 }
+  ]
+}

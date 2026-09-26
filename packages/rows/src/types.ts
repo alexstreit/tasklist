@@ -79,6 +79,12 @@ export interface Column {
   unit?: string;
   hpd?: number;
   dpw?: number;
+  // ref columns (ext §4.2, §4.3)
+  refTable?: string | null; // the target table's name; null when the current table has none
+  refCurrent?: boolean; // targets the current table
+  refKnown?: boolean; // false for a ref[TABLE] naming no table
+  many?: boolean;
+  qualifier?: { name: string; column: Column };
   settable: boolean; // can be set by a named cell
   implicit: boolean;
   from?: number; // the declaration, when it is written unquoted in this file
@@ -92,7 +98,14 @@ export interface Schema {
   comment: string;
   keys: Record<string, string>; // resolved keys: the file's, then the profile's
   lead: Column;
-  columns: Column[]; // lead first
+  columns: Column[]; // lead first, then declared, then implicit (ext §2)
+  // Extensions; empty or off in a base-only parse.
+  identity: boolean; // ext §3.1
+  key: Column | null; // when identity applies
+  nest: { column: Column; valid: boolean } | null; // valid: a ref to this table without options (ext §6.1)
+  markers: { name: string; char: string; column: Column }[];
+  order: 'position' | 'none' | { column: Column; descending: boolean };
+  includes: { path: string; table: string }[];
 }
 
 export interface Row {

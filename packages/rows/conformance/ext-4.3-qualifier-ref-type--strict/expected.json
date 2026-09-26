@@ -1,0 +1,10 @@
+{
+  "spec": ["ext §4.3 qualifier types", "base §6 modes"],
+  "stage": "extensions",
+  "disputed": true,
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "validation", "code": "qualifier-not-allowed", "line": 4 }
+  ]
+}

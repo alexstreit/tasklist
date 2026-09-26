@@ -13,7 +13,7 @@ type ErrorClass = 'syntax' | 'structural' | 'validation';
 type Stage = 'base' | 'types' | 'extensions';
 
 // Task 17 enables base, Task 18 adds types, Task 19 adds extensions.
-const ENABLED_STAGES = new Set<Stage>(['base', 'types']);
+const ENABLED_STAGES = new Set<Stage>(['base', 'types', 'extensions']);
 interface ExpectedError { class: ErrorClass; code: string; line: number }
 interface ExpectedRow {
   line: number;

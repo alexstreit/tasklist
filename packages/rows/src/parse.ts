@@ -4,7 +4,8 @@ import { readFrontmatter } from './frontmatter';
 import { buildRow } from './rows';
 import { resolveSchema } from './schema';
 import { normalise, splitLines } from './text';
-import { classifyBodyLine } from './tokenize';
+import { applyExtensions } from './extensions';
+import { classifyBodyLine, scanRow, type ExtensionContext, type ScannedRow } from './tokenize';
 import type { Line, ParseOptions, Row, RowsDocument, RowsError, Schema } from './types';
 import { equalityKey } from './values';
 
@@ -13,7 +14,17 @@ export function parseRows(input: string, options: ParseOptions = {}): RowsDocume
   const physical = splitLines(text);
   const errors: RowsError[] = [];
   const block = readFrontmatter(physical, errors);
-  const schema = resolveSchema(block.frontmatter, options, errors);
+  const body = physical.slice(block.kinds.length);
+  // Rows are scanned once the delimiter, comment marker and markers are known. Whether any lead
+  // has an anchor decides identity (ext §3.1), which the schema needs for its implicit columns.
+  let scans = new Map<number, ScannedRow>();
+  const scanBody = (sep: string, comment: string, ext: ExtensionContext | null) => {
+    scans = new Map(body.filter((l) => classifyBodyLine(l.text, comment) === 'row').map((l) => [l.line, scanRow(l.text, sep, ext)]));
+    return [...scans.values()].some((s) => s.anchors.length > 0);
+  };
+  const schema = resolveSchema(block.frontmatter, options, errors, scanBody);
+  const ext = options.extensions === false ? null : { markers: new Map(schema.markers.map((m) => [m.char, m.name])) };
+  scanBody(schema.sep, schema.comment, ext);
 
   const lines: Line[] = [];
   const rows: Row[] = [];
@@ -28,13 +39,14 @@ export function parseRows(input: string, options: ParseOptions = {}): RowsDocume
       lines.push({ kind, ...base });
       continue;
     }
-    const row = buildRow(l, schema);
+    const row = buildRow(l, schema, scans.get(l.line)!);
     rows.push(row);
     errors.push(...row.errors);
     lines.push({ kind, ...base, row });
   }
 
   errors.push(...uniqueness(schema, rows));
+  errors.push(...applyExtensions(schema, rows));
 
   return {
     text,
@@ -43,7 +55,7 @@ export function parseRows(input: string, options: ParseOptions = {}): RowsDocume
     frontmatter: block.frontmatter,
     schema,
     rows,
-    roots: rows,
+    roots: rows.filter((r) => r.parent === null),
     errors,
     failed: options.mode === 'strict' && errors.some((e) => e.class !== 'validation'),
   };
@@ -55,7 +67,8 @@ export function parseRows(input: string, options: ParseOptions = {}): RowsDocume
  */
 function uniqueness(schema: Schema, rows: Row[]): RowsError[] {
   const errors: RowsError[] = [];
-  for (const column of schema.columns.filter((c) => c.unique)) {
+  // The key column's uniqueness is the rule against duplicate IDs (ext §3.1), checked with identity.
+  for (const column of schema.columns.filter((c) => c.unique && c !== schema.key)) {
     const byValue = new Map<string, Row[]>();
     for (const row of rows) {
       const cell = row.cells[column.index];

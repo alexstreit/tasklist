@@ -462,11 +462,25 @@ Real calendar dates (Q12) apply: `2026-02-30` is invalid, `2028-02-29` valid. `d
 
 **Acceptance criteria**
 
-- [ ] All conformance cases pass, including the plan example.
-- [ ] The `A / B / C / D` nesting example in extensions §6.2 gives exactly the tree the spec describes, in tolerant mode, and fails in strict mode.
-- [ ] `~ Login page`, `~~Login`, `"~Login page"` and `~!Login page` match the extensions §5 examples.
-- [ ] A file with a declared `id:number` column and no anchors and no `key:` has no identity and no uniqueness check on `id`.
-- [ ] Cycles via the parent column are validation errors and do not hang the parser.
+- [x] All conformance cases pass, including the plan example. — every stage is enabled, and nothing is skipped.
+- [x] The `A / B / C / D` nesting example in extensions §6.2 gives exactly the tree the spec describes, in tolerant mode, and fails in strict mode. — `ext-6.2-example` and its strict variant.
+- [x] `~ Login page`, `~~Login`, `"~Login page"` and `~!Login page` match the extensions §5 examples. — `ext-5-example`, `ext-5-repeated-marker`.
+- [x] A file with a declared `id:number` column and no anchors and no `key:` has no identity and no uniqueness check on `id`. — `ext-3.1-no-identity`.
+- [x] Cycles via the parent column are validation errors and do not hang the parser. — `ext-6.2-parent-cycle`, a 500-row cycle in `tests/extensions.test.ts`, and 1,000 generated nested files in which rows reference each other (138 of them have cycles).
+
+**How it's built:** markers and anchors are part of the lead cell, so `scanRow` reads them, and `tokenizeLine` gains `marker` and `anchor` tokens. Its context takes the document's markers, and `extensions: false` for a base-only parse. Whether identity applies depends on whether any lead has an anchor, so `parseRows` scans every row before it adds the implicit columns. `src/extensions.ts` then handles marker conflicts, IDs, references, nesting and order. Ordering uses `compareValues` in `values.ts`, next to `equalityKey`, so `order` and `unique` share one definition of values.
+
+**Settled by analogy** (Resolved in `QUESTIONS.md`, each with spec text and cases):
+- A1: empty `key:`/`order:` take their defaults, and empty `nest:`/`markers:`/`include:` declare nothing (Q31).
+- A2: a repeated marker name or character is an invalid entry (Q38).
+- A3: `many` and `qualifier` misused as the base options are, and a qualifier written `NAME[:TYPE]` like a declaration (Q36, base §4).
+- A4: invalid values under `order` compare as text with each other, and are skipped against valid ones (Q34).
+
+The extensions spec is bumped to 0.5. The references to base 0.8, which I missed when bumping base, are fixed in DESIGN, the plan spec and the conformance README.
+
+**Open spec questions:** Q40 (whether "alphanumeric" for marker characters means Unicode or ASCII) and Q41 (whether a qualifier can be a `ref`), each with a disputed case.
+
+**Decisions taken (DESIGN-level):** `Schema` gains `identity`, `key`, `nest` (`{ column, valid }`), `markers`, `order` and `includes`. `Column` gains `refTable`, `refCurrent`, `refKnown`, `many` and `qualifier`. A reference's value exists whenever its syntax is valid, with `target: null` when it doesn't resolve. A cell with several references and no `many` has no value. Errors on references use the cell's span.
 
 ---
 

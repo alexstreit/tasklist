@@ -6,7 +6,25 @@ Where a question says a rule has "no class", the class matters because strict mo
 
 ---
 
-None open.
+Q40 and Q41 came up while implementing the extensions stage (Task 19). The parser implements each **Used** reading.
+
+## Q40. What "alphanumeric" means for a marker character
+
+**Cases:** `ext-5-marker-non-ascii` (+ `--strict`).
+**Spec:** ext §5 ("`CHAR` is one character that is not alphanumeric, …"); base §1 (whitespace is space and tab only, from Q29).
+
+- **A (used).** Unicode letters and digits, so `é` and `٣` can't be markers, and `§` can. A lead such as `éclair` is never mistaken for a marker and a title.
+- **B.** ASCII `A–Z`, `a–z` and `0–9`, matching the ASCII column-name and ID grammars, and Q29's narrow definition of whitespace. Then `é` could be a marker, and a row `éclair` in that file would read as a marker and `clair`.
+
+## Q41. Can a qualifier's type be `ref`?
+
+**Cases:** `ext-4.3-qualifier-ref-type` (+ `--strict`).
+**Spec:** ext §4.3 (`qualifier=NAME:TYPE`: "validated as `TYPE`"); ext §4.4 (the join table declares `NAME:TYPE`).
+
+A `ref` qualifier would be a reference carried on a reference. It would need its own target table, and would itself be a locator after a locator.
+
+- **A (used).** No. `qualifier=who:ref` is an invalid option value, so the column takes no qualifier.
+- **B.** Yes, targeting the current table, and resolved like any other reference.
 
 ---
 
@@ -245,3 +263,27 @@ None open.
 **Decision:** as used. A leap second equals the second that follows it, so `23:59:60Z` and the next `00:00:00Z` are the same instant. An enum whose values are all empty, such as `enum[,]` or `enum[ ]`, is malformed, like `enum[]`. There was no version bump, because this only makes explicit what 0.8 already implies.
 **Spec changed:** base §5 (the Equality and Enum paragraphs).
 **Cases:** `base-5-enum-all-empty` (+ `--strict`) is no longer disputed. `base-5-datetime-leap-second` is new.
+
+### A1. Empty extension keys (settled by analogy with Q31)
+
+**Decision:** an empty `key:` or `order:` is a structural error (`empty-value`), and its default applies (`id`, `position`). An empty `nest:`, `markers:` or `include:` declares nothing and isn't an error, as an empty `columns:` isn't.
+**Spec changed:** ext intro.
+**Cases:** `ext-1-empty-keys` (+ `--strict`).
+
+### A2. A repeated marker name or character (settled by analogy with Q38)
+
+**Decision:** an invalid entry (`invalid-marker`), and the later one is ignored, as a repeated `enum` value is.
+**Spec changed:** ext §5.
+**Cases:** `ext-5-repeated-marker-entries` (+ `--strict`).
+
+### A3. Misused `many` and `qualifier` (settled by analogy with Q36 and base §4)
+
+**Decision:** `many` or `qualifier` on a column that isn't a `ref`, `many` given a value, or `qualifier` given none, is a structural error, and the option is ignored, as for the base options. A qualifier is written like a declaration, `NAME[:TYPE]`, with the type defaulting to `text`. An invalid name is an invalid option value. A malformed or unknown type is reported as it would be for a column (`malformed-type`, `unknown-type`), and read as `text`.
+**Spec changed:** ext §4.3.
+**Cases:** `ext-4.3-options-misused` (+ `--strict`), `ext-4.3-qualifier-types` (+ `--strict`).
+
+### A4. Invalid values under `order` (settled by analogy with Q34 and with durations that can't be converted)
+
+**Decision:** two values that don't match their column compare as their text, as they do for equality. A valid value and an invalid one are skipped, like a pair of durations that can't be converted.
+**Spec changed:** ext §7.
+**Cases:** `ext-7-order-invalid-values`.

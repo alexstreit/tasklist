@@ -1,6 +1,6 @@
 # rows conformance suite
 
-Language-neutral test cases for rows base 0.7, rows extensions 0.4 and Text Anchors 0.2 (`../spec/`). Every `expected.json` was written by hand from the specs, before any parser existed. Each one is a claim about what the specs mean. If a case and a spec disagree, one of them is wrong, and which one is a spec decision.
+Language-neutral test cases for rows base 0.8, rows extensions 0.5 and Text Anchors 0.2 (`../spec/`). Every `expected.json` was written by hand from the specs, before any parser existed. Each one is a claim about what the specs mean. If a case and a spec disagree, one of them is wrong, and which one is a spec decision.
 
 Cases marked `"disputed": true` rest on a reading the specs don't settle. Each one has an entry in [QUESTIONS.md](QUESTIONS.md).
 

@@ -27,8 +27,28 @@ describe('tokenizeLine', () => {
     expect(value.escapes!.map((e) => line.slice(e.from, e.to))).toEqual(['\\n']);
   });
 
-  it('takes brace groups after a quoted lead into the lead (base §9)', () => {
-    expect(tokens('"Email" {#home} | x')).toEqual([['lead', '"Email" {#home}', 'quoted'], ['delimiter', '|'], ['value', 'x']]);
+  it('takes brace groups after a quoted lead into the lead in a base-only parse (base §9)', () => {
+    const line = '"Email" {#home} | x';
+    const t = tokenizeLine(line, { ...ctx, extensions: false }).tokens.map((x) => [x.type, line.slice(x.from, x.to)]);
+    expect(t).toEqual([['lead', '"Email" {#home}'], ['delimiter', '|'], ['value', 'x']]);
+  });
+
+  it('reads markers and anchors at either end of the lead (ext §3.2, §5)', () => {
+    const markers = new Map([['~', 'done'], ['!', 'blocked']]);
+    const line = '  ~! Login page {#login #l2}{#x} | 4h';
+    expect(tokenizeLine(line, { ...ctx, markers }).tokens.map((x) => [x.type, line.slice(x.from, x.to)])).toEqual([
+      ['indent', '  '],
+      ['marker', '~'],
+      ['marker', '!'],
+      ['lead', 'Login page'],
+      ['anchor', '{#login #l2}'],
+      ['anchor', '{#x}'],
+      ['delimiter', '|'],
+      ['value', '4h'],
+    ]);
+    expect(tokens('"~T" {#t}')).toEqual([['lead', '"~T"', 'quoted'], ['anchor', '{#t}']]);
+    expect(tokens('Glued{#g}')).toEqual([['lead', 'Glued{#g}']]);
+    expect(tokens('"open {#a}')).toEqual([['lead', '"open {#a}', 'quoted']]);
   });
 
   it('reads NAME = x and a quoted "NAME=x" as unnamed values', () => {

@@ -149,14 +149,56 @@ export function equalityKey(cell: { text: string | null; value: Value | null }, 
   }
 }
 
-/** A datetime as whole seconds since the epoch, plus its fraction without trailing zeros. */
-function instant(text: string): string {
+/** Compares two strings by Unicode code point (JavaScript's `<` compares UTF-16 units). */
+export function compareCodePoints(a: string, b: string): number {
+  const x = [...a];
+  const y = [...b];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const d = x[i].codePointAt(0)! - y[i].codePointAt(0)!;
+    if (d !== 0) return d;
+  }
+  return x.length - y.length;
+}
+
+type Comparable = { text: string | null; value: Value | null };
+
+/**
+ * Orders two non-null cells of a column (ext §7), consistently with equality (base §5). Returns
+ * null for a pair that can't be compared: durations the column can't both convert, and a valid
+ * value against an invalid one. Two invalid values compare as their text.
+ */
+export function compareValues(a: Comparable, b: Comparable, column: Column): number | null {
+  if (column.kind === 'ref') return compareCodePoints(a.text!, b.text!); // by locator text
+  const [x, y] = [a.value, b.value];
+  if (x === null && y === null) return compareCodePoints(a.text!, b.text!);
+  if (x === null || y === null) return null;
+  if (x.type === 'number' && y.type === 'number') return x.value - y.value;
+  if (x.type === 'bool' && y.type === 'bool') return Number(x.value) - Number(y.value);
+  if (x.type === 'enum' && y.type === 'enum') return column.enumValues!.indexOf(x.text) - column.enumValues!.indexOf(y.text);
+  if (x.type === 'datetime' && y.type === 'datetime') {
+    const [p, q] = [instantParts(x.text), instantParts(y.text)];
+    return p.seconds - q.seconds || compareCodePoints(p.fraction.padEnd(q.fraction.length, '0'), q.fraction.padEnd(p.fraction.length, '0'));
+  }
+  if (x.type === 'duration' && y.type === 'duration') {
+    const [p, q] = [durationToMinutes(x, column), durationToMinutes(y, column)];
+    return 'minutes' in p && 'minutes' in q ? p.minutes - q.minutes : null;
+  }
+  return compareCodePoints(a.text!, b.text!); // text and date
+}
+
+/** A datetime as whole seconds since the epoch, plus its fraction digits without trailing zeros. */
+function instantParts(text: string): { seconds: number; fraction: string } {
   const m = DATETIME.exec(text)!;
   const [date, hour, minute, second, fraction = '', offset, offHour, offMinute] = m.slice(1);
   const [y, mo, d] = date.split('-').map(Number);
   const offsetMinutes = offset.length === 1 ? 0 : (offset[0] === '-' ? -1 : 1) * (Number(offHour) * 60 + Number(offMinute));
   const seconds = Date.UTC(y, mo - 1, d, Number(hour), Number(minute)) / 1000 + Number(second) - offsetMinutes * 60;
-  return `${seconds}${fraction.replace(/0+$/, '').replace(/^\.$/, '')}`;
+  return { seconds, fraction: fraction.slice(1).replace(/0+$/, '') };
+}
+
+function instant(text: string): string {
+  const { seconds, fraction } = instantParts(text);
+  return fraction ? `${seconds}.${fraction}` : `${seconds}`;
 }
 
 const MINUTES: Record<'m' | 'h', number> = { m: 1, h: 60 };

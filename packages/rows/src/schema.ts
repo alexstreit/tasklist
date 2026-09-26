@@ -3,6 +3,7 @@ import { parseDeclaration, splitDeclarations, type Piece } from './declarations'
 import { rowsError } from './errors';
 import { readFrontmatter } from './frontmatter';
 import { isWs, NAME, normalise, splitLines } from './text';
+import type { ExtensionContext } from './tokenize';
 import type { Column, Frontmatter, FrontmatterEntry, ParseOptions, RowsError, Schema } from './types';
 import { parseType, positiveNumber, readValue } from './values';
 
@@ -51,6 +52,18 @@ const OPTIONS: Record<string, { flag: boolean; kinds: string[] | null }> = {
   hpd: { flag: false, kinds: ['duration'] },
   dpw: { flag: false, kinds: ['duration'] },
 };
+// The ref options (ext §4.3), known only when the extensions are on.
+const EXTENSION_OPTIONS: typeof OPTIONS = {
+  many: { flag: true, kinds: ['ref'] },
+  qualifier: { flag: false, kinds: ['ref'] },
+};
+
+/** A column that only carries a type, for validating qualifiers. */
+function typedColumn(name: string, type: string, kind: Column['kind'], enumValues?: string[]): Column {
+  const column: Column = { index: -1, name, type, kind, options: [], required: false, unique: false, default: null, settable: false, implicit: true };
+  if (enumValues) column.enumValues = enumValues;
+  return column;
+}
 
 /** base §4 options and §5 types, with their recovery rows in base §6. */
 function readTypeAndOptions(column: Column, declared: string, extensions: boolean, report: Report): void {
@@ -69,8 +82,9 @@ function readTypeAndOptions(column: Column, declared: string, extensions: boolea
   const invalid = (option: string, why: string) => report('invalid-option-value', `Invalid option ${option}: ${why}; ignored.`);
   let defaultText: string | null = null;
   const seen = new Set<string>();
+  const knownOptions = extensions ? { ...OPTIONS, ...EXTENSION_OPTIONS } : OPTIONS;
   for (const { key, value } of column.options) {
-    const known = OPTIONS[key];
+    const known = knownOptions[key];
     if (!known) continue; // unrecognised: ignored and retained (base §4)
     const option = value === null ? key : `${key}=${value}`;
     // A repeated option is an error, and the last one is used.
@@ -82,6 +96,25 @@ function readTypeAndOptions(column: Column, declared: string, extensions: boolea
       invalid(option, `${key} is a flag and takes no value`);
     } else if (!known.flag && value === null) {
       invalid(option, `${key} needs a value`);
+    } else if ((key === 'many' || key === 'qualifier') && column.index === 0) {
+      invalid(option, 'a lead ref column cannot use many or qualifier');
+    } else if (key === 'many') {
+      column.many = true;
+    } else if (key === 'qualifier') {
+      // Written like a declaration (base §4): NAME[:TYPE], the type defaulting to text.
+      const colon = value!.indexOf(':');
+      const name = colon === -1 ? value! : value!.slice(0, colon);
+      const typeText = colon === -1 ? 'text' : value!.slice(colon + 1);
+      const type = parseType(typeText, true);
+      if (!NAME.test(name)) invalid(option, `the qualifier name "${name}" is not valid`);
+      else if (type.ok && type.kind === 'ref') invalid(option, 'a qualifier cannot be a ref'); // Q41
+      else if (type.ok) {
+        for (const problem of type.ignored ?? []) report('invalid-enum-value', `An ${problem} enum value in ${typeText}; ignored.`);
+        column.qualifier = { name, column: typedColumn(name, type.type, type.kind, type.enumValues) };
+      } else {
+        report(type.problem === 'malformed' ? 'malformed-type' : 'unknown-type', `${type.problem === 'malformed' ? 'Malformed' : 'Unknown'} qualifier type ${typeText}; read as text.`);
+        column.qualifier = { name, column: typedColumn(name, 'text', 'text') };
+      }
     } else if (key === 'required' || key === 'unique') {
       column[key] = true;
     } else if (key === 'default') {
@@ -102,7 +135,16 @@ function readTypeAndOptions(column: Column, declared: string, extensions: boolea
   }
 }
 
-export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, errors: RowsError[]): Schema {
+/**
+ * `anyAnchors` reports whether any body row has an anchor, scanning with the resolved delimiter,
+ * comment marker and markers; identity depends on it (ext §3.1).
+ */
+export function resolveSchema(
+  fm: Frontmatter | null,
+  options: ParseOptions,
+  errors: RowsError[],
+  anyAnchors: (sep: string, comment: string, ext: ExtensionContext) => boolean = () => false,
+): Schema {
   const fileKeys = collectKeys(fm?.entries ?? [], errors);
   const keys = new Map<string, Key>();
 
@@ -176,6 +218,7 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
 
   // ---- columns (base §4) ----
   const columns: Column[] = [];
+  const declaredBy = new Map<Column, Key>();
   const declare = (text: string, key: Key | null, piece?: Piece) => {
     const d = parseDeclaration(text);
     const column: Column = {
@@ -206,6 +249,7 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
       if (key) report(key, 'duplicate-column-name', `Column name ${d.name} is already used; this column cannot be set by name.`, span);
     }
     columns.push(column);
+    if (key) declaredBy.set(column, key);
   };
 
   const lead = keys.get('lead');
@@ -220,17 +264,14 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
   const declared = keys.get('columns');
   if (declared) for (const piece of splitDeclarations(declared.value, sep)) declare(piece.text, declared, piece);
 
-  if (profileHasErrors) {
-    errors.push(rowsError('profile-has-errors', profileLine, `Profile ${profileName} has errors in its frontmatter.`, ...profileSpan));
-  }
-
   const tableEntry = fileEntry('table');
   const defaultTable = options.filename !== undefined ? stem(options.filename) : null;
   if (tableEntry?.value === '') {
     errors.push(rowsError('empty-value', tableEntry.line, 'table is empty; the file name is used.', tableEntry.valueFrom, tableEntry.valueTo));
   }
   const table = tableEntry && tableEntry.value !== '' ? tableEntry.value : defaultTable;
-  return {
+
+  const schema: Schema = {
     table,
     format: 'rows/1',
     sep,
@@ -238,5 +279,140 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
     keys: Object.fromEntries([...keys].map(([k, v]) => [k, v.value])),
     lead: columns[0],
     columns,
+    identity: false,
+    key: null,
+    nest: null,
+    markers: [],
+    order: 'position',
+    includes: [],
   };
+  if (options.extensions !== false) readExtensionKeys(schema, keys, declaredBy, report, anyAnchors);
+
+  if (profileHasErrors) {
+    errors.push(rowsError('profile-has-errors', profileLine, `Profile ${profileName} has errors in its frontmatter.`, ...profileSpan));
+  }
+  return schema;
+}
+
+type KeyReport = (key: Key, code: Parameters<typeof rowsError>[0], message: string, span?: { from: number; to: number }) => void;
+
+/** A piece of a key's value, as a span in the file when the value is written unquoted there. */
+function spanOf(key: Key, piece: Piece): { from: number; to: number } | undefined {
+  if (!('entry' in key.source) || key.source.entry.quoted) return undefined;
+  return { from: key.source.entry.valueFrom + piece.from, to: key.source.entry.valueFrom + piece.to };
+}
+
+/** The extension keys (ext §3–§7) and the implicit columns (ext §2). */
+function readExtensionKeys(
+  schema: Schema,
+  keys: Map<string, Key>,
+  declaredBy: Map<Column, Key>,
+  report: KeyReport,
+  anyAnchors: (sep: string, comment: string, ext: ExtensionContext) => boolean,
+): void {
+  const { columns, sep, comment, table } = schema;
+  const byName = (name: string) => columns.find((c) => c.name === name);
+
+  // include (ext §4.1). v1 reads no include (DESIGN §1): each one is unreadable, known by its alias or stem.
+  const include = keys.get('include');
+  if (include) {
+    const seen = new Set<string>();
+    for (const piece of splitDeclarations(include.value, sep)) {
+      const m = /^(.*?)[ \t]+as[ \t]+(\S+)$/.exec(piece.text);
+      const path = m ? m[1] : piece.text;
+      const name = m ? m[2] : stem(path);
+      const span = spanOf(include, piece);
+      report(include, 'unresolvable-include', `Include ${path} cannot be read; references into ${name} are errors.`, span);
+      if (name === table || seen.has(name)) {
+        report(include, 'duplicate-table-name', `Table name ${name} is ${name === table ? "this file's own" : 'already used'}.`, span);
+      }
+      seen.add(name);
+      schema.includes.push({ path, table: name });
+    }
+  }
+
+  // ref targets (ext §4.2)
+  for (const column of columns.filter((c) => c.kind === 'ref')) {
+    const target = /^ref\[(.*)\]$/.exec(column.type)?.[1] ?? null;
+    column.refCurrent = target === null || target === table;
+    column.refTable = target ?? table;
+    column.refKnown = column.refCurrent || schema.includes.some((i) => i.table === target);
+    if (!column.refKnown) {
+      const key = declaredBy.get(column);
+      if (key) report(key, 'unknown-table', `${column.type} names no table; its references are errors.`);
+    }
+  }
+
+  // markers (ext §5). A repeated name or character is an invalid entry, as a repeated enum value is (base §5).
+  const markersKey = keys.get('markers');
+  const pending: { name: string; char: string; column: Column | undefined }[] = [];
+  if (markersKey) {
+    for (const entry of markersKey.value.split(/[ \t]+/).filter((e) => e !== '')) {
+      const m = /^([A-Za-z_][A-Za-z0-9_-]*)=(.*)$/.exec(entry);
+      const char = m?.[2] ?? '';
+      const bad =
+        !m ||
+        [...char].length !== 1 ||
+        /[\p{L}\p{N}]/u.test(char) ||
+        isWs(char) ||
+        '"#{\\='.includes(char) ||
+        char === sep ||
+        char === comment[0] ||
+        pending.some((p) => p.name === m[1] || p.char === char);
+      if (bad) {
+        report(markersKey, 'invalid-marker', `Invalid marker entry ${entry}; ignored.`);
+        continue;
+      }
+      const declared = byName(m[1]);
+      if (declared && declared.kind !== 'bool') {
+        report(markersKey, 'marker-column-not-bool', `Marker column ${m[1]} is not bool; the marker is ignored.`);
+        continue;
+      }
+      pending.push({ name: m[1], char, column: declared });
+    }
+  }
+
+  // key (ext §3.1); an empty key or order is an error and its default applies, as for base keys (base §6).
+  const keyKey = keys.get('key');
+  if (keyKey?.value === '') report(keyKey, 'empty-value', 'key is empty; id is used.');
+  const orderKey = keys.get('order');
+  if (orderKey?.value === '') report(orderKey, 'empty-value', 'order is empty; position is used.');
+  const nestKey = keys.get('nest');
+  const nestName = nestKey && nestKey.value !== '' ? nestKey.value : null;
+
+  schema.identity = keyKey !== undefined || anyAnchors(sep, comment, { markers: new Map(pending.map((p) => [p.char, p.name])) });
+
+  // Implicit columns follow the declared ones, in the order key, nest, markers (ext §2).
+  const implicit = (name: string, key: Key | undefined, type: string, kind: Column['kind'], extra: Partial<Column> = {}): Column => {
+    const column: Column = { index: columns.length, name, type, kind, options: [], required: false, unique: false, default: null, settable: NAME.test(name), implicit: true, ...extra };
+    if (!column.settable && key) report(key, 'invalid-column-name', `Column name "${name}" is not valid; the column cannot be set by name.`);
+    columns.push(column);
+    return column;
+  };
+  if (schema.identity) {
+    const name = keyKey?.value || 'id';
+    schema.key = byName(name) ?? implicit(name, keyKey, 'text', 'text');
+  }
+  if (nestName) {
+    const column = byName(nestName) ?? implicit(nestName, nestKey, 'ref', 'ref', { refTable: table, refCurrent: true, refKnown: true });
+    const valid = column.kind === 'ref' && column.refCurrent === true && column.options.length === 0;
+    if (!valid) report(nestKey!, 'invalid-nest-column', `Nest column ${nestName} must be a ref to this table, without options; indentation still nests.`);
+    schema.nest = { column, valid };
+  }
+  for (const p of pending) {
+    const column = p.column ?? implicit(p.name, markersKey, 'bool', 'bool', { default: { type: 'bool', value: false } });
+    schema.markers.push({ name: p.name, char: p.char, column });
+  }
+
+  // order (ext §7)
+  if (orderKey && orderKey.value !== '') {
+    const v = orderKey.value;
+    if (v === 'position' || v === 'none') schema.order = v;
+    else {
+      const descending = v.startsWith('-');
+      const column = byName(descending ? v.slice(1) : v);
+      if (column) schema.order = { column, descending };
+      else report(orderKey, 'unknown-order-column', `order names no column ${v}; read as position.`);
+    }
+  }
 }
