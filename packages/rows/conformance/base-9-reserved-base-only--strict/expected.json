@@ -1,0 +1,5 @@
+{
+  "spec": ["base §9", "base §6 modes"],
+  "failed": true,
+  "errors": [{ "class": "structural", "code": "invalid-cell-name", "line": 11 }]
+}

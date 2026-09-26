@@ -1,0 +1,11 @@
+{
+  "spec": ["base §2.1"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 2 },
+    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 3 },
+    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 4 }
+  ],
+  "rows": [{ "line": 6, "lead": "A" }]
+}

@@ -1,0 +1,18 @@
+{
+  "spec": ["ext §3.1: the key column is implicitly unique", "anchors §4: a duplicate is an error on every line that declares it"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "duplicate-id", "line": 1 },
+    { "class": "validation", "code": "duplicate-id", "line": 2 },
+    { "class": "validation", "code": "duplicate-id", "line": 3 },
+    { "class": "validation", "code": "duplicate-id", "line": 4 }
+  ],
+  "rows": [
+    { "line": 1, "lead": "A", "id": "a" },
+    { "line": 2, "lead": "B", "id": "a" },
+    { "line": 3, "lead": "C", "id": "c", "aliases": ["b"] },
+    { "line": 4, "lead": "D", "values": { "id": "b" }, "id": "b" }
+  ]
+}

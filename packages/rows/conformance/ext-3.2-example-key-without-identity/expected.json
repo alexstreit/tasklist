@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §3.2 example: Auth | id=auth, in a file where identity does not apply", "base §6 rows"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "invalid-cell-name", "line": 1 },
+    { "class": "structural", "code": "too-many-cells", "line": 1 }
+  ],
+  "columns": [{ "name": "name", "type": "text" }],
+  "rows": [{ "line": 1, "lead": "Auth", "overflow": ["id=auth"] }]
+}

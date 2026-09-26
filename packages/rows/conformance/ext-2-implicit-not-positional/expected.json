@@ -1,0 +1,11 @@
+{
+  "spec": ["ext §2: unnamed cells never fill implicit columns", "base §6 rows: more unnamed cells than columns"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [{ "class": "structural", "code": "too-many-cells", "line": 4 }],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "done", "type": "bool", "implicit": true }
+  ],
+  "rows": [{ "line": 4, "lead": "A", "overflow": ["true"] }]
+}

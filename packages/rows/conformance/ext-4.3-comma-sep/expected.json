@@ -1,0 +1,10 @@
+{
+  "spec": ["ext §4.3: where sep is ,, a cell with several references is quoted"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 5, "lead": "A", "id": "a" },
+    { "line": 6, "lead": "B", "values": { "deps": "#a, #a" } }
+  ]
+}

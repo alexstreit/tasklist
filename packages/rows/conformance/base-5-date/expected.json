@@ -1,0 +1,16 @@
+{
+  "spec": ["base §5 date"],
+  "needs": ["types"],
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-value", "line": 5 },
+    { "class": "validation", "code": "invalid-value", "line": 6 },
+    { "class": "validation", "code": "invalid-value", "line": 7 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "d": "2026-09-01" } },
+    { "line": 5, "lead": "b", "values": { "d": "2026-9-1" } },
+    { "line": 6, "lead": "c", "values": { "d": "20260901" } },
+    { "line": 7, "lead": "d", "values": { "d": "2026-09-01T10:00:00Z" } }
+  ]
+}

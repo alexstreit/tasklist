@@ -1,0 +1,6 @@
+---
+nest: parent
+---
+A {#a}
+B {#b}
+    C | parent=#a

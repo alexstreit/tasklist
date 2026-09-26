@@ -1,0 +1,7 @@
+{
+  "spec": ["base §6 frontmatter: unresolvable profile"],
+  "failed": false,
+  "errors": [{ "class": "structural", "code": "unresolvable-profile", "line": 2 }],
+  "columns": [{ "name": "name", "type": "text" }],
+  "rows": [{ "line": 4, "lead": "A" }]
+}

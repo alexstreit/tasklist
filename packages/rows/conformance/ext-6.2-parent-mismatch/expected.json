@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §6.2: if an indented row also has a value in the parent column, the two MUST agree"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "parent-mismatch", "line": 6 }],
+  "rows": [
+    { "line": 4, "lead": "A", "id": "a" },
+    { "line": 5, "lead": "B", "id": "b" },
+    { "line": 6, "indent": 4, "lead": "C", "values": { "parent": "#a" }, "parent": 5 }
+  ]
+}

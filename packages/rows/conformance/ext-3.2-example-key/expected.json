@@ -1,0 +1,11 @@
+{
+  "spec": ["ext §3.2 example: Auth | id=auth, in a file where identity applies"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "id", "type": "text", "implicit": true }
+  ],
+  "rows": [{ "line": 4, "lead": "Auth", "values": { "id": "auth" }, "id": "auth" }]
+}

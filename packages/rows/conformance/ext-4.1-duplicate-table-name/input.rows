@@ -1,0 +1,5 @@
+---
+table: plan
+include: a.rows as x | b.rows as x | c.rows as plan
+---
+A

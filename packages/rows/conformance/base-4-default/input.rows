@@ -1,0 +1,5 @@
+---
+columns: paid:bool default=false | est:duration default=2d | n:number default=0
+---
+A
+B | true | 1d | 3

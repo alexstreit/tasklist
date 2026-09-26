@@ -1,0 +1,10 @@
+---
+columns: est
+---
+Auth {#auth}              | 2d
+"Email {#home}"           | 1d
+Password reset {#reset} {#pw}
+Brace {not an anchor}
+Bad id {#-x}
+Mixed {#ok bad}
+Trailing space {#ts}   

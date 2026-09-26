@@ -1,0 +1,9 @@
+{
+  "spec": ["base §2.2 comment", "base §3"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 6, "lead": "// not a comment" },
+    { "line": 7, "lead": "A" }
+  ]
+}

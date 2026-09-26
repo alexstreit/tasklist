@@ -1,0 +1,16 @@
+{
+  "spec": ["ext §6.2: a parent chain that forms a cycle"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "parent-cycle", "line": 4 },
+    { "class": "validation", "code": "parent-cycle", "line": 5 },
+    { "class": "validation", "code": "parent-cycle", "line": 6 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "A", "values": { "parent": "#b" }, "id": "a" },
+    { "line": 5, "lead": "B", "values": { "parent": "#a" }, "id": "b" },
+    { "line": 6, "lead": "C", "values": { "parent": "#c" }, "id": "c" }
+  ]
+}

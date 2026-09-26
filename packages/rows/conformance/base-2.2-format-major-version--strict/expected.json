@@ -1,0 +1,6 @@
+{
+  "spec": ["base §2.2 format", "base §6 modes"],
+  "disputed": true,
+  "failed": true,
+  "errors": [{ "class": "structural", "code": "unsupported-format", "line": 2 }]
+}

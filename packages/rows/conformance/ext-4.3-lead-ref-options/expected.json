@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §4.3: a lead ref column MUST NOT use many or qualifier"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "validation", "code": "unresolved-ref", "line": 4 }
+  ],
+  "columns": [{ "name": "from", "type": "ref" }],
+  "rows": [{ "line": 4, "lead": "#nope" }]
+}

@@ -1,0 +1,18 @@
+{
+  "spec": ["base §5 datetime: RFC 3339, offset required"],
+  "needs": ["types"],
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-value", "line": 7 },
+    { "class": "validation", "code": "invalid-value", "line": 8 },
+    { "class": "validation", "code": "invalid-value", "line": 9 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "t": "2026-09-01T10:00:00Z" } },
+    { "line": 5, "lead": "b", "values": { "t": "2026-09-01T10:00:00+01:00" } },
+    { "line": 6, "lead": "c", "values": { "t": "2026-09-01T10:00:00.5-05:00" } },
+    { "line": 7, "lead": "d", "values": { "t": "2026-09-01T10:00:00" } },
+    { "line": 8, "lead": "e", "values": { "t": "2026-09-01" } },
+    { "line": 9, "lead": "f", "values": { "t": "2026-09-01T10:00Z" } }
+  ]
+}

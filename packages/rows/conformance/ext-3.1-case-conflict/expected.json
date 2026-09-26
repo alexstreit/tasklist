@@ -1,0 +1,14 @@
+{
+  "spec": ["ext §3.1: two keys that differ only by case", "anchors §1"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "id-case-conflict", "line": 1 },
+    { "class": "validation", "code": "id-case-conflict", "line": 2 }
+  ],
+  "rows": [
+    { "line": 1, "lead": "A", "id": "auth" },
+    { "line": 2, "lead": "B", "id": "Auth" }
+  ]
+}

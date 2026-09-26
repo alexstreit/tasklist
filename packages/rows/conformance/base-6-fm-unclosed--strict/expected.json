@@ -1,0 +1,8 @@
+{
+  "spec": ["base §6 frontmatter: no closing ---", "base §6 modes"],
+  "failed": true,
+  "errors": [
+    { "class": "syntax", "code": "unclosed-frontmatter", "line": 1 },
+    { "class": "structural", "code": "too-many-cells", "line": 3 }
+  ]
+}

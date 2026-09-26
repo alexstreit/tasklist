@@ -1,0 +1,5 @@
+{
+  "spec": ["base §6 rows: unnamed cell after a named cell", "base §6 modes"],
+  "failed": true,
+  "errors": [{ "class": "structural", "code": "unnamed-after-named", "line": 4 }]
+}

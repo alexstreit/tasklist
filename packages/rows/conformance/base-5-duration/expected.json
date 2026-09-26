@@ -1,0 +1,35 @@
+{
+  "spec": ["base §5 duration", "TASKS 18 duration table"],
+  "needs": ["types"],
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-value", "line": 14 },
+    { "class": "validation", "code": "invalid-value", "line": 15 },
+    { "class": "validation", "code": "invalid-value", "line": 16 },
+    { "class": "validation", "code": "invalid-value", "line": 17 },
+    { "class": "validation", "code": "invalid-value", "line": 18 },
+    { "class": "validation", "code": "invalid-value", "line": 19 },
+    { "class": "validation", "code": "invalid-value", "line": 20 },
+    { "class": "validation", "code": "invalid-value", "line": 21 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "v1", "values": { "d": "4h" } },
+    { "line": 5, "lead": "v2", "values": { "d": "4 h" } },
+    { "line": 6, "lead": "v3", "values": { "d": "1d 4h" } },
+    { "line": 7, "lead": "v4", "values": { "d": "2 d 4 h" } },
+    { "line": 8, "lead": "v5", "values": { "d": "+2d 4h" } },
+    { "line": 9, "lead": "v6", "values": { "d": "1.5d 4h" } },
+    { "line": 10, "lead": "v7", "values": { "d": "-30m" } },
+    { "line": 11, "lead": "v8", "values": { "d": "2.5d" } },
+    { "line": 12, "lead": "v9", "values": { "d": "1w 2d 4h 30m" } },
+    { "line": 13, "lead": "v10", "values": { "d": "1d4h" } },
+    { "line": 14, "lead": "x1", "values": { "d": "4 2d" } },
+    { "line": 15, "lead": "x2", "values": { "d": "2d 4" } },
+    { "line": 16, "lead": "x3", "values": { "d": "1d1d" } },
+    { "line": 17, "lead": "x4", "values": { "d": "2dh" } },
+    { "line": 18, "lead": "x5", "values": { "d": "d 2" } },
+    { "line": 19, "lead": "x6", "values": { "d": "4x" } },
+    { "line": 20, "lead": "x7", "values": { "d": "4" } },
+    { "line": 21, "lead": "x8", "values": { "d": "+ 2d" } }
+  ]
+}

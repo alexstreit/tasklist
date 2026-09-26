@@ -1,0 +1,5 @@
+---
+sep: ,
+columns: level:enum[low,high], note
+---
+A, low, x

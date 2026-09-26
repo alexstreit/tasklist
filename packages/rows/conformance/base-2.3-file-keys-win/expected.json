@@ -1,0 +1,10 @@
+{
+  "spec": ["base §2.3: keys set in the file take precedence"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "task", "type": "text" },
+    { "name": "size", "type": "text" }
+  ],
+  "rows": [{ "line": 5, "lead": "A", "values": { "size": "1" } }]
+}

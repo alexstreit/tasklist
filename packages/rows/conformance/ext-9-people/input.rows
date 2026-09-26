@@ -1,0 +1,5 @@
+---
+columns: rate:number unit=GBP
+---
+Alice Smith {#alice} | 85
+Bob Jones {#bob}     | 70

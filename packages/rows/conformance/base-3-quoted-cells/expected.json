@@ -1,0 +1,12 @@
+{
+  "spec": ["base §3 quoted cells", "base §3 null and empty"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 4, "lead": "Lead | with pipe", "values": { "a": "  keep  ", "b": "tab\there" } },
+    { "line": 5, "lead": "X", "values": { "a": "say \"hi\"", "b": "back\\slash", "c": "line\nbreak" } },
+    { "line": 6, "lead": "Y", "values": { "a": "", "b": "   " } },
+    { "line": 7, "lead": "Z", "values": { "a": "a", "b": "b" } },
+    { "line": 8, "lead": "\"quoted lead\"" }
+  ]
+}

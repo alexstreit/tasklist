@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §4.1", "base §6 modes"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "validation", "code": "unresolved-ref", "line": 5 },
+    { "class": "validation", "code": "unresolved-ref", "line": 5 }
+  ]
+}

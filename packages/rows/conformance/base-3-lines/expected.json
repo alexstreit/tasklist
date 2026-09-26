@@ -1,0 +1,12 @@
+{
+  "spec": ["base §3: comment lines, blank lines, trailing delimiter, null cells"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 8, "lead": "A", "values": { "est": "2 // not a comment" } },
+    { "line": 9, "lead": "B", "values": { "est": "1" } },
+    { "line": 10, "lead": "C", "values": { "est": "1" } },
+    { "line": 11, "lead": "D", "values": { "notes": "x" } },
+    { "line": 12, "lead": "E", "values": { "est": "1", "notes": "y" } }
+  ]
+}

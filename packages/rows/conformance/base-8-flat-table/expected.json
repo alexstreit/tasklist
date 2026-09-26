@@ -1,0 +1,18 @@
+{
+  "spec": ["base §8 flat table"],
+  "failed": false,
+  "errors": [],
+  "table": "expenses",
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "amount", "type": "number" },
+    { "name": "when", "type": "date" },
+    { "name": "paid", "type": "bool" },
+    { "name": "memo", "type": "text" }
+  ],
+  "rows": [
+    { "line": 5, "lead": "Rent", "values": { "amount": "1200", "when": "2026-09-01", "paid": "true" } },
+    { "line": 6, "lead": "Electricity", "values": { "amount": "84.20", "when": "2026-09-03", "memo": "estimated; actual bill pending" } },
+    { "line": 7, "lead": "Coffee beans", "values": { "amount": "18", "when": "2026-09-05", "paid": "true", "memo": "" } }
+  ]
+}

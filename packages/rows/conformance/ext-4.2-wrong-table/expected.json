@@ -1,0 +1,11 @@
+{
+  "spec": ["ext §4.2: a prefixed TABLE#ID MUST name the column's target table"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "wrong-table", "line": 5 }],
+  "rows": [
+    { "line": 4, "lead": "Login", "id": "login" },
+    { "line": 5, "lead": "A", "values": { "dep": "people#login" } }
+  ]
+}

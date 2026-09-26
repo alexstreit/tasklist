@@ -1,0 +1,8 @@
+{
+  "spec": ["base §6 frontmatter: column name already used", "base §6 modes"],
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "duplicate-column-name", "line": 3 },
+    { "class": "structural", "code": "duplicate-column-name", "line": 3 }
+  ]
+}

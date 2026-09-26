@@ -1,0 +1,10 @@
+{
+  "spec": ["base §7", "base §6 rows: more unnamed cells than columns"],
+  "failed": false,
+  "errors": [{ "class": "structural", "code": "too-many-cells", "line": 2 }],
+  "columns": [{ "name": "name", "type": "text" }],
+  "rows": [
+    { "line": 1, "lead": "Milk" },
+    { "line": 2, "lead": "Eggs", "overflow": ["12"] }
+  ]
+}

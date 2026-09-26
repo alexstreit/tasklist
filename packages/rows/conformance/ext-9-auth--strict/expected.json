@@ -1,0 +1,11 @@
+{
+  "spec": ["ext §9 example: auth.rows", "base §6 modes"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "validation", "code": "unresolved-ref", "line": 8 },
+    { "class": "validation", "code": "unresolved-ref", "line": 9 }
+  ]
+}

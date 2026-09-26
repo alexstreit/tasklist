@@ -1,0 +1,13 @@
+{
+  "spec": ["base §1"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "est", "type": "text" }
+  ],
+  "rows": [
+    { "line": 4, "lead": "A", "values": { "est": "1" } },
+    { "line": 5, "lead": "B" }
+  ]
+}

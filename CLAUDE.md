@@ -20,11 +20,22 @@ src/
   app/         shell: wires buffer -> parse -> compute -> active renderer
 tests/
   core/        unit tests for parse and compute
+packages/
+  rows/        the rows library (npm workspace): spec/, DESIGN.md, src/, conformance/
+profiles/      published rows profiles (plan.rows)
 plan-format-spec.md
 TASKS.md
 ```
 
 Enforce the `core/` boundary with an ESLint `no-restricted-imports` rule or equivalent, not just convention.
+
+## rows package
+
+- `packages/rows/src` imports nothing outside itself: no app code, no other packages, no Node or DOM APIs. Zero runtime dependencies.
+- The app imports the library only as `rows`, its entry point (`packages/rows/src/index.ts`), never a path inside it.
+- Both rules are enforced by ESLint.
+- rows behaviour lives in `packages/rows` and its specs. If the plan tool needs different behaviour, change the spec first.
+- The conformance suite (`packages/rows/conformance/`) is hand-written from the specs. Never generate an `expected.json` from parser output. Open spec questions go in `conformance/QUESTIONS.md`.
 
 ## Non-negotiables
 

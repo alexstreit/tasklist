@@ -1,0 +1,6 @@
+---
+  table: x
+table : y
+  # indented comment
+---
+A

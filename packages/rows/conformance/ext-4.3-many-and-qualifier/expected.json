@@ -1,0 +1,18 @@
+{
+  "spec": ["ext §4.3"],
+  "needs": ["extensions", "types"],
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-value", "line": 7 },
+    { "class": "validation", "code": "many-not-allowed", "line": 8 },
+    { "class": "validation", "code": "qualifier-not-allowed", "line": 9 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "A", "id": "a" },
+    { "line": 5, "lead": "B", "values": { "deps": "#a +2d, #a" }, "id": "b" },
+    { "line": 6, "lead": "C", "values": { "deps": "#a,#b" }, "id": "c" },
+    { "line": 7, "lead": "D", "values": { "deps": "#a 2x" } },
+    { "line": 8, "lead": "E", "values": { "one": "#a, #b" } },
+    { "line": 9, "lead": "F", "values": { "one": "#a +1d" } }
+  ]
+}

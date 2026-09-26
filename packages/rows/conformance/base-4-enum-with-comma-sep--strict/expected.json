@@ -1,0 +1,10 @@
+{
+  "spec": ["base §4", "base §6 modes"],
+  "needs": ["types"],
+  "disputed": true,
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "malformed-type", "line": 3 },
+    { "class": "structural", "code": "invalid-column-name", "line": 3 }
+  ]
+}

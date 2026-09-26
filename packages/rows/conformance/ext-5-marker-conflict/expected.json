@@ -1,0 +1,10 @@
+{
+  "spec": ["ext §5: a row with a marker and an explicit false in the same column"],
+  "needs": ["extensions", "types"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "marker-conflict", "line": 5 }],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "done": "false" }, "markers": ["done"] },
+    { "line": 6, "lead": "B", "values": { "done": "true" }, "markers": ["done"] }
+  ]
+}

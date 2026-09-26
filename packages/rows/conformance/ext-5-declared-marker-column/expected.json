@@ -1,0 +1,15 @@
+{
+  "spec": ["ext §5: a declared bool column can be a marker column"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "done", "type": "bool" },
+    { "name": "est", "type": "text" }
+  ],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "est": "2" }, "markers": ["done"] },
+    { "line": 6, "lead": "B", "values": { "done": "true", "est": "3" } }
+  ]
+}

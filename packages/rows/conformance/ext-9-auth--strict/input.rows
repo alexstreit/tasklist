@@ -1,0 +1,12 @@
+---
+include: people.rows
+nest: parent
+markers: done=~
+columns: est:duration unit=h hpd=8 | owner:ref[people] | deps:ref many qualifier=lag:duration | notes:text
+---
+Auth {#auth}                  | 2d
+    ~Login page {#login}      | 4  | #alice
+    Password reset {#reset}   | 6  | #alice | #login
+    OAuth (Google) {#oauth}   | 1d | deps=#reset +2d, #login | notes="may not need for v1"
+        Consent screen        | 2
+        Token refresh         | 3

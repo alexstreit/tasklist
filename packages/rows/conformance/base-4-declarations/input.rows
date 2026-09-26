@@ -1,0 +1,6 @@
+---
+lead: task:text
+columns: est:duration unit=h hpd=8 | owner:text | done:bool default=false | notes:text
+---
+A | 4 | bob | true | n
+B

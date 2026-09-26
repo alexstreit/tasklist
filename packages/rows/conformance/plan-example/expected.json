@@ -1,0 +1,25 @@
+{
+  "spec": ["plan §2.10 example (examples/example.plan with profile: plan)", "plan §2.1 profile"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "table": "example",
+  "columns": [
+    { "name": "title", "type": "text" },
+    { "name": "est", "type": "duration" },
+    { "name": "owner", "type": "text" },
+    { "name": "notes", "type": "text" },
+    { "name": "parent", "type": "ref", "implicit": true },
+    { "name": "done", "type": "bool", "implicit": true }
+  ],
+  "rows": [
+    { "line": 5, "lead": "Auth", "values": { "est": "2d" } },
+    { "line": 6, "indent": 4, "lead": "Login page", "values": { "est": "4h", "owner": "alice" }, "markers": ["done"], "parent": 5 },
+    { "line": 7, "indent": 4, "lead": "Password reset", "values": { "est": "6h", "owner": "alice" }, "parent": 5 },
+    { "line": 8, "indent": 4, "lead": "OAuth (Google)", "values": { "est": "+1d", "notes": "may not need for v1" }, "parent": 5 },
+    { "line": 9, "indent": 8, "lead": "Consent screen", "values": { "est": "2h" }, "parent": 8 },
+    { "line": 10, "indent": 8, "lead": "Token refresh", "values": { "est": "3h" }, "parent": 8 },
+    { "line": 11, "lead": "Admin", "values": { "owner": "bob" } },
+    { "line": 12, "indent": 4, "lead": "User list", "values": { "est": "1d" }, "parent": 11 }
+  ]
+}

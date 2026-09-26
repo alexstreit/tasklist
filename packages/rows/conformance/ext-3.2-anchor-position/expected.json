@@ -1,0 +1,11 @@
+{
+  "spec": ["ext §3.2", "anchors §2: groups preceded by whitespace or the start of the line", "base §4: the lead column is always required"],
+  "needs": ["extensions", "types"],
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "required", "line": 5 }],
+  "rows": [
+    { "line": 4, "lead": "Glued{#glued}" },
+    { "line": 5, "indent": 4, "lead": null, "values": { "est": "2d" }, "id": "only" }
+  ]
+}

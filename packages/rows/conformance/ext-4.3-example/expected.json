@@ -1,0 +1,19 @@
+{
+  "spec": ["ext §4.3 example, with the opening --- and the include it needs"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "validation", "code": "unresolved-ref", "line": 5 },
+    { "class": "validation", "code": "unresolved-ref", "line": 5 },
+    { "class": "validation", "code": "unresolved-ref", "line": 5 }
+  ],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "owner", "type": "ref[people]" },
+    { "name": "deps", "type": "ref" },
+    { "name": "id", "type": "text", "implicit": true }
+  ],
+  "rows": [{ "line": 5, "lead": "OAuth", "values": { "owner": "#alice", "deps": "#reset +2d, #login" }, "id": "oauth" }]
+}

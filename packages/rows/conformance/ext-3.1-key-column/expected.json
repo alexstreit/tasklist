@@ -1,0 +1,16 @@
+{
+  "spec": ["ext §3.1"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "code", "type": "text" },
+    { "name": "est", "type": "text" }
+  ],
+  "rows": [
+    { "line": 5, "lead": "Auth", "values": { "code": "auth", "est": "2d" }, "id": "auth" },
+    { "line": 6, "lead": "Login", "values": { "code": "login-page_2", "est": "1d" }, "id": "login-page_2" },
+    { "line": 7, "lead": "Misc", "values": { "est": "1d" } }
+  ]
+}

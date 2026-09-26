@@ -1,0 +1,14 @@
+{
+  "spec": ["base §2.2 sep", "base §4"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "a", "type": "text" },
+    { "name": "b", "type": "text" }
+  ],
+  "rows": [
+    { "line": 5, "lead": "X", "values": { "a": "1", "b": "2" } },
+    { "line": 6, "lead": "Y | z" }
+  ]
+}

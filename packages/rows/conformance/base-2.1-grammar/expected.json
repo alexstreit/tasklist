@@ -1,0 +1,11 @@
+{
+  "spec": ["base §2.1", "base §2.2"],
+  "failed": false,
+  "errors": [],
+  "table": "a\"b\\c\\n",
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "est", "type": "text" }
+  ],
+  "rows": [{ "line": 10, "lead": "A", "values": { "est": "1" } }]
+}

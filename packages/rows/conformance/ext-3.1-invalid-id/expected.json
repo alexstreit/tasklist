@@ -1,0 +1,15 @@
+{
+  "spec": ["ext §3.1: a non-null key MUST match the Text Anchors ID grammar", "anchors §1"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-id", "line": 4 },
+    { "class": "validation", "code": "invalid-id", "line": 5 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "A", "values": { "id": "-a" } },
+    { "line": 5, "lead": "B", "values": { "id": "has space" } },
+    { "line": 6, "lead": "C", "values": { "id": "ok_1" }, "id": "ok_1" }
+  ]
+}

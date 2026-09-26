@@ -1,0 +1,11 @@
+{
+  "spec": ["ext §6.1: when nest is absent, indentation has no meaning", "base §9"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 1, "lead": "A" },
+    { "line": 2, "indent": 8, "lead": "B" },
+    { "line": 3, "indent": 4, "lead": "C" }
+  ]
+}

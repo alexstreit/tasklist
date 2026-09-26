@@ -1,0 +1,9 @@
+{
+  "spec": ["base §6 frontmatter: malformed frontmatter line", "base §6 modes"],
+  "failed": true,
+  "errors": [
+    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 2 },
+    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 3 },
+    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 4 }
+  ]
+}

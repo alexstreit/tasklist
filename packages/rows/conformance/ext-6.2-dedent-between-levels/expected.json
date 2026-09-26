@@ -1,0 +1,14 @@
+{
+  "spec": ["ext §6.2: tolerant recovery attaches to the nearest preceding row with a smaller indent; a recovered row opens its own indent as a level"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [{ "class": "structural", "code": "bad-indent", "line": 7 }],
+  "rows": [
+    { "line": 4, "lead": "A" },
+    { "line": 5, "indent": 4, "lead": "B", "parent": 4 },
+    { "line": 6, "indent": 8, "lead": "C", "parent": 5 },
+    { "line": 7, "indent": 6, "lead": "D", "parent": 5 },
+    { "line": 8, "indent": 6, "lead": "E", "parent": 5 },
+    { "line": 9, "indent": 8, "lead": "F", "parent": 8 }
+  ]
+}

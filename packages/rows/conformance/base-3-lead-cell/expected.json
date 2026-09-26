@@ -1,0 +1,12 @@
+{
+  "spec": ["base §3 lead cell", "base §3 named cells: only non-lead cells are named", "base §9"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 4, "lead": "A" },
+    { "line": 5, "indent": 4, "lead": "B", "values": { "est": "1" } },
+    { "line": 6, "indent": 2, "lead": "  padded  ", "values": { "est": "2" } },
+    { "line": 7, "lead": "~Literal {not special}" },
+    { "line": 8, "lead": "a=b", "values": { "est": "3" } }
+  ]
+}

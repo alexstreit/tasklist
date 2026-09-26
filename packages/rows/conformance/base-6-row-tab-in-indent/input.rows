@@ -1,0 +1,8 @@
+---
+columns: est
+---
+A
+	B | 1
+ 	 C
+	// tab-indented comment
+D	| 2

@@ -1,0 +1,10 @@
+{
+  "spec": ["ext §7: none"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "n": "3" } },
+    { "line": 6, "lead": "B", "values": { "n": "1" } }
+  ]
+}

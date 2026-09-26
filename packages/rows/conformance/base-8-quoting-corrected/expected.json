@@ -1,0 +1,13 @@
+{
+  "spec": ["base §8 quoting", "base §3"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "qty", "type": "number" },
+    { "name": "note", "type": "text" }
+  ],
+  "rows": [
+    { "line": 5, "lead": "Widget, large", "values": { "qty": "3", "note": "Has a \"quoted\" word and a newline\nhere" } }
+  ]
+}

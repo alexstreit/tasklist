@@ -1,0 +1,17 @@
+{
+  "spec": ["base §5 bool"],
+  "needs": ["types"],
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-value", "line": 6 },
+    { "class": "validation", "code": "invalid-value", "line": 7 },
+    { "class": "validation", "code": "invalid-value", "line": 8 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "b": "true" } },
+    { "line": 5, "lead": "b", "values": { "b": "false" } },
+    { "line": 6, "lead": "c", "values": { "b": "True" } },
+    { "line": 7, "lead": "d", "values": { "b": "1" } },
+    { "line": 8, "lead": "e", "values": { "b": "yes" } }
+  ]
+}

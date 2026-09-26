@@ -1,0 +1,21 @@
+---
+columns: d:duration
+---
+v1 | 4h
+v2 | 4 h
+v3 | 1d 4h
+v4 | 2 d 4 h
+v5 | +2d 4h
+v6 | 1.5d 4h
+v7 | -30m
+v8 | 2.5d
+v9 | 1w 2d 4h 30m
+v10 | 1d4h
+x1 | 4 2d
+x2 | 2d 4
+x3 | 1d1d
+x4 | 2dh
+x5 | d 2
+x6 | 4x
+x7 | 4
+x8 | + 2d

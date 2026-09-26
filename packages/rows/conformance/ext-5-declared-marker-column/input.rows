@@ -1,0 +1,6 @@
+---
+markers: done=~
+columns: done:bool default=false | est
+---
+~A | | 2
+B | true | 3

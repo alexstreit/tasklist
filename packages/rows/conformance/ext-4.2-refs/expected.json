@@ -1,0 +1,22 @@
+{
+  "spec": ["ext §4.2"],
+  "needs": ["extensions", "types"],
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "unresolved-ref", "line": 7 },
+    { "class": "validation", "code": "invalid-value", "line": 8 }
+  ],
+  "table": "tasks",
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "dep", "type": "ref" },
+    { "name": "id", "type": "text", "implicit": true }
+  ],
+  "rows": [
+    { "line": 4, "lead": "Login", "id": "login" },
+    { "line": 5, "lead": "Reset", "values": { "dep": "#login" } },
+    { "line": 6, "lead": "Other", "values": { "dep": "tasks#login" } },
+    { "line": 7, "lead": "Missing", "values": { "dep": "#nope" } },
+    { "line": 8, "lead": "Bad", "values": { "dep": "login" } }
+  ]
+}

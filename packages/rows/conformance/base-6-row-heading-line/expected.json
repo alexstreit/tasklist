@@ -1,0 +1,16 @@
+{
+  "spec": ["base §6 rows: heading line", "base §9"],
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "heading-line", "line": 4 },
+    { "class": "structural", "code": "heading-line", "line": 5 },
+    { "class": "structural", "code": "heading-line", "line": 6 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "# Heading", "values": { "est": "2d" } },
+    { "line": 5, "indent": 3, "lead": "## Indented heading" },
+    { "line": 6, "lead": "#" },
+    { "line": 7, "lead": "#login", "values": { "est": "1d" } },
+    { "line": 8, "lead": "# Quoted", "values": { "est": "3d" } }
+  ]
+}

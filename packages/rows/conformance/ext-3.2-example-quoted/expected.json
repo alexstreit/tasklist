@@ -1,0 +1,8 @@
+{
+  "spec": ["ext §3.2 example: \"Email {#home}\""],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "columns": [{ "name": "name", "type": "text" }],
+  "rows": [{ "line": 1, "lead": "Email {#home}" }]
+}

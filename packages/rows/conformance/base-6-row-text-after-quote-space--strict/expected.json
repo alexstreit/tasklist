@@ -1,0 +1,6 @@
+{
+  "spec": ["base §6 rows: text after closing quote", "base §6 modes"],
+  "disputed": true,
+  "failed": true,
+  "errors": [{ "class": "syntax", "code": "text-after-quote", "line": 4 }]
+}

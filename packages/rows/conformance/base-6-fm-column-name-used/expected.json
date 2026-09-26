@@ -1,0 +1,18 @@
+{
+  "spec": ["base §6 frontmatter: column name already used", "base §4"],
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "duplicate-column-name", "line": 3 },
+    { "class": "structural", "code": "duplicate-column-name", "line": 3 }
+  ],
+  "columns": [
+    { "name": "task", "type": "text" },
+    { "name": "owner", "type": "text" },
+    { "name": "owner", "type": "text" },
+    { "name": "task", "type": "text" }
+  ],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "owner": "x", "owner@2": "y", "task@3": "z" } },
+    { "line": 6, "lead": "B", "values": { "owner": "w" } }
+  ]
+}

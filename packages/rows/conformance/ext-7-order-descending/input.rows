@@ -1,0 +1,8 @@
+---
+order: -n
+columns: n:number
+---
+A | 3
+B | 2
+C | 2
+D | 5

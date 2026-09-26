@@ -1,0 +1,8 @@
+---
+columns: a | b | c
+---
+"Lead | with pipe" | "  keep  " | "tab\there"
+X | "say \"hi\"" | "back\\slash" | "line\nbreak"
+Y | "" | "   "
+Z | "a"   | b
+"\"quoted lead\""

@@ -1,0 +1,7 @@
+{
+  "spec": ["anchors §2 example 1"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "rows": [{ "line": 1, "lead": "Password reset", "id": "reset" }]
+}

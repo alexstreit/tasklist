@@ -1,0 +1,7 @@
+{
+  "spec": ["base §6 rows: text after closing quote", "base §3 quoted cells"],
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "syntax", "code": "text-after-quote", "line": 4 }],
+  "rows": [{ "line": 4, "lead": "A", "values": { "a": "abc def", "b": "b" } }]
+}

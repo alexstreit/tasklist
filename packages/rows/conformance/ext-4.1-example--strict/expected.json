@@ -1,0 +1,9 @@
+{
+  "spec": ["ext §4.1", "base §6 modes"],
+  "needs": ["extensions"],
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "structural", "code": "unresolvable-include", "line": 2 }
+  ]
+}

@@ -1,0 +1,4 @@
+---
+columns: n:number | d:date | b:bool | e:enum[low,high]
+---
+A | x | 26-01-01 | yes | mid

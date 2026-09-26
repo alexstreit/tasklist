@@ -1,0 +1,14 @@
+{
+  "spec": ["ext §3.1: identity applies when any lead cell has an anchor; the key column is id by default"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "id", "type": "text", "implicit": true }
+  ],
+  "rows": [
+    { "line": 1, "lead": "A", "id": "a" },
+    { "line": 2, "lead": "B", "values": { "id": "b" }, "id": "b" }
+  ]
+}

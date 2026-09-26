@@ -1,0 +1,6 @@
+{
+  "spec": ["anchors §6", "base §6 modes"],
+  "needs": ["extensions"],
+  "failed": true,
+  "errors": [{ "class": "structural", "code": "heading-line", "line": 1 }]
+}

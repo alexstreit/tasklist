@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §6.2: a row with zero indent may take its parent from the column; an indented row's column value must agree"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "unresolved-ref", "line": 7 }],
+  "rows": [
+    { "line": 4, "lead": "A", "id": "a" },
+    { "line": 5, "lead": "B", "values": { "parent": "#a" }, "id": "b", "parent": 4 },
+    { "line": 6, "indent": 4, "lead": "C", "values": { "parent": "#b" }, "parent": 5 },
+    { "line": 7, "lead": "D", "values": { "parent": "#zzz" } }
+  ]
+}

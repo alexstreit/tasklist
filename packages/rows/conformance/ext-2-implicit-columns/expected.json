@@ -1,0 +1,18 @@
+{
+  "spec": ["ext §2", "ext §3.1", "ext §5", "ext §6.1"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "est", "type": "text" },
+    { "name": "id", "type": "text", "implicit": true },
+    { "name": "parent", "type": "ref", "implicit": true },
+    { "name": "done", "type": "bool", "implicit": true }
+  ],
+  "rows": [
+    { "line": 7, "lead": "A", "values": { "est": "1" }, "id": "a" },
+    { "line": 8, "indent": 4, "lead": "B", "values": { "est": "2", "parent": "#a" }, "markers": ["done"], "parent": 7 },
+    { "line": 9, "lead": "C", "values": { "est": "3", "done": "true", "id": "c" }, "id": "c" }
+  ]
+}

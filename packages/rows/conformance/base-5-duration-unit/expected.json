@@ -1,0 +1,21 @@
+{
+  "spec": ["base §5 duration: with unit=U, a single signed number is that many U", "base §4 unit"],
+  "needs": ["types"],
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-value", "line": 10 },
+    { "class": "validation", "code": "invalid-value", "line": 11 },
+    { "class": "validation", "code": "invalid-value", "line": 12 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "v1", "values": { "d": "4" } },
+    { "line": 5, "lead": "v2", "values": { "d": "-4" } },
+    { "line": 6, "lead": "v3", "values": { "d": "+4" } },
+    { "line": 7, "lead": "v4", "values": { "d": "4.5" } },
+    { "line": 8, "lead": "v5", "values": { "d": "4 h" } },
+    { "line": 9, "lead": "v6", "values": { "d": "1d 4h" } },
+    { "line": 10, "lead": "x1", "values": { "d": "4 2" } },
+    { "line": 11, "lead": "x2", "values": { "d": "1d 4" } },
+    { "line": 12, "lead": "x3", "values": { "d": "4 1d" } }
+  ]
+}

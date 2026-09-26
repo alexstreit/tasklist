@@ -1,0 +1,10 @@
+{
+  "spec": ["base §1"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 1, "lead": "A" },
+    { "line": 2, "lead": "---" },
+    { "line": 3, "lead": "B" }
+  ]
+}

@@ -1,0 +1,12 @@
+---
+columns: est:duration unit=h hpd=8 | owner:text | notes:text
+---
+// Q4 auth work. Estimates are rough.
+Auth                        | 2d
+    ~Login page             | 4    | alice
+    Password reset          | 6    | alice
+    OAuth (Google)          | +1d  | notes="may not need for v1"
+        Consent screen      | 2
+        Token refresh       | 3
+Admin                       | owner=bob
+    User list               | 1d 4h

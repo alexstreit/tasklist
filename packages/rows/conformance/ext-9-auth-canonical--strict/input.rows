@@ -1,0 +1,12 @@
+---
+include: people.rows
+key: id
+nest: parent
+columns: est:duration unit=h hpd=8 | owner:ref[people] | notes:text | id | parent:ref | done:bool default=false
+---
+Auth            | 2d |        |                     | auth
+Login page      | 4  | #alice |                     | login | #auth  | true
+Password reset  | 6  | #alice |                     | reset | #auth
+OAuth (Google)  | 1d |        | may not need for v1 | oauth | #auth
+Consent screen  | 2  |        |                     |       | #oauth
+Token refresh   | 3  |        |                     |       | #oauth

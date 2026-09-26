@@ -1,0 +1,15 @@
+{
+  "spec": ["base §5 enum"],
+  "needs": ["types"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "invalid-value", "line": 6 }],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "level", "type": "enum[low,high]" }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "level": "low" } },
+    { "line": 5, "lead": "b", "values": { "level": "high" } },
+    { "line": 6, "lead": "c", "values": { "level": "mid" } }
+  ]
+}

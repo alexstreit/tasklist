@@ -1,0 +1,11 @@
+---
+key: id
+nest: parent
+markers: done=~
+order: est
+include: other.rows
+columns: est | dep:ref[other] | link:ref
+---
+~Auth {#auth} | 2 | #x | #y
+    Login {#login}{#l2} | 1
+Admin | id=admin

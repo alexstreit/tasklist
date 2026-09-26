@@ -1,0 +1,26 @@
+{
+  "spec": ["ext §9 canonical form: auth-deps.rows", "ext §4.4"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "validation", "code": "unresolved-ref", "line": 6 },
+    { "class": "validation", "code": "unresolved-ref", "line": 6 },
+    { "class": "validation", "code": "unresolved-ref", "line": 7 },
+    { "class": "validation", "code": "unresolved-ref", "line": 7 },
+    { "class": "validation", "code": "unresolved-ref", "line": 8 },
+    { "class": "validation", "code": "unresolved-ref", "line": 8 }
+  ],
+  "table": "auth-deps",
+  "columns": [
+    { "name": "from", "type": "ref[auth]" },
+    { "name": "to", "type": "ref[auth]" },
+    { "name": "lag", "type": "duration" }
+  ],
+  "rows": [
+    { "line": 6, "lead": "#reset", "values": { "to": "#login" } },
+    { "line": 7, "lead": "#oauth", "values": { "to": "#reset", "lag": "+2d" } },
+    { "line": 8, "lead": "#oauth", "values": { "to": "#login" } }
+  ]
+}

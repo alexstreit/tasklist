@@ -1,0 +1,12 @@
+---
+columns: d:duration unit=h
+---
+v1 | 4
+v2 | -4
+v3 | +4
+v4 | 4.5
+v5 | 4 h
+v6 | 1d 4h
+x1 | 4 2
+x2 | 1d 4
+x3 | 4 1d

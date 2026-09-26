@@ -1,0 +1,14 @@
+{
+  "spec": ["ext §6.2: levels are relative; blank and comment lines are skipped"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 4, "lead": "A" },
+    { "line": 5, "indent": 2, "lead": "B", "parent": 4 },
+    { "line": 8, "indent": 4, "lead": "C", "parent": 5 },
+    { "line": 9, "indent": 2, "lead": "D", "parent": 4 },
+    { "line": 10, "lead": "E" },
+    { "line": 11, "indent": 3, "lead": "F", "parent": 10 }
+  ]
+}

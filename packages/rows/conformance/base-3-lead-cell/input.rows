@@ -1,0 +1,8 @@
+---
+columns: est
+---
+A
+    B   | 1
+  "  padded  "  | 2
+~Literal {not special}
+a=b | 3

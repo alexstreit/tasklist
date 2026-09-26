@@ -1,0 +1,6 @@
+---
+nest: parent
+columns: parent:text
+---
+A
+    B | parent=x

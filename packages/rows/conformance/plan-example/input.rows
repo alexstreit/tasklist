@@ -1,0 +1,13 @@
+---
+profile: plan
+---
+// Q4 auth work. Estimates are rough.
+Auth                        | 2d
+    ~Login page             | 4h  | alice
+    Password reset          | 6h  | alice
+    OAuth (Google)          | +1d |       | may not need for v1
+        Consent screen      | 2h
+        Token refresh       | 3h
+Admin                       |     | bob
+    User list               | 1d
+    // Audit log            | 2d     <- dropped for now

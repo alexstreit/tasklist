@@ -1,0 +1,15 @@
+{
+  "spec": ["ext §3.2", "anchors §2"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 4, "lead": "Auth", "values": { "est": "2d" }, "id": "auth" },
+    { "line": 5, "lead": "Email {#home}", "values": { "est": "1d" } },
+    { "line": 6, "lead": "Password reset", "id": "reset", "aliases": ["pw"] },
+    { "line": 7, "lead": "Brace {not an anchor}" },
+    { "line": 8, "lead": "Bad id {#-x}" },
+    { "line": 9, "lead": "Mixed {#ok bad}" },
+    { "line": 10, "lead": "Trailing space", "id": "ts" }
+  ]
+}

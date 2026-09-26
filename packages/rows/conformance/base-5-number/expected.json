@@ -1,0 +1,22 @@
+{
+  "spec": ["base §5 number"],
+  "needs": ["types"],
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-value", "line": 9 },
+    { "class": "validation", "code": "invalid-value", "line": 10 },
+    { "class": "validation", "code": "invalid-value", "line": 11 },
+    { "class": "validation", "code": "invalid-value", "line": 12 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "n": "0" } },
+    { "line": 5, "lead": "b", "values": { "n": "-3" } },
+    { "line": 6, "lead": "c", "values": { "n": "+2" } },
+    { "line": 7, "lead": "d", "values": { "n": "1.5" } },
+    { "line": 8, "lead": "e", "values": { "n": "84.20" } },
+    { "line": 9, "lead": "f", "values": { "n": "1." } },
+    { "line": 10, "lead": "g", "values": { "n": ".5" } },
+    { "line": 11, "lead": "h", "values": { "n": "1e3" } },
+    { "line": 12, "lead": "i", "values": { "n": "1,000" } }
+  ]
+}

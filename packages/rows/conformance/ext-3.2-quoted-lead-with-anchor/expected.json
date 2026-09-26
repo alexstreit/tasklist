@@ -1,0 +1,8 @@
+{
+  "spec": ["ext §3.2: anchors only at the end of an unquoted lead cell", "ext §5", "base §6 rows: text after closing quote"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "syntax", "code": "text-after-quote", "line": 4 }],
+  "rows": [{ "line": 4, "lead": "~Tilde title {#t}" }]
+}

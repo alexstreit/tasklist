@@ -1,0 +1,10 @@
+{
+  "spec": ["anchors §6 example (informative, Markdown), read as a rows file", "base §9 heading line", "ext §3.2"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [{ "class": "structural", "code": "heading-line", "line": 1 }],
+  "rows": [
+    { "line": 1, "lead": "## Password reset", "id": "reset" },
+    { "line": 3, "lead": "Depends on [[#login]]. Sign-off from [[people#alice]]." }
+  ]
+}

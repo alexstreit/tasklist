@@ -1,0 +1,29 @@
+{
+  "spec": ["ext §9 canonical form: auth.rows", "ext §1"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "validation", "code": "unresolved-ref", "line": 8 },
+    { "class": "validation", "code": "unresolved-ref", "line": 9 }
+  ],
+  "table": "auth",
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "est", "type": "duration" },
+    { "name": "owner", "type": "ref[people]" },
+    { "name": "notes", "type": "text" },
+    { "name": "id", "type": "text" },
+    { "name": "parent", "type": "ref" },
+    { "name": "done", "type": "bool" }
+  ],
+  "rows": [
+    { "line": 7, "lead": "Auth", "values": { "est": "2d", "id": "auth" }, "id": "auth" },
+    { "line": 8, "lead": "Login page", "values": { "est": "4", "owner": "#alice", "id": "login", "parent": "#auth", "done": "true" }, "id": "login", "parent": 7 },
+    { "line": 9, "lead": "Password reset", "values": { "est": "6", "owner": "#alice", "id": "reset", "parent": "#auth" }, "id": "reset", "parent": 7 },
+    { "line": 10, "lead": "OAuth (Google)", "values": { "est": "1d", "notes": "may not need for v1", "id": "oauth", "parent": "#auth" }, "id": "oauth", "parent": 7 },
+    { "line": 11, "lead": "Consent screen", "values": { "est": "2", "parent": "#oauth" }, "parent": 10 },
+    { "line": 12, "lead": "Token refresh", "values": { "est": "3", "parent": "#oauth" }, "parent": 10 }
+  ]
+}

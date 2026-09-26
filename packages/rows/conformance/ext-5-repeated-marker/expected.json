@@ -1,0 +1,13 @@
+{
+  "spec": ["ext §5 example: ~~Login", "ext §5: a marker repeated in one row"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "repeated-marker", "line": 4 },
+    { "class": "structural", "code": "repeated-marker", "line": 5 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "~Login", "markers": ["done"] },
+    { "line": 5, "lead": "~x", "markers": ["done", "blocked"] }
+  ]
+}

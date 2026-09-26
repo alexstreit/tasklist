@@ -1,0 +1,15 @@
+{
+  "spec": ["ext §4.1: table names MUST be unique and MUST differ from the file's own"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 3 },
+    { "class": "structural", "code": "unresolvable-include", "line": 3 },
+    { "class": "structural", "code": "unresolvable-include", "line": 3 },
+    { "class": "structural", "code": "duplicate-table-name", "line": 3 },
+    { "class": "structural", "code": "duplicate-table-name", "line": 3 }
+  ],
+  "table": "plan",
+  "rows": [{ "line": 5, "lead": "A" }]
+}

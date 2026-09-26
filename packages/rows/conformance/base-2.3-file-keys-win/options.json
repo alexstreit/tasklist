@@ -1,0 +1,1 @@
+{ "profiles": { "tasks": "---\nlead: task\ncolumns: est | owner\n---\n" } }

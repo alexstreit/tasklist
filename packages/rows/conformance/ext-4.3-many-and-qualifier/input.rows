@@ -1,0 +1,9 @@
+---
+columns: deps:ref many qualifier=lag:duration | one:ref
+---
+A {#a}
+B {#b} | #a +2d, #a
+C {#c} | #a,#b
+D | #a 2x
+E | | #a, #b
+F | | #a +1d

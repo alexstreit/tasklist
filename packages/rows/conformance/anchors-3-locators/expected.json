@@ -1,0 +1,15 @@
+{
+  "spec": ["anchors §3 examples, in the rows binding (ext §4.2)"],
+  "needs": ["extensions"],
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "validation", "code": "unresolved-ref", "line": 6 },
+    { "class": "validation", "code": "wrong-table", "line": 6 }
+  ],
+  "rows": [
+    { "line": 5, "lead": "Password reset", "id": "reset" },
+    { "line": 6, "lead": "Login", "values": { "dep": "#reset", "owner": "people#alice", "doc": "../plans/q4.md#auth" } }
+  ]
+}

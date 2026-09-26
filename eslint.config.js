@@ -13,6 +13,12 @@ const noCodeMirror = {
   message: 'CodeMirror may only be imported from src/editor/ and src/buffer/CodeMirrorBuffer.ts.',
 };
 
+// The app reaches the rows library only through its entry point (packages/rows/DESIGN.md §2).
+const rowsEntryOnly = {
+  regex: '^rows/|(^|/)packages/rows(/|$)',
+  message: "Import the rows library as 'rows', its entry point.",
+};
+
 const restrict = (files, patterns, ignores) => ({
   files,
   ...(ignores ? { ignores } : {}),
@@ -32,6 +38,17 @@ export default [
       },
     ],
   ),
-  restrict(['src/app/**/*.ts', 'src/renderers/**/*.ts', 'src/exporters/**/*.ts', 'src/editing/**/*.ts', 'src/buffer/**/*.ts'], [analyzeOnly, noCodeMirror]),
-  restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly]),
+  restrict(['src/app/**/*.ts', 'src/renderers/**/*.ts', 'src/exporters/**/*.ts', 'src/editing/**/*.ts', 'src/buffer/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly]),
+  restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly, rowsEntryOnly]),
+  restrict(['src/grid/**/*.ts', 'tests/**/*.ts'], [rowsEntryOnly]),
+  // packages/rows/src imports nothing outside itself: no app code, no packages, no Node APIs.
+  restrict(
+    ['packages/rows/src/**/*.ts'],
+    [
+      {
+        regex: '^(?!\\./)|\\.\\.',
+        message: 'packages/rows/src may only import from within packages/rows/src.',
+      },
+    ],
+  ),
 ];

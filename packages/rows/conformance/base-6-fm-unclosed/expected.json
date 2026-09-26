@@ -1,0 +1,13 @@
+{
+  "spec": ["base §6 frontmatter: no closing ---"],
+  "failed": false,
+  "errors": [
+    { "class": "syntax", "code": "unclosed-frontmatter", "line": 1 },
+    { "class": "structural", "code": "too-many-cells", "line": 3 }
+  ],
+  "columns": [{ "name": "name", "type": "text" }],
+  "rows": [
+    { "line": 2, "lead": "columns: est" },
+    { "line": 3, "lead": "Task", "overflow": ["2"] }
+  ]
+}

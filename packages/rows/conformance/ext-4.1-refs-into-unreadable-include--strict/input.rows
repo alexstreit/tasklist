@@ -1,0 +1,5 @@
+---
+include: people.rows | staff/team.rows as crew
+columns: owner:ref[people] | boss:ref[crew]
+---
+A | #alice | crew#bob

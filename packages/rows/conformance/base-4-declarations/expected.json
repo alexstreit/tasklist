@@ -1,0 +1,16 @@
+{
+  "spec": ["base §4 example"],
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "task", "type": "text" },
+    { "name": "est", "type": "duration" },
+    { "name": "owner", "type": "text" },
+    { "name": "done", "type": "bool" },
+    { "name": "notes", "type": "text" }
+  ],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "est": "4", "owner": "bob", "done": "true", "notes": "n" } },
+    { "line": 6, "lead": "B" }
+  ]
+}
