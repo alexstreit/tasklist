@@ -1,6 +1,5 @@
 {
   "spec": ["base §2.2 sep, comment", "base §6 frontmatter: invalid sep or comment"],
-  "disputed": true,
   "failed": false,
   "errors": [{ "class": "structural", "code": "invalid-sep", "line": 2 }],
   "rows": [{ "line": 5, "lead": "A / b" }]

@@ -1,7 +1,6 @@
 {
   "spec": ["ext §4.3 example, with the opening --- and the include it needs"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "structural", "code": "unresolvable-include", "line": 2 },

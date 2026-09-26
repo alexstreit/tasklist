@@ -1,6 +1,5 @@
 {
   "spec": ["base §6 frontmatter: key set twice", "base §6 modes"],
-  "disputed": true,
   "failed": true,
   "errors": [{ "class": "structural", "code": "duplicate-key", "line": 3 }]
 }

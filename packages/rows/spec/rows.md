@@ -1,6 +1,6 @@
 # rows — File Format
 
-**Version 0.6 (draft)**
+**Version 0.7 (draft)**
 
 A `.rows` file is a plain-text table: an optional frontmatter block describing the columns, then one delimited row per line. The format is self-contained. Some keys and forms are reserved for extensions (§9).
 
@@ -17,10 +17,10 @@ The key words MUST, MUST NOT, SHOULD, and MAY follow RFC 2119.
 
 ### 2.1 Grammar
 
-Each frontmatter line is blank, a comment beginning with `#`, or an entry:
+Each frontmatter line is trimmed, and is then blank, a comment beginning with `#`, or an entry:
 
 ```
-entry = key ":" [ value ]
+entry = key *WSP ":" [ value ]
 key   = [A-Za-z_][A-Za-z0-9_-]*
 ```
 
@@ -32,7 +32,7 @@ All keys are optional. Unknown keys are ignored. Keys beginning `x-` are for pri
 
 | Key       | Default       | Meaning                                                                      |
 | --------- | ------------- | ---------------------------------------------------------------------------- |
-| `format`  | `rows/1`      | Format and major version. A prefix other than `rows/` is a structural error. |
+| `format`  | `rows/1`      | Format and major version. Any other value is unsupported (§6).               |
 | `table`   | filename stem | Logical table name.                                                          |
 | `profile` | —             | Source of default keys (§2.3).                                               |
 | `sep`     | `\|`          | Cell delimiter. One character; not whitespace, `"`, `\`, or `=`.             |
@@ -40,12 +40,15 @@ All keys are optional. Unknown keys are ignored. Keys beginning `x-` are for pri
 | `lead`    | `name:text`   | Declaration of the lead column (§4).                                         |
 | `columns` | —             | Declarations of the remaining columns, in order (§4).                        |
 
+If the comment marker in use contains `sep`, the key the file set is invalid. For example, `sep: /` with no `comment` key makes `sep` invalid, because the default comment `//` contains `/`.
+
 ### 2.3 Profiles
 
 A profile supplies values for keys the file leaves unset.
 
 - If the value contains `/` or ends in `.rows`, it is a path, relative to the file, to a rows file whose frontmatter supplies the defaults. Otherwise it is a name defined by the tool.
-- A profile MAY set any key except `format`, `table`, `profile`, `sep`, `comment`, and `include`.
+- A profile MAY set any key except `format`, `table`, `profile`, `sep`, `comment`, and `include`. Setting one is a structural error, reported on the file's `profile:` line, and the key is ignored. Unknown and `x-` keys are supplied like any other.
+- If the profile's frontmatter has any errors, the file has one structural error on its `profile:` line, naming the profile. The profile is still used, as recovered by §6.
 - Only the profile file's frontmatter is used; its body is ignored.
 - Keys set in the file take precedence.
 - A file meant for exchange SHOULD give its profile as a path, or have its profile's keys written out.
@@ -54,7 +57,7 @@ A profile supplies values for keys the file leaves unset.
 
 A **comment line** begins, after optional whitespace, with the comment marker. The marker has no meaning elsewhere on a line. **Blank lines** contain only whitespace. Both are ignored, but parsers SHOULD retain them in source order so writers can reproduce them.
 
-A **row** is split into cells at each unquoted delimiter. A row MUST NOT begin with the delimiter. A trailing delimiter followed only by whitespace is ignored.
+A **row** is split into cells at each unquoted delimiter. A row MUST NOT begin with the delimiter, with or without an indent. A trailing delimiter followed only by whitespace is ignored.
 
 **Lead cell.** The first cell. Its leading spaces are the row's **indent**: preserved, exposed separately from the value, and assigned no meaning by this specification. An indent MUST NOT contain tabs. Trailing whitespace is trimmed.
 
@@ -69,13 +72,13 @@ A **row** is split into cells at each unquoted delimiter. A row MUST NOT begin w
 
 A row MUST NOT have more unnamed cells than declared columns (lead plus `columns`).
 
-**Quoted cells.** A cell whose first non-whitespace character is `"` runs to the next unescaped `"`; only whitespace may follow before the delimiter or end of line. Inside, the delimiter is literal, whitespace is preserved, and the escapes are `\"`, `\\`, `\n`, `\t`. A value must be quoted if it contains the delimiter or a newline, begins with `"`, has leading or trailing whitespace to keep, is a non-lead value beginning `NAME=`, or would otherwise be read as a reserved form (§9).
+**Quoted cells.** A cell whose first non-whitespace character is `"` runs to the next unescaped `"`; only whitespace may follow before the delimiter or end of line, except the groups reserved after a quoted lead (§9). Inside, the delimiter is literal, whitespace is preserved, and the escapes are `\"`, `\\`, `\n`, `\t`. A value must be quoted if it contains the delimiter or a newline, begins with `"`, has leading or trailing whitespace to keep, is a non-lead value beginning `NAME=`, or would otherwise be read as a reserved form (§9).
 
 **Null and empty.** An empty cell, or a column not set by the row, is **null**. The quoted cell `""` is the **empty string**, valid only in `text` columns.
 
 ## 4. Column declarations
 
-`lead` declares the lead column; `columns` declares the rest, separated by the delimiter. Each declaration is:
+`lead` declares the lead column; `columns` declares the rest, separated by the delimiter. A delimiter inside `[...]` does not separate declarations. Each declaration is:
 
 ```
 name[:type][ option]...
@@ -83,7 +86,7 @@ name[:type][ option]...
 
 - `name` matches `[A-Za-z_][A-Za-z0-9_-]*`, is case-sensitive, and is unique within the file.
 - `type` defaults to `text`.
-- Options are bare flags or `key=value`, separated by whitespace. Quote values containing whitespace.
+- Options are bare flags or `key=value`, separated by whitespace. Whitespace inside `[...]` does not separate them. Quote values containing whitespace.
 
 ```
 lead: task:text
@@ -109,10 +112,12 @@ Unrecognised options are ignored and retained.
 | `text`          | any value                 |
 | `number`        | `[+-]?\d+(\.\d+)?`        |
 | `bool`          | `true` \| `false`         |
-| `date`          | `YYYY-MM-DD`              |
+| `date`          | `YYYY-MM-DD`, a real date |
 | `datetime`      | RFC 3339, offset required |
 | `duration`      | see below                 |
 | `enum[a,b,...]` | one of the listed values  |
+
+**Enum.** The values are separated by commas and trimmed. A value MUST NOT contain `,` or `]`. The brackets protect their contents (§4), so `enum[low, high]` is valid in any file, including one whose `sep` is `,`.
 
 **Duration.**
 
@@ -141,6 +146,10 @@ Types beginning `x-` are extension types, read as `text`. Any other unknown type
 
 Every non-blank, non-comment body line produces a row, whatever its errors. Recovery is defined so that all parsers produce the same rows.
 
+Recovery comes first. The recovered row is then checked against every rule, and each rule it breaks is reported, so one mistake can produce several errors. For example, `| 2d` begins with the delimiter, and its null lead then breaks `required`. A rule stated in two places is one rule, and is reported once.
+
+An error that involves several lines is reported on every line involved when the condition is symmetric, such as two rows sharing a `unique` value. When the condition is ordered, such as a key set a second time, it is reported on the later line.
+
 **Frontmatter and declarations**
 
 | Error                                                                                        | Class      | Recovery                                                                   |
@@ -148,9 +157,11 @@ Every non-blank, non-comment body line produces a row, whatever its errors. Reco
 | No closing `---`                                                                             | Syntax     | No frontmatter. The opening `---` is ignored and every later line is body. |
 | Malformed frontmatter line                                                                   | Syntax     | Line ignored.                                                              |
 | Key set twice                                                                                | Structural | Last value used.                                                           |
-| Unsupported `format`                                                                         | Structural | Read as `rows/1`.                                                          |
+| Unsupported `format`: any value but `rows/1`, including `rows/2` and `rows/x`                | Structural | Read as `rows/1`.                                                          |
 | Invalid `sep` or `comment`                                                                   | Structural | Default used.                                                              |
 | Unresolvable profile                                                                         | Structural | File read without it.                                                      |
+| Profile sets a forbidden key (§2.3)                                                          | Structural | Key ignored.                                                               |
+| Errors in the profile's frontmatter                                                          | Structural | One error in total. Profile used as recovered.                             |
 | Column name not matching the grammar, or already used                                        | Structural | Column kept in position, but cannot be set by name.                        |
 | Malformed type, such as a bad `enum[...]`                                                    | Structural | Column read as `text`.                                                     |
 | Unknown type                                                                                 | Validation | Column read as `text`.                                                     |
@@ -162,14 +173,14 @@ Every non-blank, non-comment body line produces a row, whatever its errors. Reco
 | --------------------------------------------------------- | ---------- | -------------------------------------------------------------------------- |
 | Unterminated quoted cell                                  | Syntax     | Cell runs to end of line.                                                  |
 | Unknown escape                                            | Syntax     | Kept literally.                                                            |
-| Text after closing quote                                  | Syntax     | Appended to the value.                                                     |
+| Text after closing quote                                  | Syntax     | Appended to the value as written, before trailing whitespace is trimmed.   |
 | Row begins with delimiter                                 | Structural | Lead is null.                                                              |
 | Tab in indent                                             | Structural | Each tab counts as one space.                                              |
 | Heading line (§9)                                         | Structural | Read as a row.                                                             |
 | Named cell whose name is undeclared or is the lead column | Structural | Read as an unnamed cell whose value is the whole raw text, e.g. `ratio=2`. |
 | Unnamed cell after a named cell                           | Structural | Kept as overflow.                                                          |
 | Column set twice in a row                                 | Structural | First value kept; later ones kept as overflow.                             |
-| More unnamed cells than columns                           | Structural | Extras kept as overflow.                                                   |
+| More unnamed cells than columns                           | Structural | Extras kept as overflow. One error per row.                                |
 | Value does not match its column                           | Validation | Raw text kept.                                                             |
 
 **Overflow** cells are kept in order on their row, exposed by parsers, and written back by writers.
@@ -247,10 +258,12 @@ Quoting:
 ```
 ---
 sep: ,
-columns: qty:number | note
+columns: qty:number , note
 ---
 "Widget, large" , 3 , "Has a \"quoted\" word and a newline\nhere"
 ```
+
+The declarations are separated by `,` too, because they follow the file's own delimiter.
 
 ## 9. Reserved
 
@@ -260,6 +273,7 @@ columns: qty:number | note
 | Type `ref` (and `ref[...]`)                                                                          | Read as `text`.                                               |
 | Heading line: first non-whitespace characters are one or more `#` followed by a space or end of line | Structural error. Quote the lead value to write it literally. |
 | One or more `{...}` groups at the end of an unquoted lead cell                                       | Part of the lead value.                                       |
+| One or more `{...}` groups after the closing quote of a lead cell                                    | Appended to the lead value, with the whitespace before them. Not an error. |
 | Indent                                                                                               | Preserved; no meaning.                                        |
 | Unrecognised column options                                                                          | Ignored and retained.                                         |
 

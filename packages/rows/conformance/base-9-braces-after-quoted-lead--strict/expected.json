@@ -1,0 +1,5 @@
+{
+  "spec": ["base §9", "base §6 modes"],
+  "failed": true,
+  "errors": [{ "class": "syntax", "code": "text-after-quote", "line": 3 }]
+}

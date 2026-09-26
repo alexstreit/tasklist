@@ -1,0 +1,13 @@
+{
+  "spec": ["ext §7: null values are skipped; each row is compared with the previous row whose value is not null"],
+  "needs": ["extensions", "types"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "out-of-order", "line": 9 }],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "n": "1" } },
+    { "line": 6, "lead": "B" },
+    { "line": 7, "lead": "C", "values": { "n": "3" } },
+    { "line": 8, "lead": "D" },
+    { "line": 9, "lead": "E", "values": { "n": "2" } }
+  ]
+}

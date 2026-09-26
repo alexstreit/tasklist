@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §7: order of enum values"],
+  "needs": ["extensions", "types"],
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "out-of-order", "line": 7 }],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "level": "low" } },
+    { "line": 6, "lead": "B", "values": { "level": "high" } },
+    { "line": 7, "lead": "C", "values": { "level": "mid" } }
+  ]
+}

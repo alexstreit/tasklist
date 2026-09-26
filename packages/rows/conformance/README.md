@@ -1,6 +1,6 @@
 # rows conformance suite
 
-Language-neutral test cases for rows base 0.6, rows extensions 0.3 and Text Anchors 0.2 (`../spec/`). Every `expected.json` was written by hand from the specs, before any parser existed. Each one is a claim about what the specs mean. If a case and a spec disagree, one of them is wrong, and which one is a spec decision.
+Language-neutral test cases for rows base 0.7, rows extensions 0.4 and Text Anchors 0.2 (`../spec/`). Every `expected.json` was written by hand from the specs, before any parser existed. Each one is a claim about what the specs mean. If a case and a spec disagree, one of them is wrong, and which one is a spec decision.
 
 Cases marked `"disputed": true` rest on a reading the specs don't settle. Each one has an entry in [QUESTIONS.md](QUESTIONS.md).
 
@@ -41,7 +41,7 @@ Case names start with the spec and section they come from: `base-6-…`, `ext-5-
 | `columns`  | no       | The resolved schema, lead first: `{ name, type, implicit? }`.                            |
 | `rows`     | yes\*    | Every body row, in order. \*May be omitted in a `--strict` variant.                      |
 
-`columns[].type` is the type values are read as, after recovery: a malformed or unknown type is `text`, and so is `ref` in a base-only parse. Parameterised types keep their parameters: `enum[low,high]`, `ref[people]`.
+`columns[].type` is the type values are read as, after recovery: a malformed or unknown type is `text`, and so is `ref` in a base-only parse. Parameterised types keep their parameters: `enum[low,high]`, `ref[people]`. Enum values are written trimmed and without spaces, so `enum[ low , high ]` is `enum[low,high]`.
 
 Each row:
 
@@ -75,11 +75,12 @@ The specs define classes, not codes (DESIGN §4). These codes are the library's;
 | `invalid-sep`                | structural | base §6                                                       |
 | `invalid-comment`            | structural | base §6                                                       |
 | `unresolvable-profile`       | structural | base §6                                                       |
-| `forbidden-profile-key`      | structural | base §2.3 (disputed: Q4)                                      |
+| `forbidden-profile-key`      | structural | base §2.3, §6                                                 |
+| `profile-has-errors`         | structural | base §2.3, §6                                                 |
 | `invalid-column-name`        | structural | base §6                                                       |
 | `duplicate-column-name`      | structural | base §6                                                       |
 | `malformed-type`             | structural | base §6                                                       |
-| `invalid-option-value`       | structural | base §6; ext §4.3 lead `ref` options (disputed: Q16)           |
+| `invalid-option-value`       | structural | base §6; ext §4.3 lead `ref` options                           |
 | `row-begins-with-delimiter`  | structural | base §6                                                       |
 | `tab-in-indent`              | structural | base §6                                                       |
 | `heading-line`               | structural | base §6, §9                                                   |
@@ -88,24 +89,24 @@ The specs define classes, not codes (DESIGN §4). These codes are the library's;
 | `column-set-twice`           | structural | base §6                                                       |
 | `too-many-cells`             | structural | base §6                                                       |
 | `unresolvable-include`       | structural | ext §4.1                                                      |
-| `duplicate-table-name`       | structural | ext §4.1 (disputed: Q16)                                      |
-| `unknown-table`              | structural | ext §4.2 (disputed: Q15)                                      |
-| `invalid-marker`             | structural | ext §5 (disputed: Q16)                                        |
+| `duplicate-table-name`       | structural | ext §4.1, §10                                                 |
+| `unknown-table`              | structural | ext §4.2, §10                                                 |
+| `invalid-marker`             | structural | ext §5, §10                                                   |
 | `repeated-marker`            | structural | ext §5                                                        |
 | `marker-column-not-bool`     | structural | ext §5                                                        |
 | `bad-indent`                 | structural | ext §6.2                                                      |
-| `invalid-nest-column`        | structural | ext §6.1 (disputed: Q16)                                      |
-| `unknown-order-column`       | structural | ext §7 (disputed: Q16)                                        |
+| `invalid-nest-column`        | structural | ext §6.1, §10                                                 |
+| `unknown-order-column`       | structural | ext §7, §10                                                   |
 | `unknown-type`               | validation | base §6                                                       |
 | `invalid-value`              | validation | base §6: value does not match its column                      |
 | `required`                   | validation | base §4                                                       |
 | `not-unique`                 | validation | base §4                                                       |
-| `invalid-id`                 | validation | ext §3.1 (disputed: Q16)                                      |
+| `invalid-id`                 | validation | ext §3.1, §10                                                 |
 | `duplicate-id`               | validation | ext §3.1, anchors §4                                          |
 | `id-case-conflict`           | validation | ext §3.1, anchors §1                                          |
 | `anchor-key-mismatch`        | validation | ext §3.2                                                      |
 | `unresolved-ref`             | validation | ext §4.1, §4.2, anchors §4                                    |
-| `wrong-table`                | validation | ext §4.2 (disputed: Q16)                                      |
+| `wrong-table`                | validation | ext §4.2, §10                                                 |
 | `qualifier-not-allowed`      | validation | ext §4.3                                                      |
 | `many-not-allowed`           | validation | ext §4.3                                                      |
 | `marker-conflict`            | validation | ext §5                                                        |

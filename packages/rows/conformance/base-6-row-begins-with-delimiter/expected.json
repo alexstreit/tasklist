@@ -1,7 +1,6 @@
 {
   "spec": ["base §6 rows: row begins with delimiter", "base §4: the lead column is always required"],
   "needs": ["types"],
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "structural", "code": "row-begins-with-delimiter", "line": 4 },

@@ -1,7 +1,6 @@
 {
   "spec": ["ext §3.2: a row with both an anchor and a key value that differ"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": false,
   "errors": [{ "class": "validation", "code": "anchor-key-mismatch", "line": 5 }],
   "rows": [

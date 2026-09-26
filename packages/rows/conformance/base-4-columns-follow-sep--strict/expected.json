@@ -1,6 +1,5 @@
 {
-  "spec": ["base §8 quoting", "base §6 modes"],
-  "disputed": true,
+  "spec": ["base §4", "base §6 modes"],
   "failed": true,
   "errors": [{ "class": "structural", "code": "too-many-cells", "line": 5 }]
 }

@@ -1,1 +1,1 @@
-{ "profiles": { "p": "---\nsep: ;\ncolumns: a\n---\n" } }
+{ "profiles": { "p": "---\nsep: ;\nx-foo: 1\nwidth: 3\ncolumns: a\n---\n" } }

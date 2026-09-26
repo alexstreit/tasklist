@@ -1,4 +1,4 @@
 ---
-columns: level:enum[low,high | est
+columns: est | level:enum[low,high
 ---
-A | anything | 1
+A | 1 | anything

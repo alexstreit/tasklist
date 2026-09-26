@@ -1,0 +1,14 @@
+{
+  "spec": ["ext §7: with nest, only siblings are compared"],
+  "needs": ["extensions", "types"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "out-of-order", "line": 11 }],
+  "rows": [
+    { "line": 6, "lead": "A", "values": { "n": "1" } },
+    { "line": 7, "indent": 4, "lead": "A1", "values": { "n": "5" }, "parent": 6 },
+    { "line": 8, "indent": 4, "lead": "A2", "values": { "n": "6" }, "parent": 6 },
+    { "line": 9, "lead": "B", "values": { "n": "2" } },
+    { "line": 10, "indent": 4, "lead": "B1", "values": { "n": "3" }, "parent": 9 },
+    { "line": 11, "indent": 4, "lead": "B2", "values": { "n": "1" }, "parent": 9 }
+  ]
+}

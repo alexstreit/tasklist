@@ -1,12 +1,12 @@
 # rows — Library Design
 
-Lives at `packages/rows/DESIGN.md`. Implements rows base 0.6 and rows extensions 0.3 (which binds Text Anchors 0.2). The specs sit beside it in `packages/rows/spec/`.
+Lives at `packages/rows/DESIGN.md`. Implements rows base 0.7 and rows extensions 0.4 (which binds Text Anchors 0.2). The specs sit beside it in `packages/rows/spec/`.
 
 ## 1. Scope
 
 **v1**
 
-- Base 0.6 in full: frontmatter grammar, profiles, column declarations, every type, quoting, named cells, overflow, both error tables, strict and tolerant modes.
+- Base 0.7 in full: frontmatter grammar, profiles, column declarations, every type, quoting, named cells, overflow, both error tables, strict and tolerant modes.
 - Extensions: implicit columns, key and anchors (including aliases), markers, nesting, `ref` columns within the file (`many`, `qualifier`), `order`.
 - Format-preserving edits (§6).
 - A language-neutral conformance suite (§8).

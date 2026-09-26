@@ -382,13 +382,13 @@ No implementation code. This task turns the specs into tests before anything is 
 
 **Acceptance criteria**
 
-- [x] A case exists for every example in all three specs, every row of both recovery tables in base §6, and every error named in extensions §3–§7. — 129 cases. Case names start with the spec section they come from, and each `expected.json` names its sources in `spec`.
-- [x] Every structural-error case has a strict variant expecting `failed: true`. — 56 `--strict` variants expecting `failed: true`, covering syntax errors too, plus three validation-only variants expecting `failed: false`. The runner checks that every case with a syntax or structural error has one, and that it matches its tolerant case.
+- [x] A case exists for every example in all three specs, every row of both recovery tables in base §6, and every error named in extensions §3–§7. — 140 cases. Case names start with the spec section they come from, and each `expected.json` names its sources in `spec`.
+- [x] Every structural-error case has a strict variant expecting `failed: true`. — 57 `--strict` variants expecting `failed: true`, covering syntax errors too, plus three validation-only variants expecting `failed: false`. The runner checks that every case with a syntax or structural error has one, and that it matches its tolerant case.
 - [x] `examples/example.plan` (with `profile: plan`) is a case, run with the plan profile supplied as a built-in named profile. — `plan-example`. The fixture file itself is unchanged; see below.
 - [x] `expected.json` files were written by hand from the specs, not generated.
-- [x] `npm test` is green at the root; the app's tests are unchanged. — app 342 tests as before; rows 251 shape checks, with the 188 case runs skipped until `parseRows` exists.
+- [x] `npm test` is green at the root; the app's tests are unchanged. — app 342 tests as before; rows 264 shape checks, with the 200 case runs skipped until `parseRows` exists.
 
-**Open spec questions:** 19, in `packages/rows/conformance/QUESTIONS.md`. The 38 cases that depend on one, and their strict variants, are marked `"disputed": true`. Resolve them before Task 17.
+**Spec questions:** 19 raised and settled. The specs are now base 0.7 and extensions 0.4; Text Anchors is unchanged. Each decision and the sections it changed are under Resolved in `packages/rows/conformance/QUESTIONS.md`. Applying them raised four smaller questions (Q20–Q23), still open; their 4 cases, and those cases' strict variants, are marked `"disputed": true`.
 
 **Decisions taken:** the error codes live in the table in `conformance/README.md`. The specs define only classes, so the fixtures needed a vocabulary; Task 17's `errors.ts` must use it. Beyond DESIGN §8, `expected.json` can assert `table` and `columns` (the resolved schema), because several frontmatter recoveries are visible only there. It also carries `needs: types | extensions`, so Task 17 can run only the cases it covers. `options.json` adds `profileFiles` (path profiles, since a callback can't be JSON) and `defaultProfile`. The runner's projection from `RowsDocument` to the fixture shape assumes DESIGN §4's types; Task 17 fixes it to the real ones.
 

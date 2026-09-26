@@ -1,8 +1,12 @@
 {
-  "spec": ["ext §3.2: anchors only at the end of an unquoted lead cell", "ext §5", "base §6 rows: text after closing quote"],
+  "spec": ["ext §3.2: anchor groups may follow a quoted lead", "ext §5", "base §9"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": false,
-  "errors": [{ "class": "syntax", "code": "text-after-quote", "line": 4 }],
-  "rows": [{ "line": 4, "lead": "~Tilde title {#t}" }]
+  "errors": [],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "id", "type": "text", "implicit": true },
+    { "name": "done", "type": "bool", "implicit": true }
+  ],
+  "rows": [{ "line": 4, "lead": "~Tilde title", "id": "t" }]
 }

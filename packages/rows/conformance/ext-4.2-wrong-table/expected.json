@@ -1,7 +1,6 @@
 {
   "spec": ["ext §4.2: a prefixed TABLE#ID MUST name the column's target table"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": false,
   "errors": [{ "class": "validation", "code": "wrong-table", "line": 5 }],
   "rows": [

@@ -1,7 +1,6 @@
 {
   "spec": ["base §5 date"],
   "needs": ["types"],
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-value", "line": 4 },

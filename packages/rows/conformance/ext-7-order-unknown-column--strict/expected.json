@@ -1,7 +1,6 @@
 {
   "spec": ["ext §7", "base §6 modes"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": true,
   "errors": [{ "class": "structural", "code": "unknown-order-column", "line": 2 }]
 }

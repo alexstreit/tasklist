@@ -1,0 +1,15 @@
+{
+  "spec": ["base §5 enum: values are trimmed", "base §4: whitespace inside [...] does not separate options"],
+  "needs": ["types"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "invalid-value", "line": 5 }],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "level", "type": "enum[low,high]" },
+    { "name": "note", "type": "text" }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "level": "high" } },
+    { "line": 5, "lead": "b", "values": { "level": "mid" } }
+  ]
+}

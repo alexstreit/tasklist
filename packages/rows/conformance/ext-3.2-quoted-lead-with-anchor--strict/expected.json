@@ -1,7 +1,0 @@
-{
-  "spec": ["ext §3.2", "base §6 modes"],
-  "needs": ["extensions"],
-  "disputed": true,
-  "failed": true,
-  "errors": [{ "class": "syntax", "code": "text-after-quote", "line": 4 }]
-}

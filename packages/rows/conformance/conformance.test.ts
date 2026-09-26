@@ -61,6 +61,7 @@ const codes = new Map(
   [...read('README.md').matchAll(/^\| `([a-z-]+)` +\| (syntax|structural|validation) /gm)].map((m) => [m[1], m[2]]),
 );
 const questions = read('QUESTIONS.md');
+const openQuestions = questions.split('\n## Resolved')[0];
 
 const sortErrors = (errors: ExpectedError[]) =>
   [...errors]
@@ -101,7 +102,7 @@ describe('conformance suite shape', () => {
       expect(r).toHaveProperty('line');
       expect(r).toHaveProperty('lead');
     }
-    if (e.disputed) expect(questions, 'disputed cases are listed in QUESTIONS.md').toContain(`\`${name.replace(STRICT, '')}\``);
+    if (e.disputed) expect(openQuestions, 'disputed cases are listed under an open question in QUESTIONS.md').toContain(`\`${name.replace(STRICT, '')}\``);
   });
 
   it('every case with a syntax or structural error has a strict variant expecting failure', () => {

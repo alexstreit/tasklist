@@ -1,0 +1,14 @@
+{
+  "spec": ["ext §7: durations compare in minutes where the column can convert both; other pairs are skipped", "base §5 duration"],
+  "needs": ["extensions", "types"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "out-of-order", "line": 8 }],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "est": "30m" } },
+    { "line": 6, "lead": "B", "values": { "est": "1h" } },
+    { "line": 7, "lead": "C", "values": { "est": "1d" } },
+    { "line": 8, "lead": "D", "values": { "est": "4h" } },
+    { "line": 9, "lead": "E", "values": { "est": "1w" } },
+    { "line": 10, "lead": "F", "values": { "est": "1h" } }
+  ]
+}

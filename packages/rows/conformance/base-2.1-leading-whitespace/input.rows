@@ -1,6 +1,6 @@
 ---
   table: x
-table : y
+columns : est
   # indented comment
 ---
-A
+A | 1

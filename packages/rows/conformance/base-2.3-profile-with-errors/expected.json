@@ -1,8 +1,7 @@
 {
-  "spec": ["base §2.3", "base §6 frontmatter: malformed frontmatter line"],
-  "disputed": true,
+  "spec": ["base §2.3: errors in a profile's frontmatter", "base §6 frontmatter"],
   "failed": false,
-  "errors": [{ "class": "syntax", "code": "malformed-frontmatter-line", "line": 2 }],
+  "errors": [{ "class": "structural", "code": "profile-has-errors", "line": 2 }],
   "columns": [
     { "name": "name", "type": "text" },
     { "name": "b", "type": "text" }

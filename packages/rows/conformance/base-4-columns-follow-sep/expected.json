@@ -1,0 +1,12 @@
+{
+  "spec": ["base §4: declarations are separated by the file's delimiter", "base §8 quoting"],
+  "failed": false,
+  "errors": [{ "class": "structural", "code": "too-many-cells", "line": 5 }],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "qty", "type": "number" }
+  ],
+  "rows": [
+    { "line": 5, "lead": "Widget, large", "values": { "qty": "3" }, "overflow": ["Has a \"quoted\" word and a newline\nhere"] }
+  ]
+}

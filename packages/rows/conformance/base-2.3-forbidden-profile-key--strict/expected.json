@@ -1,6 +1,5 @@
 {
   "spec": ["base §2.3", "base §6 modes"],
-  "disputed": true,
   "failed": true,
   "errors": [{ "class": "structural", "code": "forbidden-profile-key", "line": 2 }]
 }

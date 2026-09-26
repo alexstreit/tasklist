@@ -1,6 +1,5 @@
 {
   "spec": ["base §6 frontmatter: key set twice"],
-  "disputed": true,
   "failed": false,
   "errors": [{ "class": "structural", "code": "duplicate-key", "line": 3 }],
   "table": "b",

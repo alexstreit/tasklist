@@ -1,0 +1,11 @@
+{
+  "spec": ["ext §7: text compares by Unicode code point"],
+  "needs": ["extensions"],
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "out-of-order", "line": 6 }],
+  "rows": [
+    { "line": 4, "lead": "Zebra" },
+    { "line": 5, "lead": "apple" },
+    { "line": 6, "lead": "Apple" }
+  ]
+}

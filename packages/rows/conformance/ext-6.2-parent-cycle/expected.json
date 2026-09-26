@@ -1,7 +1,6 @@
 {
   "spec": ["ext §6.2: a parent chain that forms a cycle"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "validation", "code": "parent-cycle", "line": 4 },

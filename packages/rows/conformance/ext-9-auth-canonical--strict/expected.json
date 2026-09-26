@@ -1,7 +1,6 @@
 {
   "spec": ["ext §9 canonical form: auth.rows", "base §6 modes"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": true,
   "errors": [
     { "class": "structural", "code": "unresolvable-include", "line": 2 },

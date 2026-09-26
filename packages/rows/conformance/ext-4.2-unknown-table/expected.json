@@ -1,7 +1,6 @@
 {
   "spec": ["ext §4.2: ref[TABLE] targets the current table or an included table by name"],
   "needs": ["extensions"],
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "structural", "code": "unknown-table", "line": 2 },

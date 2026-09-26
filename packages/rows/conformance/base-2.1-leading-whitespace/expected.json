@@ -1,11 +1,11 @@
 {
-  "spec": ["base §2.1"],
-  "disputed": true,
+  "spec": ["base §2.1: lines are trimmed; whitespace may precede the colon"],
   "failed": false,
-  "errors": [
-    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 2 },
-    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 3 },
-    { "class": "syntax", "code": "malformed-frontmatter-line", "line": 4 }
+  "errors": [],
+  "table": "x",
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "est", "type": "text" }
   ],
-  "rows": [{ "line": 6, "lead": "A" }]
+  "rows": [{ "line": 6, "lead": "A", "values": { "est": "1" } }]
 }
