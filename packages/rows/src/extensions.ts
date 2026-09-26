@@ -130,21 +130,20 @@ function references(schema: Schema, rows: Row[], byId: Map<string, Row>, report:
   }
 }
 
-/** ext §6: the parent relation from indentation, then from the parent column. */
-function nesting(schema: Schema, rows: Row[], report: Report): void {
-  if (!schema.nest) return;
-
-  // Indentation (§6.2). `open` is the previous row and its ancestors, with the indent each opened.
-  let open: { indent: number; row: Row }[] = [];
-  const fromIndent = new Map<Row, Row | null>();
-  for (const [i, row] of rows.entries()) {
-    const w = row.indent.width;
-    const badIndent = () => report(row, 'bad-indent', 'Indent matches no open level; attached to the nearest row with a smaller indent.', row.indent);
-    let parent: Row | null = null;
+/**
+ * ext §6.2 over the indents of the rows in order: each row's parent (an index) from indentation,
+ * and whether its indent is a violation, with the tolerant recovery. The edit API uses it too.
+ */
+export function indentLevels(widths: number[]): { parent: number | null; bad: boolean }[] {
+  // `open` is the previous row and its ancestors, with the indent each opened.
+  let open: { indent: number; row: number }[] = [];
+  return widths.map((w, i) => {
+    let parent: number | null = null;
+    let bad = false;
     if (w === 0) {
       open = [];
     } else if (i === 0) {
-      badIndent(); // the first row MUST have zero indent
+      bad = true; // the first row MUST have zero indent
       open = [];
     } else if (w > open[open.length - 1].indent) {
       parent = open[open.length - 1].row;
@@ -154,14 +153,28 @@ function nesting(schema: Schema, rows: Row[], report: Report): void {
         parent = level > 0 ? open[level - 1].row : null;
         open = open.slice(0, level);
       } else {
-        badIndent();
+        bad = true;
         // Tolerant recovery: the nearest preceding row with a smaller indent; the row opens its own level.
         const nearest = open.map((o) => o.indent < w).lastIndexOf(true);
         parent = nearest === -1 ? null : open[nearest].row;
         open = open.slice(0, nearest + 1);
       }
     }
-    open.push({ indent: w, row });
+    open.push({ indent: w, row: i });
+    return { parent, bad };
+  });
+}
+
+/** ext §6: the parent relation from indentation, then from the parent column. */
+function nesting(schema: Schema, rows: Row[], report: Report): void {
+  if (!schema.nest) return;
+
+  // Indentation (§6.2).
+  const levels = indentLevels(rows.map((row) => row.indent.width));
+  const fromIndent = new Map<Row, Row | null>();
+  for (const [i, row] of rows.entries()) {
+    if (levels[i].bad) report(row, 'bad-indent', 'Indent matches no open level; attached to the nearest row with a smaller indent.', row.indent);
+    const parent = levels[i].parent === null ? null : rows[levels[i].parent!];
     fromIndent.set(row, parent);
     row.parent = parent;
   }

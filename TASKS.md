@@ -492,7 +492,7 @@ The extensions spec is at 0.6, after the analogies and the Q40/Q41 settlement. T
 
 **Acceptance criteria**
 
-- [x] The property test in DESIGN §6 runs over at least 1,000 generated documents and edits per function. — it reuses Task 19's generators (now `tests/generators.ts`): 4,000 files, general and nested, with markers, anchors and references. One edit per file: `setLead` on 3,556 files, `setCell` writing on over 1,000, `setMarker` on over 1,000, and `insertRow` on all 4,000. After parsing, the target reads back as intended, and every other row, cell, marker, anchor and non-row line is unchanged. A planted bug (appending after a trailing delimiter) fails it.
+- [x] The property test in DESIGN §6 runs over at least 1,000 generated documents and edits per function. — it reuses Task 19's generators (now `tests/generators.ts`): 4,000 files, general and nested, with markers, anchors and references. One edit per file: `setLead` on 3,556 files, `setCell` writing on over 1,000, `setMarker` on over 1,000, and `insertRow` on over 3,000 (the rest refused for their indent). After parsing, the target reads back as intended, every other row, cell, marker, anchor and non-row line is unchanged, and the text has no syntax or structural error it didn't have before (counted by code). A refusal must be a documented one, and an empty edit list a real no-op. A planted bug (appending after a trailing delimiter) fails it.
 - [x] `setLead` on `    ~Login page {#login} | 4h` changes only the title; the indent, marker, anchor and cells are untouched.
 - [x] `setLead` with a title beginning `~` (when `~` is a marker), `# ` or ending `{#x}` produces a quoted lead that reads back as that exact title.
 - [x] `setCell` on `Auth | 2d` for `notes` (third column) writes `notes=…`, not padding; for `owner` (next slot) writes ` | bob`.
@@ -500,7 +500,12 @@ The extensions spec is at 0.6, after the analogies and the Q40/Q41 settlement. T
 - [x] `setCell(null)` on a trailing cell removes it and its delimiter; on an interior cell empties it.
 - [x] `setMarker(done, false)` on `~Login` removes the `~`; on a row with `done=true` by name removes the named cell.
 
-**Decisions taken:** in DESIGN §6, under "Details the rules above leave open". `setCell` refuses in two documented cases only. The first is the key of an anchored row set to null or a non-ID, since a valid ID renames the anchor instead. The second is a column that can't be named when it isn't the next slot, since writing it would need padding. A setLead on a quoted lead with an anchor keeps the anchor after the closing quote (Q13). No spec questions came up.
+**Decisions taken:** in DESIGN §6, under "Details the rules above leave open". Every edit function returns `EditResult = { edits: TextEdit[] } | { refused: string }`: `{ edits: [] }` when there is nothing to change, `{ refused }` with the reason when the edit can't be made. They throw on host mistakes (an unknown column or marker name) and refuse on document states. The only refusals:
+- `setCell` on the key of an anchored row, set to null or a non-ID, since a valid ID renames the anchor instead (the anchor only; in-file references aren't rewritten, `renameId` is deferred in plan spec §7).
+- `setCell` on a column that can't be named when it isn't the next slot, since writing it would need padding. `setMarker` refuses in the same case for a column without a marker, and when a contradicting cell can't be corrected.
+- `insertRow` at an indent that nesting doesn't allow there, for the new row or a row after it. The check uses the parser's own indent walk, `indentLevels` in `extensions.ts`.
+
+Removing the only marker before an empty lead writes the lead as `""` (`~` becomes `""`, `~ | 1d` becomes `"" | 1d`), so the row doesn't begin with the delimiter. A setLead on a quoted lead with an anchor keeps the anchor after the closing quote (Q13). No spec questions came up.
 
 ---
 

@@ -1,11 +1,16 @@
 // The edit API (DESIGN §6): the Task 20 examples, then the property over generated files.
 import { describe, expect, it } from 'vitest';
-import { applyEdits, formatValue, insertRow, parseRows, setCell, setLead, setMarker, type Column, type ParseOptions, type Row, type RowsDocument } from '../src/index';
+import { applyEdits, formatValue, type EditResult, insertRow, parseRows, setCell, setLead, setMarker, type Column, type ParseOptions, type Row, type RowsDocument } from '../src/index';
 import { generatedFiles, mulberry32 } from './generators';
 
 const PLAN = '---\nnest: parent\nmarkers: done=~\ncolumns: est:duration unit=h hpd=8 | owner | notes\n---\n';
-const edited = (doc: RowsDocument, edits: ReturnType<typeof setLead>, options: ParseOptions = {}) => {
-  const text = applyEdits(doc.text, edits);
+/** The edits of a result that must not be refused. */
+const editsOf = (result: EditResult) => {
+  if ('refused' in result) throw new Error(`refused: ${result.refused}`);
+  return result.edits;
+};
+const edited = (doc: RowsDocument, result: EditResult, options: ParseOptions = {}) => {
+  const text = applyEdits(doc.text, editsOf(result));
   return { text, doc: parseRows(text, options) };
 };
 const col = (doc: RowsDocument, name: string) => doc.schema.columns.find((c) => c.name === name)!;
@@ -84,8 +89,8 @@ describe('setCell', () => {
     const after = edited(ids, setCell(ids, ids.rows[0], col(ids, 'id'), 'login'));
     expect(lastLine(after.text)).toBe('Auth {#login} | id=login');
     expect(after.doc.errors).toEqual([]);
-    expect(setCell(ids, ids.rows[0], col(ids, 'id'), 'not an id')).toEqual([]);
-    expect(setCell(ids, ids.rows[0], col(ids, 'id'), null)).toEqual([]);
+    expect(setCell(ids, ids.rows[0], col(ids, 'id'), 'not an id')).toHaveProperty('refused');
+    expect(setCell(ids, ids.rows[0], col(ids, 'id'), null)).toHaveProperty('refused');
   });
 });
 
@@ -105,11 +110,20 @@ describe('setMarker', () => {
     expect(lastLine(edited(doc, setMarker(doc, doc.rows[1], 'done', true)).text)).toBe('    ~Login');
   });
 
-  it('keeps a row that was only a marker, as a delimiter', () => {
-    const doc = parseRows(`${PLAN}A\n    ~\n`);
-    const after = edited(doc, setMarker(doc, doc.rows[1], 'done', false));
-    expect(lastLine(after.text)).toBe('    |');
-    expect(after.doc.rows[1]).toMatchObject({ markers: [], lead: { text: null } });
+  it('writes an empty lead as "" when its only marker goes, so the row keeps its line without beginning with the delimiter', () => {
+    const doc = parseRows(`${PLAN}A\n    ~\n    ~ | 1d\n`);
+    const only = edited(doc, setMarker(doc, doc.rows[1], 'done', false));
+    expect(only.text.split('\n')[6]).toBe('    ""');
+    expect(only.doc.rows[1]).toMatchObject({ markers: [], lead: { text: '' } });
+    const withCell = edited(doc, setMarker(doc, doc.rows[2], 'done', false));
+    expect(lastLine(withCell.text)).toBe('    "" | 1d');
+    const structural = (d: RowsDocument) => d.errors.filter((e) => e.class !== 'validation');
+    expect([structural(only.doc), structural(withCell.doc)]).toEqual([[], []]);
+  });
+
+  it('returns no edits when the flag already has the value', () => {
+    const doc = parseRows(`${PLAN}~Login\n`);
+    expect(setMarker(doc, doc.rows[0], 'done', true)).toEqual({ edits: [] });
   });
 
   it('quotes a lead that would read as a marker once the marker is gone', () => {
@@ -123,14 +137,23 @@ describe('setMarker', () => {
 describe('insertRow and formatValue', () => {
   it('writes the run of declared columns positionally and the rest by name', () => {
     const doc = parseRows(`${PLAN}A\n`);
-    const text = applyEdits(doc.text, insertRow(doc, 'end', 4, 'B', { est: '2h', notes: 'n', done: 'true' }));
+    const text = applyEdits(doc.text, editsOf(insertRow(doc, 'end', 4, 'B', { est: '2h', notes: 'n', done: 'true' })));
     expect(lastLine(text)).toBe('    B | 2h | notes=n | done=true');
+  });
+
+  it('refuses an indent that nesting does not allow, for the new row or a row after it', () => {
+    const doc = parseRows(`${PLAN}A\n        B\nC\n`);
+    expect(insertRow(doc, { beforeLine: 8 }, 4, 'X')).toHaveProperty('refused'); // between A's and B's levels
+    expect(insertRow(doc, { beforeLine: 6 }, 4, 'X')).toHaveProperty('refused'); // the first row
+    const nested = parseRows(`${PLAN}A\n    B\n`);
+    expect(insertRow(nested, { beforeLine: 7 }, 8, 'X')).toHaveProperty('refused'); // leaves B between levels
+    expect(insertRow(nested, { beforeLine: 7 }, 2, 'X')).toHaveProperty('edits');
   });
 
   it('inserts before a line, and keeps a file without a final newline that way', () => {
     const doc = parseRows('A\nC');
-    expect(applyEdits(doc.text, insertRow(doc, { beforeLine: 2 }, 0, 'B'))).toBe('A\nB\nC');
-    expect(applyEdits(doc.text, insertRow(doc, 'end', 0, 'D'))).toBe('A\nC\nD');
+    expect(applyEdits(doc.text, editsOf(insertRow(doc, { beforeLine: 2 }, 0, 'B')))).toBe('A\nB\nC');
+    expect(applyEdits(doc.text, editsOf(insertRow(doc, 'end', 0, 'D')))).toBe('A\nC\nD');
   });
 
   it('quotes exactly when needed', () => {
@@ -183,7 +206,18 @@ function flag(doc: RowsDocument, row: Row, column: Column): boolean | null {
   return column.default?.type === 'bool' ? column.default.value : null;
 }
 
-describe('every edit changes only its target (DESIGN §6)', () => {
+/** Syntax and structural errors in `after` beyond those `before` had, counted by code. */
+function addedErrors(before: RowsDocument, after: RowsDocument): string[] {
+  const count = (doc: RowsDocument) => {
+    const n = new Map<string, number>();
+    for (const e of doc.errors) if (e.class !== 'validation') n.set(e.code, (n.get(e.code) ?? 0) + 1);
+    return n;
+  };
+  const [was, now] = [count(before), count(after)];
+  return [...now].filter(([code, k]) => k > (was.get(code) ?? 0)).map(([code]) => code);
+}
+
+describe('every edit changes only its target, and adds no syntax or structural error (DESIGN §6)', () => {
   const withRows = files.filter((f) => parseRows(f.text, f.options).rows.length > 0);
 
   it(`setLead, over ${withRows.length} files`, () => {
@@ -195,7 +229,9 @@ describe('every edit changes only its target (DESIGN §6)', () => {
       const after = edited(doc, setLead(doc, row, title), options);
       const want = project(doc);
       (want[rowLine(doc, row)] as RowView).lead = title;
-      expect(project(after.doc), JSON.stringify({ text, title })).toEqual(want);
+      const why = JSON.stringify({ text, title });
+      expect(project(after.doc), why).toEqual(want);
+      expect(addedErrors(doc, after.doc), why).toEqual([]);
     }
   });
 
@@ -206,17 +242,20 @@ describe('every edit changes only its target (DESIGN §6)', () => {
       const row = pick(doc.rows);
       const column = pick(doc.schema.columns);
       const value = random() < 0.25 ? null : pick(VALUES);
-      const edits = setCell(doc, row, column, value);
+      const result = setCell(doc, row, column, value);
       const want = project(doc);
       const target = want[rowLine(doc, row)] as RowView;
       const anchored = column === doc.schema.key && row.anchors.length > 0;
-      if (edits.length === 0) {
-        // The documented refusals, or a null that is already null.
-        const refused =
-          (anchored && (value === null || !ID.test(value))) ||
-          (value !== null && !row.cells[column.index] && !column.settable) ||
-          (value === null && (row.cells[column.index]?.text ?? null) === null);
-        expect(refused, JSON.stringify({ text, column: column.name, value })).toBe(true);
+      const why = JSON.stringify({ text, column: column.name, value });
+      if ('refused' in result) {
+        // Only the documented refusals.
+        const documented = (anchored && (value === null || !ID.test(value))) || (value !== null && !row.cells[column.index] && !column.settable);
+        expect(documented, why).toBe(true);
+        continue;
+      }
+      if (result.edits.length === 0) {
+        // A no-op: a null that is already null.
+        expect(value === null && (row.cells[column.index]?.text ?? null) === null, why).toBe(true);
         continue;
       }
       written++;
@@ -229,8 +268,9 @@ describe('every edit changes only its target (DESIGN §6)', () => {
         target.cells[column.index - 1] = value;
         if (column === doc.schema.key) target.id = value !== null && ID.test(value) ? value : null;
       }
-      const after = edited(doc, edits, options);
-      expect(project(after.doc), JSON.stringify({ text, column: column.name, value })).toEqual(want);
+      const after = edited(doc, result, options);
+      expect(project(after.doc), why).toEqual(want);
+      expect(addedErrors(doc, after.doc), why).toEqual([]);
     }
     expect(written).toBeGreaterThanOrEqual(1000);
   });
@@ -245,14 +285,21 @@ describe('every edit changes only its target (DESIGN §6)', () => {
       const column = pick(flags);
       const on = random() < 0.5;
       const name = doc.schema.markers.find((m) => m.column === column)?.name ?? column.name;
-      const after = edited(doc, setMarker(doc, row, name, on), options);
+      const result = setMarker(doc, row, name, on);
+      const why = JSON.stringify({ text, name, on });
+      if ('refused' in result) {
+        // Only setCell's refusal of a column that can't be named.
+        expect(!column.settable && flag(doc, row, column) !== on && !row.cells[column.index], why).toBe(true);
+        continue;
+      }
+      const after = edited(doc, result, options);
       const i = rowLine(doc, row);
       const newRow = after.doc.lines[i].row!;
-      const why = JSON.stringify({ text, name, on });
-      if (!column.settable && !doc.schema.markers.some((m) => m.column === column) && flag(doc, row, column) !== on && !row.cells[column.index]) continue; // can't be named
       expect(flag(after.doc, newRow, after.doc.schema.columns[column.index]), why).toBe(on);
+      expect(addedErrors(doc, after.doc), why).toEqual([]);
       // Everything else is unchanged: the other markers, the lead, anchors, and the other cells.
       const [before, now] = [project(doc), project(after.doc)];
+      if (!on && row.markers.length === 1 && row.markers[0].name === name && row.lead.text === null) (before[i] as RowView).lead = '';
       const strip = (v: RowView) => ({ ...v, markers: v.markers.filter((m) => m !== name), cells: v.cells.filter((_, k) => k !== column.index - 1) });
       expect(now.map((v, k) => (k === i ? strip(v as RowView) : v)), why).toEqual(before.map((v, k) => (k === i ? strip(v as RowView) : v)));
       checked++;
@@ -261,6 +308,7 @@ describe('every edit changes only its target (DESIGN §6)', () => {
   });
 
   it(`insertRow, over ${files.length} files`, () => {
+    let inserted = 0;
     for (const { text, options } of files) {
       const doc = parseRows(text, options);
       const body = doc.lines.map((l, k) => (l.kind.startsWith('fm-') ? -1 : k + 1)).filter((k) => k > 0);
@@ -271,21 +319,30 @@ describe('every edit changes only its target (DESIGN §6)', () => {
       for (const c of doc.schema.columns.slice(1)) {
         if (random() < 0.4 && (c.settable || !c.implicit) && !(c.name in cells)) cells[c.name] = pick(VALUES);
       }
-      const after = edited(doc, insertRow(doc, at, indent, lead, cells), options);
+      const result = insertRow(doc, at, indent, lead, cells);
+      const why = JSON.stringify({ text, at, indent, lead, cells });
+      if ('refused' in result) {
+        // Only an indent that nesting doesn't allow, for the new row or one after it.
+        expect(doc.schema.nest, why).not.toBeNull();
+        continue;
+      }
+      inserted++;
+      const after = edited(doc, result, options);
       const before = project(doc);
       const index = at === 'end' ? doc.lines.length : at.beforeLine - 1;
       const now = project(after.doc);
-      const why = JSON.stringify({ text, at, lead, cells });
       expect(now.length, why).toBe(before.length + 1);
+      expect(addedErrors(doc, after.doc), why).toEqual([]);
       expect([...now.slice(0, index), ...now.slice(index + 1)], why).toEqual(before);
-      const inserted = now[index] as RowView;
-      expect(inserted.lead, why).toBe(lead);
-      expect(inserted.indent).toBe(indent);
-      expect([inserted.markers, inserted.anchors, inserted.overflow]).toEqual([[], [], []]);
+      const row = now[index] as RowView;
+      expect(row.lead, why).toBe(lead);
+      expect(row.indent).toBe(indent);
+      expect([row.markers, row.anchors, row.overflow]).toEqual([[], [], []]);
       doc.schema.columns.slice(1).forEach((c, k) => {
         const first = doc.schema.columns.findIndex((x) => x.name === c.name) === c.index;
-        if (first) expect(inserted.cells[k], why).toBe(c.name in cells ? cells[c.name] : null);
+        if (first) expect(row.cells[k], why).toBe(c.name in cells ? cells[c.name] : null);
       });
     }
+    expect(inserted).toBeGreaterThanOrEqual(3000);
   });
 });

@@ -162,11 +162,12 @@ Hosts never re-serialise a document. They ask the library for `TextEdit[]` again
 
 ```ts
 interface TextEdit { from: number; to: number; insert: string }   // offsets into doc.text
+type EditResult = { edits: TextEdit[] } | { refused: string }      // edits: [] = nothing to change
 
-setLead(doc, row, text): TextEdit[]
-setCell(doc, row, column, text: string | null): TextEdit[]
-setMarker(doc, row, name, on: boolean): TextEdit[]
-insertRow(doc, at: { beforeLine: number } | 'end', indent: number, lead: string, cells?: Record<string, string>): TextEdit[]
+setLead(doc, row, text): EditResult
+setCell(doc, row, column, text: string | null): EditResult
+setMarker(doc, row, name, on: boolean): EditResult
+insertRow(doc, at: { beforeLine: number } | 'end', indent: number, lead: string, cells?: Record<string, string>): EditResult
 formatValue(doc, column | 'lead', text): string   // quotes exactly when base §3 requires
 ```
 
@@ -179,7 +180,8 @@ Rules:
   3. Otherwise, append a named cell `NAME=value`. This never pads with empty cells.
   4. `null` removes the cell. It removes a trailing positional cell together with its delimiter. An interior positional cell is emptied, since removing it would shift the cells after it.
 - **`setMarker`** inserts or removes the marker character straight after the indent. When the column has no marker, it sets the value by name. A row with both a marker and an explicit `done=false` has both corrected.
-- Every edit function is tested by the same property: for random documents and random edits, parsing the edited text gives the intended value in the target, and every other row, cell, marker, anchor and comment is unchanged.
+- Every edit function is tested by the same property: for random documents and random edits, parsing the edited text gives the intended value in the target, every other row, cell, marker, anchor and comment is unchanged, and the text has no syntax or structural error it didn't have before (counted by code).
+- An edit that has nothing to change returns `{ edits: [] }`. An edit that can't be made without breaking the rules above returns `{ refused }` with the reason, and the host leaves the text as it is.
 
 Details the rules above leave open:
 
@@ -188,14 +190,18 @@ Details the rules above leave open:
 - **`setCell` on the lead** is `setLead`, with `null` written as the empty string: a row always has a lead cell.
 - **Appending after an unterminated quote** first closes the quote where its text ends, so that cell's text is unchanged and the new cell isn't swallowed by it.
 - **Removing a named cell** empties it (`NAME=`) instead, when an unnamed overflow cell follows it: removing it would make that cell positional.
-- **A row keeps its line.** Removing the last cell of a row that begins with a delimiter, or the only marker of a row with nothing else, leaves the delimiter (`|`), so the row doesn't turn into a blank line. The row then begins with the delimiter, as `~ | 1d` does after its marker is removed.
+- **A row keeps its line.** Removing the last cell of a row that begins with a delimiter leaves the delimiter (`|`), so the row doesn't turn into a blank line; the row already began with the delimiter. Removing the only marker before an empty lead writes the lead as `""`: `~` becomes `""` and `~ | 1d` becomes `"" | 1d`, since a row that begins with the delimiter is a structural error.
 - **`insertRow`** writes the declared columns positionally while they run on from the lead, and the rest by name. A column that can't be named is written in position, with empty cells before it. A name in `cells` that isn't a column throws, since that's a mistake in the host.
+- **`setMarker`** with a name that is neither a marker nor a column throws, for the same reason.
 - **`applyEdits(text, edits)`** applies a function's edits, for hosts without an editor of their own.
 
-`setCell` returns no edits in two cases, the only refusals:
+Edit functions throw on host mistakes, such as an unknown column or marker name, and refuse on document states.
 
-- **The key of a row whose ID is in an anchor**, set to `null` or to text that isn't an ID. A valid ID renames the anchor, and the key cell too if it is written, so no anchor/key mismatch (ext §3.2) is created. A value the anchor can't hold would have to move the ID out of the anchor, or remove the anchor and so the row's ID, and neither is what a cell edit asks for. Hosts change such an ID by editing the text.
-- **A column that can't be named** (base §6: a name that doesn't match the grammar or is already used), when the row doesn't set it and it isn't the next positional slot. The only way to write it would be padding with empty cells, which `setCell` never does.
+The only refusals:
+
+- **`setCell` on the key of a row whose ID is in an anchor**, set to `null` or to text that isn't an ID. A valid ID renames the anchor, and the key cell too if it is written, so no anchor/key mismatch (ext §3.2) is created. References to the old ID are not rewritten (`renameId` is deferred, plan spec §7). A value the anchor can't hold would have to move the ID out of the anchor, or remove the anchor and so the row's ID, and neither is what a cell edit asks for. Hosts change such an ID by editing the text.
+- **`setCell` on a column that can't be named** (base §6: a name that doesn't match the grammar or is already used), when the row doesn't set it and it isn't the next positional slot. The only way to write it would be padding with empty cells, which `setCell` never does. `setMarker` on a column without a marker refuses in the same case, and so does a marker change whose contradicting cell can't be corrected.
+- **`insertRow` at an indent that nesting doesn't allow there** (ext §6.2), when `nest` is set: the new row's indent matches no open level, or it leaves a later row's indent matching none. Either would be a structural error. The check is the parser's own indent walk (`indentLevels`), run over the row indents with the new one inserted.
 
 ## 7. Highlighting
 

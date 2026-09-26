@@ -1,6 +1,7 @@
 // Format-preserving edits (DESIGN §6). Hosts never re-serialise a document: they ask for TextEdit[]
 // against the text the library parsed, apply them, and parse again. Edits write any value; whether
 // it is valid is the parser's business.
+import { indentLevels } from './extensions';
 import { isWs } from './text';
 import { HEADING, isDelimiterLine, NAMED, TRAILING_ANCHORS } from './tokenize';
 import type { Cell, Column, Row, RowsDocument } from './types';
@@ -10,6 +11,9 @@ export interface TextEdit {
   to: number;
   insert: string;
 }
+
+/** What an edit function returns: the edits to apply (none when there is nothing to change), or why it won't write. */
+export type EditResult = { edits: TextEdit[] } | { refused: string };
 
 /** Applies non-overlapping edits to the text they were made against. */
 export function applyEdits(text: string, edits: TextEdit[]): string {
@@ -100,45 +104,45 @@ function removeCell(doc: RowsDocument, row: Row, cell: Cell): TextEdit {
 // ---------- the edit functions ----------
 
 /** Replaces the lead value only, so the indent, markers and anchors survive (DESIGN §6). */
-export function setLead(doc: RowsDocument, row: Row, text: string): TextEdit[] {
-  return [replaceValue(doc, row.lead, formatValue(doc, 'lead', text))];
+export function setLead(doc: RowsDocument, row: Row, text: string): EditResult {
+  return { edits: [replaceValue(doc, row.lead, formatValue(doc, 'lead', text))] };
 }
 
 /**
- * Sets one cell (DESIGN §6). Returns no edits when the value can't be written: the key of a row
- * whose ID is in an anchor, set to null or to text that isn't an ID; or a column that can't be
- * named, when it isn't set and isn't the next positional slot.
+ * Sets one cell (DESIGN §6). Refuses when the value can't be written: the key of a row whose ID is
+ * in an anchor, set to null or to text that isn't an ID; or a column that can't be named, when it
+ * isn't set and isn't the next positional slot.
  */
-export function setCell(doc: RowsDocument, row: Row, column: Column, text: string | null): TextEdit[] {
+export function setCell(doc: RowsDocument, row: Row, column: Column, text: string | null): EditResult {
   if (column.index === 0) return setLead(doc, row, text ?? '');
   const cell = row.cells[column.index];
 
   // The ID of an anchored row lives in the anchor: rename it there, and in the key cell if written.
   if (column === doc.schema.key && row.anchors.length > 0) {
-    if (text === null || !ID.test(text)) return [];
+    if (text === null || !ID.test(text)) return { refused: `the row's ID is in an anchor, which can't hold ${text === null ? 'null' : 'a non-ID'}` };
     const anchor = row.anchors[0];
     const edits: TextEdit[] = [{ from: anchor.from + 1, to: anchor.to, insert: text }];
     if (cell && cell.text !== null) edits.push(replaceValue(doc, cell, formatValue(doc, column, text)));
-    return edits;
+    return { edits };
   }
 
   if (cell) {
-    if (text !== null) return [replaceValue(doc, cell, formatValue(doc, column, text))];
-    if (cell.text === null) return [];
+    if (text !== null) return { edits: [replaceValue(doc, cell, formatValue(doc, column, text))] };
+    if (cell.text === null) return { edits: [] };
     const cells = sourceCells(row);
     const later = cells.slice(cells.indexOf(cell) + 1);
     // Removing a named cell must not turn later unnamed (overflow) cells positional.
-    if (later.length === 0 || (cell.name && later.every((c) => c.name))) return [removeCell(doc, row, cell)];
-    return [{ from: cell.valueFrom, to: cell.valueTo, insert: '' }];
+    if (later.length === 0 || (cell.name && later.every((c) => c.name))) return { edits: [removeCell(doc, row, cell)] };
+    return { edits: [{ from: cell.valueFrom, to: cell.valueTo, insert: '' }] };
   }
 
-  if (text === null) return [];
+  if (text === null) return { edits: [] };
   const value = formatValue(doc, column, text);
   const positional = row.cells.filter((c, i) => i > 0 && c && !c.name).length;
   const named = [...row.cells.slice(1), ...row.overflow].some((c) => c?.name);
-  if (!column.implicit && column.index === positional + 1 && !named && row.overflow.length === 0) return appendCell(doc, row, value);
-  if (column.settable) return appendCell(doc, row, `${column.name}=${value}`);
-  return [];
+  if (!column.implicit && column.index === positional + 1 && !named && row.overflow.length === 0) return { edits: appendCell(doc, row, value) };
+  if (column.settable) return { edits: appendCell(doc, row, `${column.name}=${value}`) };
+  return { refused: `column ${column.name} can't be named and isn't the next positional slot` };
 }
 
 /** The value a bool column has for a row: its marker, its cell, or its default. */
@@ -153,48 +157,52 @@ function flag(doc: RowsDocument, row: Row, column: Column): boolean | null {
 /**
  * Turns a flag on or off (DESIGN §6): the marker character straight after the indent when the
  * column has one, otherwise the value by name. A cell that contradicts the result is corrected.
+ * Refuses when that cell can't be written; a name that is neither a marker nor a column throws.
  */
-export function setMarker(doc: RowsDocument, row: Row, name: string, on: boolean): TextEdit[] {
+export function setMarker(doc: RowsDocument, row: Row, name: string, on: boolean): EditResult {
   const marker = doc.schema.markers.find((m) => m.name === name);
   const column = marker?.column ?? doc.schema.columns.find((c) => c.name === name && c.index > 0);
-  if (!column) return [];
+  if (!column) throw new Error(`setMarker: no marker or column named ${name}`);
   const cell = row.cells[column.index];
   const cellValue = cell?.value?.type === 'bool' ? cell.value.value : null;
 
   if (!marker) {
-    if (flag(doc, row, column) === on) return [];
+    if (flag(doc, row, column) === on) return { edits: [] };
     const removes = !on && column.default?.type === 'bool' && !column.default.value && cell?.text != null;
     return setCell(doc, row, column, removes ? null : String(on));
   }
 
   const edits: TextEdit[] = [];
+  // The marker edits, then the cell correction, unless the correction is refused.
+  const withCell = (result: EditResult): EditResult => ('refused' in result ? result : { edits: [...edits, ...result.edits] });
   const present = row.markers.find((m) => m.name === name);
   if (on) {
     if (!present) edits.push({ from: row.indent.to, to: row.indent.to, insert: marker.char });
-    if (cellValue === false) edits.push(...setCell(doc, row, column, null));
-    return edits;
+    return cellValue === false ? withCell(setCell(doc, row, column, null)) : { edits };
   }
   if (present) {
     let to = present.to;
     while (isWs(doc.text[to])) to++; // a marker is removed with the whitespace after it
-    // A row must keep something on its line: a row that was only this marker keeps a delimiter.
-    const rest = doc.text.slice(row.indent.to, present.from) + doc.text.slice(to, row.to);
-    edits.push({ from: present.from, to, insert: /^[ \t]*$/.test(rest) ? doc.schema.sep : '' });
+    // The only marker before an empty lead leaves the lead written as "", so the row neither turns
+    // blank nor begins with the delimiter.
+    const emptyLead = row.markers.length === 1 && row.lead.text === null;
+    edits.push({ from: present.from, to, insert: emptyLead ? (to < row.to ? '"" ' : '""') : '' });
     // Without the marker, the lead might read as a marker, a heading or a comment: quote it.
     const lead = row.lead;
     if (lead.text !== null && !lead.quoted && formatValue(doc, 'lead', lead.text) !== lead.text) {
       edits.push({ from: lead.valueFrom, to: lead.valueTo, insert: formatValue(doc, 'lead', lead.text) });
     }
   }
-  if (cellValue === true) edits.push(...setCell(doc, row, column, null));
-  else if (column.default?.type === 'bool' && column.default.value && cellValue === null) edits.push(...setCell(doc, row, column, 'false'));
-  return edits;
+  if (cellValue === true) return withCell(setCell(doc, row, column, null));
+  if (column.default?.type === 'bool' && column.default.value && cellValue === null) return withCell(setCell(doc, row, column, 'false'));
+  return { edits };
 }
 
 /**
  * Inserts a row (DESIGN §6). Declared columns are written positionally while they run on from the
  * lead, and the rest by name; implicit columns are always named. A column that can't be named is
  * written in position, with empty cells before it. `cells` names columns; any other name throws.
+ * Refuses an indent that nesting doesn't allow there, for the new row or a row after it.
  */
 export function insertRow(
   doc: RowsDocument,
@@ -202,7 +210,7 @@ export function insertRow(
   indent: number,
   lead: string,
   cells: Record<string, string> = {},
-): TextEdit[] {
+): EditResult {
   const { columns, sep } = doc.schema;
   const wanted = Object.keys(cells).map((name) => {
     const column = columns.find((c) => c.name === name && c.index > 0);
@@ -222,11 +230,20 @@ export function insertRow(
   }
   const line = parts.join(` ${sep} `);
 
+  if (doc.schema.nest) {
+    const before = at === 'end' ? doc.rows.length : doc.rows.filter((r) => r.line < at.beforeLine).length;
+    const widths = doc.rows.map((r) => r.indent.width);
+    const bad = (ws: number[]) => indentLevels(ws).filter((l) => l.bad).length;
+    if (bad([...widths.slice(0, before), indent, ...widths.slice(before)]) > bad(widths)) {
+      return { refused: `an indent of ${indent} doesn't fit the nesting here` };
+    }
+  }
+
   if (at !== 'end' && at.beforeLine <= doc.lines.length) {
     const from = doc.lines[at.beforeLine - 1].from;
-    return [{ from, to: from, insert: line + '\n' }];
+    return { edits: [{ from, to: from, insert: line + '\n' }] };
   }
   const end = doc.text.length;
-  if (doc.text === '') return [{ from: 0, to: 0, insert: line }];
-  return [{ from: end, to: end, insert: doc.endsWithNewline ? line + '\n' : '\n' + line }];
+  if (doc.text === '') return { edits: [{ from: 0, to: 0, insert: line }] };
+  return { edits: [{ from: end, to: end, insert: doc.endsWithNewline ? line + '\n' : '\n' + line }] };
 }

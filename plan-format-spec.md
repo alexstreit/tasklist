@@ -431,6 +431,7 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
 - Additional roll-up types: `max`, `count`, `done%`, `remaining`
 - Negative values and negative additive values
 - Showing and editing anchors, IDs and `ref` columns in the grid
+- `renameId`: rename an anchor and rewrite in-file references to it. Until then, `setCell` on an anchored key column renames the anchor only.
 - rows `include` resolution (needs directory access in the browser), canonical form export, ID minting
 - Renderers: Gantt; exports to Excel files, Word, HTML, MS Project
 - Manual light/dark toggle

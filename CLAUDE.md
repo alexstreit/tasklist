@@ -57,6 +57,7 @@ Enforce the `core/` boundary with an ESLint `no-restricted-imports` rule or equi
 - Keep changes in small groups that can be reviewed separately. Don't refactor across the `core/` boundary without asking.
 - Never commit — the human reviews and commits.
 - Bump a spec's draft version with each batch of settled questions that changes it.
+- When a change alters behaviour described in a completed task's notes, update those notes in the same change.
 - When a spec gap is plainly analogous to an already-settled question, settle it by that analogy: update spec and cases, record it in QUESTIONS.md under Resolved as 'settled by analogy with Qn', and list it in your end-of-task summary. Open a question only when a case needs a genuinely new rule. Never settle by analogy when the result makes a new form valid; that's a new rule.
 
 ## Out of scope for MVP
