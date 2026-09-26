@@ -33,6 +33,8 @@ Implement `src/core/` per spec §2 and §3.1–3.2.
 
 **Follow-ups applied:** unclosed front matter warning (line 1); duplicate column name warning; `analyze(text)` entry point; spec renamed to `plan-format-spec.md`.
 
+**Superseded by Task 21:** `parse` and `parseColumns` are deleted; rows reads the file. An unclosed frontmatter and a duplicate column name are now rows errors (severity `error`), and an unclosed frontmatter no longer swallows the rows after it.
+
 **Human review before Task 2:** read the tests, not the implementation. Check that the roll-up and done semantics match what you meant.
 
 ---
@@ -50,7 +52,7 @@ Implement `src/editor/` and a minimal `src/app/` that shows the editor and a raw
 
 **Acceptance criteria**
 
-- [x] Typing the §2.10 example shows distinct styling for: done lines, comments, `~`, `|`, duration values, `+`, front matter, and a warning underline on a `#` line.
+- [x] Typing the §2.10 example shows distinct styling for: done lines, comments, `~`, `|`, duration values, `+`, front matter, and a warning underline on a `#` line (an error underline since Task 21).
 - [x] Folding works on `Auth` and `OAuth (Google)`; not offered on leaves.
 - [x] `Alt+Up/Down` moves a single line, and moves all lines touched by a multi-line selection as a block.
 - [x] `Tab`/`Shift+Tab` indents/outdents by exactly 4 spaces; works on a selection; `Shift+Tab` at column 0 is a no-op.
@@ -124,7 +126,7 @@ Implement `src/renderers/tree/` per spec §5, replacing the JSON dump.
 - [x] Unparseable duration underlines only the field, not the whole line.
 - [x] Diagnostics clear as soon as the line is fixed.
 
-**Follow-ups applied:** uses `@codemirror/lint` fed from the shell's single `analyze()`; span-less diagnostics are gutter-only; `#` warning moved from tokenizer to lint; per-line unknown-key warnings suppressed under unclosed front matter; override-differs only when `childrenHaveValue`; child sum shown only when `childrenHaveValue` and mode is override/additive. Tab-conversion diagnostic is unreachable from the editor by design.
+**Follow-ups applied:** uses `@codemirror/lint` fed from the shell's single `analyze()`; span-less diagnostics are gutter-only; `#` warning moved from tokenizer to lint (since Task 21, a `#` line is a row with a rows `heading-line` error); per-line unknown-key warnings suppressed under unclosed front matter (since Task 21, unknown keys are info, and an unclosed block has no keys); override-differs only when `childrenHaveValue`; child sum shown only when `childrenHaveValue` and mode is override/additive. Tab-conversion diagnostic is unreachable from the editor by design.
 
 ---
 
@@ -163,6 +165,8 @@ Core only. Extend the `duration` parser so a value may contain several unit term
 - [x] The §2.10 example output is unchanged.
 - [x] No changes outside `src/core/` and tests.
 
+**Superseded by Task 21:** the duration grammar is now rows base §5 and this parser is deleted. Invalid values are the rows validation error `invalid-value`, without the separate bare-number message, and `+ 2 d 4 h` (whitespace after the sign) is no longer valid.
+
 ---
 
 ## Task 8 — Outline numbers ✅ `c640f5b`
@@ -171,7 +175,7 @@ Add a structural reference to every item node and show it in both renderers.
 
 **Deliverables**
 
-- `outlineNumber: string` on each item node, computed in `parse` (it is structure, not arithmetic): `1`, `1.1`, `1.2`, `2`, `2.1.5`. Only item nodes are counted; comment, blank, reserved and front-matter lines consume no numbers.
+- `outlineNumber: string` on each item node, computed in `parse` (it is structure, not arithmetic): `1`, `1.1`, `1.2`, `2`, `2.1.5`. Only item nodes are counted; comment, blank, reserved and front-matter lines consume no numbers. (Since Task 21: computed in `readPlan` from the rows parent relation; a `#` line is an item and takes a number.)
 - Tree renderer and table renderer each gain a leading column showing it.
 - Spec §3.1 documents the field; §5 lists the column.
 
@@ -353,13 +357,13 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 - [x] Deleting a comment row deletes exactly that line.
 - [x] A blank row between two items renders and can be deleted; inserting above an item with a blank line above it inserts directly above the item, not above the blank.
 - [x] `4 hours` in an estimate cell shows a warning outline with the correct message on hover; fixing it clears immediately.
-- [x] The unclosed-front-matter warning shows on the front matter row.
+- [x] The unclosed-front-matter warning shows on the front matter row. (Since Task 21 it is an error, and the lines after the opening `---` are rows.)
 - [x] Manual, both themes: derived vs override vs additive summable cells, done rows, focused cell, selected row, editing cell, comment rows, warning and info outlines are all distinguishable. — **browser pass pending review** (the automated colour-token test still passes; the grid adds no literals).
 - [x] Manual: 500-line file; arrow-key navigation and typing feel instant. — measured in jsdom: 1.3 ms per arrow key, 70 ms for a full 500-row rebuild (jsdom builds DOM several times slower than a browser; a rebuild happens once per committed edit, never per keystroke). **Browser pass pending review.**
 
 **Core change:** `Model` gained `lines` — every line of the file as `parse` classified it (spec §3.2). The grid shows comment, blank and front matter lines, and the alternative was re-implementing §2.2 line classification outside core. Renderers ignore it.
 
-**Decisions taken:** a non-item row is a WBS cell plus one cell spanning the rest, holding the raw line text including its indentation; editing it is a whole-line replacement (`setLine`), which is what makes a comment turn into an item and back. Front matter is one collapsed, non-navigable row — it is read-only, so it has no cells the keyboard can land on, and any diagnostic inside the block shows there. The trailing blank line that a file ending in a newline always has is a row like any other, which is what the text editor shows too.
+**Decisions taken:** a non-item row is a WBS cell plus one cell spanning the rest, holding the raw line text including its indentation; editing it is a whole-line replacement (`setLine`), which is what makes a comment turn into an item and back. Front matter is one collapsed, non-navigable row — it is read-only, so it has no cells the keyboard can land on, and any diagnostic inside the block shows there. The trailing blank line that a file ending in a newline always has is a row like any other, which is what the text editor shows too. (Since Task 21, `Model.lines` comes from rows, which has no line for the empty text after a final newline, so the grid shows no row for it.)
 
 **Fixed on the way:** cells set `className` after `addCell` had added the diagnostic class, so warnings on the WBS and raw cells were invisible (the `title` was there, the outline was not). `addCell` now takes the class name. Toolbar enablement was re-splitting the whole document three times per focus move; it now uses the row's own indent and line number, which are the same conditions the operations apply (the disabled-state tests cover the equivalence). Arrow-key cost went from 8.6 ms to 1.3 ms on 500 lines in jsdom.
 
@@ -524,12 +528,57 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 
 **Acceptance criteria**
 
-- [ ] The §2.10 example computes exactly the table in the spec.
-- [ ] Every compute, renderer and exporter test passes. Tests that asserted old parse behaviour are rewritten against the new spec, and each rewrite is listed in the task notes with the reason.
-- [ ] A legacy file (no `profile:`, `columns: est:duration | owner:text`, values `2d` and `4`) opened as `.plan` shows the conversion warnings, and applying the fix makes them disappear and the totals appear.
-- [ ] `<!-- note -->` shows an info with a working fix to `// note`.
-- [ ] The `0 / 8 / 4` file gives the same tree and outline numbers as before, plus one structural error.
-- [ ] Unclosed frontmatter leaves every row visible.
+- [x] The §2.10 example computes exactly the table in the spec. — `tests/core/example.test.ts`, unchanged, on `examples/example.plan`, which now says `profile: plan` and is byte-identical to the `plan-example` conformance input (a test checks this).
+- [x] Every compute, renderer and exporter test passes. Tests that asserted old parse behaviour are rewritten against the new spec, and each rewrite is listed in the task notes with the reason. — compute, renderer and exporter tests are unchanged. Rewrites are listed below.
+- [x] A legacy file (no `profile:`, `columns: est:duration | owner:text`, values `2d` and `4`) opened as `.plan` shows the conversion warnings, and applying the fix makes them disappear and the totals appear. — `tests/core/diagnostics.test.ts`: `unconvertible-duration` on `2d` and rows `invalid-value` on `4`, both with the fix "Add unit=h hpd=8 dpw=5". After the fix there are no diagnostics and the total is 20h.
+- [x] `<!-- note -->` shows an info with a working fix to `// note`. — `tests/core/diagnostics.test.ts`.
+- [x] The `0 / 8 / 4` file gives the same tree and outline numbers as before, plus one structural error. — `tests/core/parse.test.ts`: `bad-indent` on line 3.
+- [x] Unclosed frontmatter leaves every row visible. — `tests/core/diagnostics.test.ts` and `tests/grid/grid.test.ts`. The lines after the opening `---` are rows, with one `unclosed-frontmatter` error on line 1.
+
+**How it's built:** `src/core/read.ts` has `readPlan`, and `src/core/profile.ts` has the built-in plan profile, identical to `profiles/plan.rows` (a test checks this). `analyze` calls `parsePlan` (tab conversion, then `parseRows` with the plan profile and `defaultProfile`), then `readPlan` and `compute`. `parse.ts` and `columns.ts` are deleted, and `duration.ts` keeps only `formatDuration`. Each `ItemNode` keeps its rows `Row`. `titleSpan`, `span`, `indent` and the per-column field spans are rows spans, so `src/grid/edits.ts`, which counts `|`, keeps working on files without named or quoted cells. Fields are now one per declared column, with `null` for an unset cell. `compute` no longer parses: it reads each field's `amount` (hours, or the number) and `additive`. The shell passes the file name to `analyze`. Lint lets `src/core` import `rows`, and outside core forbids `parseRows`, `parsePlan`, `readPlan` and `compute`.
+
+**Timing** (`analyze` on a 500-line plan with 444 items, Node, median of 1,000 runs after warm-up): before 0.32 ms (p99 0.75 ms), after 1.33 ms (p99 2.1 ms). About 4× slower, and well inside the 50 ms debounce.
+
+**Decisions taken:**
+- Model columns are the declared columns only. `done` is read as each item's own done flag: the `done` marker, or `done=true` by name. Every type other than `duration` and `number` is a text cell showing its decoded text.
+- A negative value is checked from the text, for `number` as well as `duration` columns.
+- The conversion fix adds only the options the declaration lacks. It is offered only when the declaration is in the file (spec §2.6 updated).
+- The plan's own diagnostic codes are listed in spec §2.9.
+- `analyze` still converts tabs with an info. The app already converts them on load and paste, so this only matters for text that bypasses those (spec §3.2 updated).
+- Items follow `row.children` from rows. Roots are the rows with no parent, in file order.
+
+**Rewritten tests:**
+- `tests/core/helpers.ts`: `load` builds the tree with `parsePlan` and `readPlan`, since `parse` is deleted. It takes an optional filename.
+- `tests/core/parse.test.ts`:
+  - "0 / 8 / 4 … no diagnostic" now expects one `bad-indent` error (§2.4).
+  - "a comment line between siblings…": `# heading` is now an item with a `heading-line` error, since the `reserved` kind is gone. It takes number 2, and the next root is 3.
+  - The two lossless round-trip tests expect one fewer line, since rows has no line for the empty text after a final newline. `<!-- -->` and `#` lines are now items.
+  - "trailing |…": fields are one per declared column, and an empty cell is `null` (rows base §3), where it used to be `''`.
+  - "fields carry…": `Field.value` is now `Field.text`.
+  - "front matter must start on line 1": reads `tree.doc.frontmatter`.
+- `tests/core/diagnostics.test.ts`:
+  - `#` line: `error`, was `warning`.
+  - More cells than columns: `error` (`too-many-cells`), was `warning`.
+  - Invalid compound durations: assert the rows code `invalid-value`, not the old parser's messages. The separate bare-number message is gone.
+  - Unknown key: `info`, was `warning`. The test also checks that `x-` and extension keys are known.
+  - Duplicate column name: `error`, was `warning`.
+  - Unclosed frontmatter: one `error`, and the rows stay visible. The old test asserted that every line was front matter.
+  - Added: `<!--` with its fix, the legacy file, fix options, and negative values.
+- `tests/core/columns.test.ts`: rewritten, since `parseColumns` is deleted. It covers the same cases through `analyze().columns`. An unknown type is rows' `unknown-type` warning, and duplicate names are an error. Added: non-summable types, the plan profile and `defaultProfile` by file name, done by name, and the example matching the conformance case.
+- `tests/core/duration.test.ts`: the `parseDuration`/`parseNumber` tests went with the parser. The grammar is rows' and covered by the conformance suite. They are replaced by tests that read values as hours through `analyze`. `+ 2 d 4 h` is dropped, since rows doesn't allow whitespace after the sign. The `formatDuration` tests are unchanged.
+- `tests/editor/diagnostics.test.ts`: in the §2.9 table, `#`, overflow, duplicate column and unclosed frontmatter are now `error`. The unclosed one underlines `---`. An unknown key is `info` and underlines the key. Added: HTML comment and unconvertible duration.
+- `tests/editor/language.test.ts`: line 2 of the example is now `profile: plan`.
+- `tests/grid/grid.test.ts`:
+  - Enter and ArrowUp/Shift+Tab on the last row: there is no trailing blank row any more, so the last row is line 3.
+  - The offending-cell hover: the message is now rows'.
+  - Overflow on the WBS cell: now an `error` spanning the overflow cell (§4b.2).
+  - Unclosed frontmatter: `error`, and the lines after it are items.
+  - `#` line: an item, with the error on its title cell.
+- `tests/app/shell.test.ts`: the `#` line is an `error` and `4x` a `warning` with rows' message, so ranges and gutter markers are counted per severity.
+
+**Left for Task 22:** the grid has no style for the `error` class yet, so errors outline only in the text editor (spec §5.3 tokens). `src/editor/lines.ts` still has its own `reserved` line kind, for the old highlighter that Task 22 deletes. Fixes aren't shown as lint actions yet.
+
+**Spec questions:** none. Nothing in the rows specs was ambiguous for this task, so `QUESTIONS.md` is unchanged.
 
 ---
 

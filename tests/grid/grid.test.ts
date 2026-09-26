@@ -351,9 +351,7 @@ describe('keys', () => {
     expect(document.activeElement).toBe(cell(2, EST));
     key('Enter');
     expect(document.activeElement).toBe(cell(3, EST));
-    // Line 4 is the blank line the trailing newline leaves; it has only a raw cell.
-    key('Enter');
-    expect(document.activeElement).toBe(cell(4, TITLE));
+    // The file ends with a newline, which leaves no line after it: the last row is line 3.
     key('Enter');
     expect(document.activeElement).toBe(newTaskInput());
     select(1);
@@ -370,15 +368,15 @@ describe('keys', () => {
 
   it('comes back off the new-task row with ArrowUp and Shift+Tab', () => {
     open(plan);
-    focus(4, TITLE); // the trailing blank line, the last row
+    focus(3, TITLE); // the last row
     key('ArrowDown');
     expect(document.activeElement).toBe(newTaskInput());
     key('ArrowUp');
-    expect(document.activeElement).toBe(cell(4, TITLE));
+    expect(document.activeElement).toBe(cell(3, TITLE));
     key('ArrowDown');
     key('Tab', { shiftKey: true });
     // Shift+Tab mirrors the forward wrap: the last cell of the last row.
-    expect(document.activeElement).toBe(cell(4, TITLE));
+    expect(document.activeElement).toBe(cell(3, NOTES));
   });
 
   it('commits from the new-task row when leaving it with text typed', () => {
@@ -657,7 +655,7 @@ describe('diagnostics', () => {
     open('Auth | 4 hours\n');
     const est = cell(1, EST);
     expect(est.classList.contains('warning')).toBe(true);
-    expect(est.title).toBe('unparseable duration: "4 hours"');
+    expect(est.title).toBe(analyze('Auth | 4 hours\n').diagnostics[0].message);
     click(est, 'dblclick');
     input().value = '4h';
     press(input(), 'Enter');
@@ -671,24 +669,24 @@ describe('diagnostics', () => {
     expect(cell(1, EST).title).toBe('override differs from children (2d vs 4h)');
   });
 
-  it('puts a diagnostic with no span on the row WBS cell', () => {
+  it('puts a diagnostic on an overflow cell on the row WBS cell', () => {
     open('Auth | 2d | bob | note | extra\n');
-    // "more fields than columns" spans a field beyond the declared columns.
-    expect(cell(1, WBS).classList.contains('warning')).toBe(true);
-    expect(cell(1, WBS).title).toBe('more fields than declared columns; extra fields are ignored');
+    // "too many cells" spans a cell beyond the declared columns.
+    expect(cell(1, WBS).classList.contains('error')).toBe(true);
+    expect(cell(1, WBS).title).toBe(analyze('Auth | 2d | bob | note | extra\n').diagnostics[0].message);
   });
 
-  it('shows the unclosed front matter warning on the front matter row', () => {
+  it('shows the unclosed front matter error on the front matter row, and keeps the rows after it', () => {
     open('---\ncolumns: est:duration\nAuth | 2d\n');
     const front = host.querySelector<HTMLTableRowElement>('tr.front-matter')!.querySelector<HTMLTableCellElement>('td.raw')!;
-    expect(front.classList.contains('warning')).toBe(true);
-    expect(front.title).toBe('front matter not closed');
+    expect(front.classList.contains('error')).toBe(true);
+    expect(front.title).toBe(analyze('---\ncolumns: est:duration\nAuth | 2d\n').diagnostics[0].message);
+    expect([row(2)!.classList.contains('item'), row(3)!.classList.contains('item')]).toEqual([true, true]);
   });
 
-  it('marks a reserved # line on its raw cell', () => {
+  it('marks a heading line, which is an item, on its title cell', () => {
     open('# heading\nAuth | 2d\n');
-    const cellForLine = row(1)!.querySelector<HTMLTableCellElement>('td.raw')!;
-    expect(cellForLine.classList.contains('warning')).toBe(true);
-    expect(cellForLine.title).toBe("'#' lines are reserved for future headings");
+    expect(cell(1, TITLE).classList.contains('error')).toBe(true);
+    expect(cell(1, TITLE).title).toBe(analyze('# heading\nAuth | 2d\n').diagnostics[0].message);
   });
 });

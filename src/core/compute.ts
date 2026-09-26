@@ -13,60 +13,42 @@ import type {
   SummableCell,
   Tree,
 } from './types';
-import { formatDuration, parseDuration, parseNumber } from './duration';
+import { formatDuration } from './duration';
 
-export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagnostic[] = []): Model {
-  const diagnostics: Diagnostic[] = [...tree.diagnostics, ...columnDiagnostics];
+export function compute(tree: Tree, columns: Column[]): Model {
+  const diagnostics: Diagnostic[] = [...tree.diagnostics];
 
   const walk = (item: ItemNode, inheritedDone: boolean): ModelNode => {
     const done = inheritedDone || item.done;
     const children = item.children.map((c) => walk(c, done));
 
-    if (item.fields.length > columns.length) {
-      diagnostics.push({
-        line: item.line,
-        span: item.fields[columns.length].span,
-        severity: 'warning',
-        message: `more fields than declared columns; extra fields are ignored`,
-      });
-    }
-
     const cells: Cell[] = columns.map((col, i) => {
       const field = item.fields[i];
-      if (col.type === 'text') {
-        return { kind: 'text', value: field?.value ?? '', span: field?.span ?? null };
+      if (col.type !== 'duration' && col.type !== 'number') {
+        return { kind: 'text', value: field?.text ?? '', span: field?.span ?? null };
       }
 
       const childSum = children.reduce((sum, c) => sum + (c.cells[i] as SummableCell).effective, 0);
       const childrenHaveValue = children.some((c) => (c.cells[i] as SummableCell).hasValue);
-      const raw = field?.value ?? '';
+      const raw = field?.text ?? '';
       let mode: RollupMode = 'derived';
       let effective = childSum;
-      let ownValue = false;
-      if (raw !== '') {
-        const parsed = col.type === 'duration' ? parseDuration(raw) : parseNumber(raw);
-        if ('error' in parsed) {
-          diagnostics.push({
-            line: item.line,
-            span: field.span,
-            severity: 'warning',
-            message: parsed.error,
-          });
-        } else if (parsed.additive) {
-          ownValue = true;
+      // An unreadable value counts as empty; readPlan has already said why.
+      if (field !== null && field.amount !== null) {
+        if (field.additive) {
           mode = 'additive';
-          effective = childSum + parsed.value;
+          effective = childSum + field.amount;
         } else {
-          ownValue = true;
           mode = 'override';
-          effective = parsed.value;
-          if (childrenHaveValue && parsed.value !== childSum) {
+          effective = field.amount;
+          if (childrenHaveValue && field.amount !== childSum) {
             const fmt = col.type === 'duration' ? formatDuration : String;
             diagnostics.push({
               line: item.line,
               span: field.span,
               severity: 'info',
-              message: `override differs from children (${fmt(parsed.value)} vs ${fmt(childSum)})`,
+              code: 'override-differs',
+              message: `override differs from children (${fmt(field.amount)} vs ${fmt(childSum)})`,
             });
           }
         }
@@ -74,7 +56,7 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
       const doneSum = done
         ? effective
         : children.reduce((sum, c) => sum + (c.cells[i] as SummableCell).doneSum, 0);
-      const hasValue = ownValue || childrenHaveValue;
+      const hasValue = mode !== 'derived' || childrenHaveValue;
       return { kind: col.type, effective, childSum, mode, doneSum, hasValue, childrenHaveValue, raw, span: field?.span ?? null };
     });
 
@@ -95,7 +77,7 @@ export function compute(tree: Tree, columns: Column[], columnDiagnostics: Diagno
   const roots = tree.items.map((item) => walk(item, false));
 
   const totals: (DocumentTotal | null)[] = columns.map((col, i) => {
-    if (col.type === 'text') return null;
+    if (col.type !== 'duration' && col.type !== 'number') return null;
     return {
       effective: roots.reduce((sum, r) => sum + (r.cells[i] as SummableCell).effective, 0),
       doneSum: roots.reduce((sum, r) => sum + (r.cells[i] as SummableCell).doneSum, 0),

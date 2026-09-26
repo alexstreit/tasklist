@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { parse } from '../../src/core';
-import type { ItemNode } from '../../src/core';
 import { byTitle, load } from './helpers';
 
+const parse = (text: string) => load(text).tree;
+
 describe('hierarchy (§2.4)', () => {
-  it('0 / 8 / 4 indents: third item is a sibling of the second, no diagnostic', () => {
+  it('0 / 8 / 4 indents: third item is a sibling of the second, with one structural error', () => {
     const { tree, model } = load('A\n        B\n    C');
     expect(tree.items).toHaveLength(1);
     const a = tree.items[0];
     expect(a.children.map((c) => c.title)).toEqual(['B', 'C']);
     expect(a.children[0].children).toHaveLength(0);
-    expect(model.diagnostics).toHaveLength(0);
+    expect(model.diagnostics).toMatchObject([{ line: 3, severity: 'error', code: 'bad-indent' }]);
   });
 });
 
@@ -24,11 +24,12 @@ describe('outline numbers (§3.1)', () => {
     expect(tree.items[1].outlineNumber).toBe('2');
   });
 
-  it('a comment line between siblings does not affect numbering', () => {
-    const { model } = load('A\n    B\n    // C | 2d\n    D\n\n# reserved\nE');
+  it('a comment line between siblings does not affect numbering; a heading line is an item', () => {
+    const { model } = load('A\n    B\n    // C | 2d\n    D\n\n# heading\nE');
     expect(byTitle(model, 'B').outlineNumber).toBe('1.1');
     expect(byTitle(model, 'D').outlineNumber).toBe('1.2');
-    expect(byTitle(model, 'E').outlineNumber).toBe('2');
+    expect(byTitle(model, '# heading').outlineNumber).toBe('2');
+    expect(byTitle(model, 'E').outlineNumber).toBe('3');
   });
 
   it('0 / 8 / 4 indents: third item is numbered as a sibling (1.2), not a grandchild', () => {
@@ -59,13 +60,14 @@ describe('lossless round-trip', () => {
     const tree = parse(original);
     const expected = original.replace(/\t/g, '    ');
     expect(tree.text).toBe(expected);
-    const rebuilt = tree.nodes.map((n) => tree.text.slice(n.span.from, n.span.to)).join('\n');
+    // The empty text after a final newline is not a line (rows base §1).
+    const rebuilt = tree.nodes.map((n) => tree.text.slice(n.span.from, n.span.to)).join('\n') + '\n';
     expect(rebuilt).toBe(expected);
   });
 
   it('every line is retained as a node, comments and blanks included', () => {
     const tree = parse(original);
-    expect(tree.nodes).toHaveLength(original.split('\n').length);
+    expect(tree.nodes).toHaveLength(original.split('\n').length - 1);
     expect(tree.nodes.map((n) => n.kind)).toEqual([
       'front-matter',
       'front-matter',
@@ -75,12 +77,11 @@ describe('lossless round-trip', () => {
       'item',
       'item',
       'item',
-      'comment',
+      'item', // <!-- --> is a row (§2.3)
       'blank',
       'item',
-      'reserved',
+      'item', // a heading line is a row with a structural error
       'item',
-      'blank',
     ]);
   });
 });
@@ -99,11 +100,11 @@ describe('empty and trivial files', () => {
 });
 
 describe('item grammar (§2.3)', () => {
-  it('trailing | produces nothing; an interior empty field is kept', () => {
+  it('trailing | produces nothing; an interior empty field is unset', () => {
     const tree = parse('A | 4h |\nB | | bob');
     const [a, b] = tree.items;
-    expect(a.fields.map((f) => f.value)).toEqual(['4h']);
-    expect(b.fields.map((f) => f.value)).toEqual(['', 'bob']);
+    expect(a.fields.map((f) => f?.text ?? null)).toEqual(['4h', null, null]);
+    expect(b.fields.map((f) => f?.text ?? null)).toEqual([null, 'bob', null]);
   });
 
   it('~ marks done, with optional whitespace before the title', () => {
@@ -115,19 +116,19 @@ describe('item grammar (§2.3)', () => {
     ]);
   });
 
-  it('fields carry trimmed values with spans over the trimmed text', () => {
+  it('fields carry decoded text with spans over the value as written', () => {
     const tree = parse('Auth | 2d  | alice');
-    const item = tree.items[0] as ItemNode;
+    const item = tree.items[0];
     expect(item.title).toBe('Auth');
     expect(tree.text.slice(item.titleSpan.from, item.titleSpan.to)).toBe('Auth');
-    const [est, owner] = item.fields;
+    const [est, owner] = item.fields.map((f) => f!);
     expect(tree.text.slice(est.span.from, est.span.to)).toBe('2d');
     expect(tree.text.slice(owner.span.from, owner.span.to)).toBe('alice');
   });
 
   it('front matter must start on line 1; a later --- is an item', () => {
     const tree = parse('A\n---\nB');
-    expect(tree.frontMatter).toBeNull();
+    expect(tree.doc.frontmatter).toBeNull();
     expect(tree.items.map((i) => i.title)).toEqual(['A', '---', 'B']);
   });
 });

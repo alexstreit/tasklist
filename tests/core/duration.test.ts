@@ -1,61 +1,39 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, parseDuration, parseNumber } from '../../src/core';
+import { analyze, formatDuration } from '../../src/core';
+import type { SummableCell } from '../../src/core';
 
-describe('parseDuration (§2.6)', () => {
-  it.each([
-    ['4', 4, false],
-    ['4h', 4, false],
-    ['2d', 16, false],
-    ['1.5w', 60, false],
-    ['+1d', 8, true],
-    ['  4h  ', 4, false],
-    ['2d 4h', 20, false],
-    ['4h 2d', 20, false],
-    ['1w 2d 4h', 60, false],
-    ['+2d 4h', 20, true],
-    ['1.5d 4h', 16, false],
-    ['2 d', 16, false],
-    ['2 d 4 h', 20, false],
-    ['+ 2 d 4 h', 20, true],
-  ])('parses %s', (raw, value, additive) => {
-    expect(parseDuration(raw)).toEqual({ value, additive });
-  });
-
-  it.each(['', 'abc', '4x', '1..5', '-4h', 'h', '+', '2d 2d', '2dh'])('rejects %s as unparseable', (raw) => {
-    expect(parseDuration(raw)).toEqual({ error: `unparseable duration: "${raw}"` });
-  });
-
-  it.each(['4 2d', '2d 4', '2 d 4'])('rejects %s: bare number in a compound value', (raw) => {
-    expect(parseDuration(raw)).toEqual({ error: 'bare number not allowed in compound duration' });
-  });
+// The duration grammar is rows' (base §5, tested by the conformance suite). The plan reads values as hours.
+describe('reading summable values (§2.6)', () => {
+  const read = (value: string, columns = 'est:duration unit=h hpd=8 dpw=5') => {
+    const model = analyze(`---\ncolumns: ${columns}\n---\nA | ${value}\n`);
+    const cell = model.roots[0].cells[0] as SummableCell;
+    return { hours: cell.hasValue ? cell.effective : null, mode: cell.mode, diagnostics: model.diagnostics.map((d) => d.code) };
+  };
 
   it.each([
-    ['4', 4],
-    ['2d 4h', 20],
-    ['4h 2d', 20],
-    ['1w 2d 4h', 60],
-    ['+2d 4h', 20],
-    ['1.5d 4h', 16],
-    ['0.5h 1w', 40.5],
-    ['2 d 4 h', 20],
-  ])('%s round-trips through formatDuration', (raw, hours) => {
-    const parsed = parseDuration(raw);
-    if ('error' in parsed) throw new Error(parsed.error);
-    expect(formatDuration(parsed.value)).toBe(formatDuration(hours));
-  });
-});
-
-describe('parseNumber (§2.6)', () => {
-  it.each([
-    ['3', 3, false],
-    ['2.5', 2.5, false],
-    ['+2', 2, true],
-  ])('parses %s', (raw, value, additive) => {
-    expect(parseNumber(raw)).toEqual({ value, additive });
+    ['4', 4, 'override'],
+    ['4h', 4, 'override'],
+    ['2d', 16, 'override'],
+    ['1.5w', 60, 'override'],
+    ['+1d', 8, 'additive'],
+    ['2d 4h', 20, 'override'],
+    ['4h 2d', 20, 'override'],
+    ['1w 2d 4h', 60, 'override'],
+    ['+2d 4h', 20, 'additive'],
+    ['2 d 4 h', 20, 'override'],
+    ['90m', 1.5, 'override'],
+  ])('reads %s as %ih', (value, hours, mode) => {
+    expect(read(value)).toEqual({ hours, mode, diagnostics: [] });
   });
 
-  it.each(['', '4h', 'x'])('rejects %s', (raw) => {
-    expect(parseNumber(raw)).toEqual({ error: `unparseable number: "${raw}"` });
+  it.each(['abc', '4x', '2d 2d', '4 2d'])('%s is a rows validation error and counts as empty', (value) => {
+    expect(read(value)).toEqual({ hours: null, mode: 'derived', diagnostics: ['invalid-value'] });
+  });
+
+  it('a number column reads numbers, with + additive', () => {
+    expect(read('2.5', 'n:number')).toEqual({ hours: 2.5, mode: 'override', diagnostics: [] });
+    expect(read('+2', 'n:number')).toEqual({ hours: 2, mode: 'additive', diagnostics: [] });
+    expect(read('-2', 'n:number')).toEqual({ hours: null, mode: 'derived', diagnostics: ['negative-value'] });
   });
 });
 

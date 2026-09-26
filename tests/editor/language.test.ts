@@ -35,7 +35,7 @@ describe('language mode', () => {
     const doc = example;
     const cases: [number, string, string][] = [
       [1, '---', 'cm-plan-front-matter'],
-      [2, 'columns: est:duration | owner:text | notes:text', 'cm-plan-front-matter'],
+      [2, 'profile: plan', 'cm-plan-front-matter'],
       [4, '// Q4 auth work. Estimates are rough.', 'cm-plan-comment'],
       [5, '|', 'cm-plan-separator'],
       [5, '2d', 'cm-plan-duration'],

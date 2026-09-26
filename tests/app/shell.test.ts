@@ -197,16 +197,18 @@ describe('diagnostics', () => {
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '# heading\nAuth\n    Login | 4x\n' } });
     vi.advanceTimersByTime(60);
     const out = collect();
-    expect(out.map((d) => d.severity)).toEqual(['warning', 'warning']);
+    // A heading line is a rows structural error; 4x a validation error (spec §2.9).
+    expect(out.map((d) => d.severity)).toEqual(['error', 'warning']);
     expect(view.state.doc.sliceString(out[0].from, out[0].to)).toBe('# heading');
     expect(view.state.doc.sliceString(out[1].from, out[1].to)).toBe('4x');
-    expect(out[1].message).toBe('unparseable duration: "4x"');
+    expect(out[1].message).toBe('"4x" is not a valid duration; the text is kept.');
   });
 
   it('underlines only the offending field and marks the gutter', () => {
-    const marks = [...view.contentDOM.querySelectorAll('.cm-lintRange-warning')].map((m) => m.textContent);
-    expect(marks).toEqual(['# heading', '4x']);
-    expect(view.dom.querySelectorAll('.cm-gutter-lint .cm-lint-marker-warning')).toHaveLength(2);
+    const marks = (severity: string) => [...view.contentDOM.querySelectorAll(`.cm-lintRange-${severity}`)].map((m) => m.textContent);
+    expect([marks('error'), marks('warning')]).toEqual([['# heading'], ['4x']]);
+    expect(view.dom.querySelectorAll('.cm-gutter-lint .cm-lint-marker-error')).toHaveLength(1);
+    expect(view.dom.querySelectorAll('.cm-gutter-lint .cm-lint-marker-warning')).toHaveLength(1);
   });
 
   it('clears a diagnostic as soon as its line is fixed', () => {

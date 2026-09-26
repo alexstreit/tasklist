@@ -1,6 +1,8 @@
-// Core data types. Spec §2 and §3. This module must stay dependency-free.
+// Core data types. Spec §2 and §3. This module imports only the rows library's types.
 
-export type Severity = 'warning' | 'info';
+import type { Row, RowsDocument, TextEdit, TypeKind } from 'rows';
+
+export type Severity = 'error' | 'warning' | 'info';
 
 /** Absolute character offsets into `Tree.text` (the normalised source). */
 export interface Span {
@@ -8,24 +10,38 @@ export interface Span {
   to: number;
 }
 
+/** A labelled edit that resolves a diagnostic (spec §2.9). */
+export interface Fix {
+  label: string;
+  edits: TextEdit[];
+}
+
 export interface Diagnostic {
   line: number; // 1-based
   span?: Span;
   severity: Severity;
+  /** A rows error code, or one of the plan's own (spec §2.9). */
+  code: string;
   message: string;
+  fixes?: Fix[];
 }
 
-export type ColumnType = 'duration' | 'number' | 'text';
-
+/** A declared column. `type` is the rows type kind; only `duration` and `number` are summed (spec §2.6). */
 export interface Column {
   name: string;
-  type: ColumnType;
+  type: TypeKind;
 }
 
-/** One positional field on an item line. `value` is trimmed; `span` covers the trimmed text. */
+/** A cell the row sets for a declared column. */
 export interface Field {
-  value: string;
+  /** The decoded text. */
+  text: string;
+  /** The value as written, quotes included. */
   span: Span;
+  /** Summable columns: hours (duration) or the number, without its sign. Null when empty or unreadable. */
+  amount: number | null;
+  /** A leading `+` (spec §2.6). */
+  additive: boolean;
 }
 
 interface NodeBase {
@@ -41,47 +57,39 @@ export interface CommentNode extends NodeBase {
   kind: 'comment';
 }
 
-/** A `#` line — reserved for future headings (spec §2.2). */
-export interface ReservedNode extends NodeBase {
-  kind: 'reserved';
-}
-
-/** A front matter delimiter or content line, retained for losslessness. */
+/** A frontmatter line, retained for losslessness. */
 export interface FrontMatterNode extends NodeBase {
   kind: 'front-matter';
 }
 
 export interface ItemNode extends NodeBase {
   kind: 'item';
+  /** The rows row, with every span. */
+  row: Row;
   indent: number;
-  /** Own `~` marker only; inherited done-ness is computed. */
+  /** Own `done` marker or `done=true`; inherited done-ness is computed. */
   done: boolean;
   title: string;
+  /** The lead value as written, quotes included; markers and anchors excluded. */
   titleSpan: Span;
-  fields: Field[];
+  /** One per declared column, in order; null when the row doesn't set it. */
+  fields: (Field | null)[];
   children: ItemNode[];
   /** Structural reference: `1`, `1.2`, `2.1.5`. Only item nodes count. */
   outlineNumber: string;
 }
 
-export type Node = BlankNode | CommentNode | ReservedNode | FrontMatterNode | ItemNode;
-
-export interface FrontMatterEntry {
-  key: string;
-  value: string;
-  line: number;
-  valueSpan: Span;
-}
+export type Node = BlankNode | CommentNode | FrontMatterNode | ItemNode;
 
 export interface Tree {
-  /** Normalised source: CRLF -> LF, tabs -> 4 spaces. All spans index into this. */
+  /** Normalised source: BOM stripped, CRLF -> LF, tabs -> 4 spaces. All spans index into this. */
   text: string;
+  doc: RowsDocument;
+  columns: Column[];
   /** Every line of the file, in order. Lossless. */
   nodes: Node[];
   /** Root items of the hierarchy. */
   items: ItemNode[];
-  /** null when the file has no front matter block. */
-  frontMatter: FrontMatterEntry[] | null;
   diagnostics: Diagnostic[];
 }
 
@@ -103,6 +111,7 @@ export interface SummableCell {
   span: Span | null;
 }
 
+/** A column that isn't summed (text, bool, date, enum, ref…): its decoded text, as written. */
 export interface TextCell {
   kind: 'text';
   value: string;
@@ -117,7 +126,7 @@ export interface ModelNode {
   indent: number;
   title: string;
   titleSpan: Span;
-  /** Own `~` or inherited from an ancestor. */
+  /** Own done flag or inherited from an ancestor. */
   done: boolean;
   outlineNumber: string;
   /** One cell per declared column, in order. */

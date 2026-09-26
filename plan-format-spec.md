@@ -63,7 +63,7 @@ An item is done when its `done` marker (`~`) is present or `done=true` is set by
 
 The summable columns are `duration` and `number` columns. Every other type, including text, bool, date, datetime, enum and ref, is shown as written and never summed.
 
-- A duration converts to hours using its column's `hpd` and `dpw`, with minutes at 60. If a value has a term its column can't convert, such as `1d` without `hpd`, the value is treated as empty and gets a warning. The warning has a fix that adds `unit=h hpd=8 dpw=5` to the column declaration.
+- A duration converts to hours using its column's `hpd` and `dpw`, with minutes at 60. If a value has a term its column can't convert, such as `1d` without `hpd`, the value is treated as empty and gets a warning. The warning has a fix that adds `unit=h hpd=8 dpw=5` to the column declaration, leaving out any of those options the declaration already has. There is no fix when the declaration isn't in the file, as with a column from a path profile.
 - A bare number is valid only when the column has `unit=` (the profile sets `unit=h`). Without it, the value is a rows validation error, and the same fix applies.
 - A leading `+` makes the value **additive** (§2.7). A leading `-` isn't supported yet: the value is treated as empty, with a warning.
 - `number` columns follow the same sign rules.
@@ -108,17 +108,17 @@ else:             doneSum = sum(doneSum of children)
 
 ### 2.9 Diagnostics
 
-Every diagnostic carries a line, a severity, a code, a message, a span where one exists, and optional **fixes**, each a label plus `TextEdit[]`.
+Every diagnostic carries a line, a severity, a code, a message, a span where one exists, and optional **fixes**, each a label plus `TextEdit[]`. A rows error keeps its rows code and message; the plan's own diagnostics have the codes below.
 
-| Source                                                                                      | Severity |
-| ------------------------------------------------------------------------------------------- | -------- |
-| rows syntax or structural error (e.g. unterminated quote, overflow cells, bad indent level) | error    |
-| rows validation error (e.g. `4 hours` in a duration column, a dangling `#ref`)              | warning  |
-| Duration term the column can't convert, or a negative value (§2.6)                          | warning  |
-| Unknown frontmatter key that is not rows base, a rows extension key, or `x-`                | info     |
-| Line beginning `<!--` (§2.3)                                                                | info     |
-| Tabs converted on load                                                                      | info     |
-| Override differs from child sum (only when `childrenHaveValue`)                             | info     |
+| Source                                                                                      | Severity | Code                                        |
+| ------------------------------------------------------------------------------------------- | -------- | ------------------------------------------- |
+| rows syntax or structural error (e.g. unterminated quote, overflow cells, bad indent level) | error    | the rows code                               |
+| rows validation error (e.g. `4 hours` in a duration column, a dangling `#ref`)              | warning  | the rows code                               |
+| Duration term the column can't convert, or a negative value (§2.6)                          | warning  | `unconvertible-duration`, `negative-value`  |
+| Unknown frontmatter key that is not rows base, a rows extension key, or `x-`                | info     | `unknown-key`                               |
+| Line beginning `<!--` (§2.3)                                                                | info     | `html-comment`                              |
+| Tabs converted on load                                                                      | info     | `tabs-converted`                            |
+| Override differs from child sum (only when `childrenHaveValue`)                             | info     | `override-differs`                          |
 
 Rows ignores unknown keys silently. The plan tool reports them as info, because in a hand-edited file an unknown key is usually a typo, such as `colums:`.
 
@@ -172,11 +172,13 @@ The fixture lives at `examples/example.plan` and is shared by tests and the app.
 
 `parseRows(text, { profiles: { plan }, defaultProfile })` from the `rows` library (§3.9) returns a lossless `RowsDocument`: every line classified, every row with its indent, markers, anchors, cells and overflow, all as spans into the text, plus the parent relation and every error.
 
-`readPlan(doc) → Tree` is the plan layer. It turns rows into items and reads summable cells as hours (§2.6), carrying the rows spans through unchanged, so that:
+`readPlan(doc) → Tree` is the plan layer. It turns rows into items and reads summable cells as hours (§2.6), carrying the rows spans through unchanged (each item keeps its rows `Row`), so that:
 
 - the preview can highlight the node under the cursor,
 - diagnostics point at the right column,
 - the grid can ask the rows edit API for a precise replacement.
+
+The tree's columns are the declared columns in order. Implicit columns (`parent`, `done`, and `id` when identity is on) are not columns of the tree; `done` is read into each item's done flag (§2.5).
 
 Each item carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`), computed from the rows parent relation. Only rows are counted. Outline numbers are structural references and shift when lines are inserted above them. They are not stable IDs; anchors are.
 
@@ -184,9 +186,9 @@ Each item carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`), computed from t
 
 `compute(tree, columns) → Model`. Pure function. Walks the tree bottom-up and attaches `effective`, `childSum`, `mode`, `hasValue`, `childrenHaveValue`, `done`, `doneSum` and diagnostics to each node, plus document totals. No renderer or exporter performs arithmetic.
 
-The model also carries `lines`: every line of the file in order, exactly as `parse` classified it. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
+The model also carries `lines`: every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
 
-`analyze(text, filename?) → Model` composes `parseRows`, `readPlan` and `compute` and is the single entry point the app shell and any tooling call. Nothing outside `src/core/` imports the rows parser, `readPlan` or `compute` directly (lint-enforced).
+`analyze(text, filename?) → Model` composes `parseRows`, `readPlan` and `compute` and is the single entry point the app shell and any tooling call. The shell passes the current file name, or none for a new document (§2.1). A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `readPlan` or `compute` directly (lint-enforced).
 
 `src/core/` imports nothing outside itself, the standard library and the `rows` package (lint-enforced).
 

@@ -1,5 +1,5 @@
 ---
-columns: est:duration | owner:text | notes:text
+profile: plan
 ---
 // Q4 auth work. Estimates are rough.
 Auth                        | 2d

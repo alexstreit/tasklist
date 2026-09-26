@@ -1,8 +1,8 @@
-import { analyze, parse } from '../../src/core';
+import { analyze, parsePlan, readPlan } from '../../src/core';
 import type { Model, ModelNode, SummableCell, Tree } from '../../src/core';
 
-export function load(text: string): { tree: Tree; model: Model } {
-  return { tree: parse(text), model: analyze(text) };
+export function load(text: string, filename?: string): { tree: Tree; model: Model } {
+  return { tree: readPlan(parsePlan(text, filename).doc), model: analyze(text, filename) };
 }
 
 /** Depth-first flatten of the model's item nodes. */

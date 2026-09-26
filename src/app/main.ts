@@ -111,7 +111,7 @@ function renderExporters(): void {
 
 function render(): void {
   if (dirty) {
-    model = analyze(buffer.text());
+    model = analyze(buffer.text(), files.name ?? undefined);
     lines = itemLines(model);
     dirty = false;
     editor?.update(model);

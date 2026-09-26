@@ -3,8 +3,15 @@ import tseslint from 'typescript-eslint';
 // Outside core, analyze() is the only entry point (spec §3.2).
 const analyzeOnly = {
   regex: '(^|/)core(/|$)',
-  importNames: ['parse', 'compute'],
-  message: 'Call analyze() from core; parse and compute are not entry points.',
+  importNames: ['parsePlan', 'readPlan', 'compute'],
+  message: 'Call analyze() from core; parsePlan, readPlan and compute are not entry points.',
+};
+
+// Outside core, nothing reads a plan with the rows parser directly (spec §3.2).
+const noParseRows = {
+  regex: '^rows$',
+  importNames: ['parseRows'],
+  message: 'Call analyze() from core instead of parsing with rows.',
 };
 
 // Only the text editor and the CodeMirror buffer may know about CodeMirror (spec §3.7).
@@ -27,20 +34,21 @@ const restrict = (files, patterns, ignores) => ({
 });
 
 export default [
-  // Enforces the core/ boundary (CLAUDE.md): src/core may import nothing outside itself.
+  // Enforces the core/ boundary (CLAUDE.md): src/core imports nothing outside itself but the rows library (spec §3.2).
   restrict(
     ['src/core/**/*.ts'],
     [
       {
-        // Anything that is not a ./-relative import, or that traverses upward.
-        regex: '^(?!\\./)|\\.\\.',
-        message: 'src/core may only import from within src/core.',
+        // Anything that is not a ./-relative import or `rows`, or that traverses upward.
+        regex: '^(?!\\./|rows$)|\\.\\.',
+        message: 'src/core may only import from within src/core, and the rows library.',
       },
     ],
   ),
-  restrict(['src/app/**/*.ts', 'src/renderers/**/*.ts', 'src/exporters/**/*.ts', 'src/editing/**/*.ts', 'src/buffer/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly]),
-  restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly, rowsEntryOnly]),
-  restrict(['src/grid/**/*.ts', 'tests/**/*.ts'], [rowsEntryOnly]),
+  restrict(['src/app/**/*.ts', 'src/renderers/**/*.ts', 'src/exporters/**/*.ts', 'src/editing/**/*.ts', 'src/buffer/**/*.ts'], [analyzeOnly, noParseRows, noCodeMirror, rowsEntryOnly]),
+  restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
+  restrict(['src/grid/**/*.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
+  restrict(['tests/**/*.ts'], [rowsEntryOnly]),
   // packages/rows/src imports nothing outside itself: no app code, no packages, no Node APIs.
   restrict(
     ['packages/rows/src/**/*.ts'],

@@ -52,7 +52,7 @@ Enforce the `core/` boundary with an ESLint `no-restricted-imports` rule or equi
 ## Conventions
 
 - Indentation in plan files is 4 spaces. Tabs are converted on load with an `info` diagnostic.
-- Diagnostics are data (`{ line, span?, severity, message }`), never `console.warn`.
+- Diagnostics are data (`{ line, span?, severity, code, message, fixes? }`), never `console.warn`.
 - Keep the §2.10 example from the spec as a fixture; its expected output is the reference test.
 - Keep changes in small groups that can be reviewed separately. Don't refactor across the `core/` boundary without asking.
 - Never commit — the human reviews and commits.

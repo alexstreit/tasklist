@@ -34,13 +34,15 @@ describe('toLintDiagnostics', () => {
   it.each([
     // condition, text, severity, underlined text (null = gutter only)
     ['tabs converted', 'A\n\tB\n', 'info', null],
-    ['reserved # line', '# heading\n', 'warning', '# heading'],
-    ['more fields than columns', 'A | 1h | bob | note | extra\n', 'warning', 'extra'],
+    ['heading line', '# heading\n', 'error', '# heading'],
+    ['more cells than columns', 'A | 1h | bob | note | extra\n', 'error', 'extra'],
     ['unparseable duration', 'A | soon\n', 'warning', 'soon'],
-    ['unknown front matter key', '---\ncalendar: x\n---\n', 'warning', null],
+    ['unknown front matter key', '---\ncalendar: x\n---\n', 'info', 'calendar'],
     ['unknown column type', '---\ncolumns: est:money\n---\n', 'warning', 'est:money'],
-    ['duplicate column name', '---\ncolumns: est:duration | est:text\n---\n', 'warning', 'est:text'],
-    ['front matter not closed', '---\ncolumns: est:duration\n', 'warning', null],
+    ['duplicate column name', '---\ncolumns: est:duration | est:text\n---\n', 'error', 'est:text'],
+    ['front matter not closed', '---\ncolumns: est:duration\n', 'error', '---'],
+    ['HTML comment', '<!-- note -->\n', 'info', '<!-- note -->'],
+    ['duration the column cannot convert', '---\ncolumns: est:duration\n---\nA | 1d\n', 'warning', '1d'],
     ['override differs from children', 'A | 1d\n    B | 1h\n', 'info', '1d'],
   ] as const)('%s', (_name, text, severity, underlined) => {
     const { lint: out, doc } = lint(text);
