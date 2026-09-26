@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.2: anchor groups may follow a quoted lead", "ext §5", "base §9"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "columns": [

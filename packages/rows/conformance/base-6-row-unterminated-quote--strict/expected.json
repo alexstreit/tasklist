@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 rows: unterminated quoted cell", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [{ "class": "syntax", "code": "unterminated-quote", "line": 4 }]
 }

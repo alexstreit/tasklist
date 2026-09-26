@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.2 example: Auth | id=auth, in a file where identity applies"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "columns": [

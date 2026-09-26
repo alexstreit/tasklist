@@ -1,6 +1,6 @@
 {
   "spec": ["ext §4.1 example", "DESIGN §1: v1 treats every include as unreadable"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "structural", "code": "unresolvable-include", "line": 2 },

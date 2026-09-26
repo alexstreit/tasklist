@@ -1,6 +1,6 @@
 {
   "spec": ["base §4: a delimiter inside [...] does not separate declarations", "base §5 enum"],
-  "needs": ["types"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "columns": [

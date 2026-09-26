@@ -1,5 +1,6 @@
 {
   "spec": ["base §3: comment lines, blank lines, trailing delimiter, null cells"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "rows": [

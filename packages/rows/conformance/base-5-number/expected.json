@@ -1,6 +1,6 @@
 {
   "spec": ["base §5 number"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-value", "line": 9 },

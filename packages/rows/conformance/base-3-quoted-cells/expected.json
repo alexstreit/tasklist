@@ -1,5 +1,6 @@
 {
   "spec": ["base §3 quoted cells", "base §3 null and empty"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "rows": [

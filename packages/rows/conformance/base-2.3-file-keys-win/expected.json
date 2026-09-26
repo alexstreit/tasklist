@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.3: keys set in the file take precedence"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "columns": [

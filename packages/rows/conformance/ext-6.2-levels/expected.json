@@ -1,6 +1,6 @@
 {
   "spec": ["ext §6.2: levels are relative; blank and comment lines are skipped"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "rows": [

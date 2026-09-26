@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 rows: tab in indent", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [
     { "class": "structural", "code": "tab-in-indent", "line": 5 },

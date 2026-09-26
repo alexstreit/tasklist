@@ -1,6 +1,6 @@
 {
   "spec": ["base §4 unique"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "not-unique", "line": 5 },

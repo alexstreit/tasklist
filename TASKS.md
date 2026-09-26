@@ -410,11 +410,23 @@ No implementation code. This task turns the specs into tests before anything is 
 
 **Acceptance criteria**
 
-- [ ] All base conformance cases that don't depend on types or extensions pass.
-- [ ] Property test: for generated files, the concatenation of every `Line`'s text with newlines reproduces `doc.text` exactly.
-- [ ] Every cell's `valueFrom..valueTo` slice, decoded, equals its `text`.
-- [ ] `tokenizeLine` and `parseRows` agree on every token boundary for every conformance input.
-- [ ] Strict mode never throws.
+- [x] All base conformance cases that don't depend on types or extensions pass. — every case now has a `stage` (base, types or extensions) in place of `needs`, and the runner runs only `ENABLED_STAGES`, which is `base` for now. 66 base cases, plus their strict variants, pass; the 113 types and extensions runs show as skipped.
+- [x] Property test: for generated files, the concatenation of every `Line`'s text with newlines reproduces `doc.text` exactly. — 2,000 generated files plus every conformance input (`tests/properties.test.ts`).
+- [x] Every cell's `valueFrom..valueTo` slice, decoded, equals its `text`. — checked with a decoder written independently in the test.
+- [x] `tokenizeLine` and `parseRows` agree on every token boundary for every conformance input. — and on every line kind, over the generated files too. The parser scans rows with the same `scanRow` that `tokenizeLine` flattens.
+- [x] Strict mode never throws.
+
+Each property test was checked by planting a bug (an off-by-one in value spans, then a wrong line offset) and confirming it fails.
+
+**Open spec questions:** Q24–Q30 in `packages/rows/conformance/QUESTIONS.md`, raised by implementing the base stage: delimiter lines and whitespace, quoted option values, empty declarations, how many errors for several unnamed cells after a named one, profile files without frontmatter or with an unclosed one, what counts as whitespace, and trailing whitespace in an unterminated quote. Each has a disputed base case, and the parser implements the used reading.
+
+**Decisions taken (DESIGN-level, not spec):**
+- `Row.cells` includes the lead at index 0, so `cells[i]` lines up with `schema.columns[i]`.
+- `Schema` is `{ table, format, sep, comment, keys, lead, columns }`. `Column.type` is the type string as written until Task 18, except that `ref` reads as `text` in a base-only parse (base §9). `Column.from`/`to` exist only for a declaration written unquoted in this file.
+- An unclosed opening `---` is a line of kind `fm-malformed`, since DESIGN's kinds have none for "ignored".
+- `tokenizeLine` takes `state: 'start' | 'frontmatter' | 'body'` and returns `next`. A highlighter can't know that a frontmatter block is never closed, so it shows such a file as frontmatter to the end. Tokens don't overlap; a quoted value carries its escapes as sub-spans.
+- An unresolvable `defaultProfile`, or one with errors, is reported on line 1, because it has no line in the file.
+- `Cell.value` is set for text columns only; the types stage fills in the rest.
 
 ---
 

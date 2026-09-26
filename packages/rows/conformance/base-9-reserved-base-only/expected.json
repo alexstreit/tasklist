@@ -1,5 +1,6 @@
 {
   "spec": ["base §9", "ext intro: a base-only parser may reject id=auth in strict mode"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "structural", "code": "invalid-cell-name", "line": 11 }],
   "columns": [

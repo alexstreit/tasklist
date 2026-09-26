@@ -1,6 +1,6 @@
 {
   "spec": ["ext §7: text compares by Unicode code point"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "validation", "code": "out-of-order", "line": 6 }],
   "rows": [

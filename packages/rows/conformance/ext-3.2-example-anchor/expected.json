@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.2 example: Auth {#auth}"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "rows": [{ "line": 1, "lead": "Auth", "id": "auth" }]

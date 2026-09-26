@@ -1,6 +1,6 @@
 {
   "spec": ["ext §5: a declared bool column can be a marker column"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "columns": [

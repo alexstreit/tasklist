@@ -1,6 +1,6 @@
 {
   "spec": ["ext §7: -COLUMN for descending"],
-  "needs": ["extensions", "types"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "validation", "code": "out-of-order", "line": 8 }],
   "rows": [

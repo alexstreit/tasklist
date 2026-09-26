@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.1: the key column is implicitly unique", "anchors §4: a duplicate is an error on every line that declares it"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "duplicate-id", "line": 1 },

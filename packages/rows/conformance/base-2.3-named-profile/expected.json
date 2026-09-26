@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.3"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "columns": [

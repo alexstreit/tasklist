@@ -6,7 +6,74 @@ Where a question says a rule has "no class", the class matters because strict mo
 
 ---
 
-None open.
+Q24–Q30 came up while implementing the base stage (Task 17). The parser implements each **Used** reading, so settling one differently means changing the parser as well as the case.
+
+## Q24. Delimiter lines and whitespace
+
+**Cases:** `base-1-delimiter-whitespace` (+ `--strict`).
+**Spec:** base §1 ("If the first line is `---`, the frontmatter runs to the next `---` line"); base §2.1 (frontmatter lines are trimmed, from Q2).
+
+Since Q2, lines inside the frontmatter are trimmed, but §1 says nothing about the delimiter lines themselves.
+
+- **A (used).** A delimiter is exactly `---`. An indented `  ---` inside the block is a malformed line, not the closing one, and a first line of `--- ` (trailing space) doesn't open frontmatter, so the file is all body.
+- **B.** Delimiter lines are trimmed too, so `  ---` closes the block and `--- ` opens one.
+
+## Q25. Quoted option values in `columns`
+
+**Cases:** `base-4-quoted-option-value`.
+**Spec:** base §4 ("Quote values containing whitespace"; declarations separated by the delimiter).
+
+A quoted option value protects its whitespace, but the spec doesn't say whether it also protects the delimiter, or which escapes apply.
+
+- **A (used).** Quotes protect both the delimiter and whitespace, as brackets do, and `\"` and `\\` are unescaped, as in frontmatter values (§2.1). `default="a | b"` is one option.
+- **B.** Quotes protect only whitespace. `default="a | b"` is split at the delimiter, leaving a declaration `b"`.
+
+## Q26. Empty declarations
+
+**Cases:** `base-4-empty-declarations` (+ `--strict`).
+**Spec:** base §4.
+
+- A trailing delimiter in `columns`, as in `a | b |`. **Used:** ignored, as a trailing delimiter is in a row (§3).
+- An empty declaration between delimiters, as in `a | | b`. **Used:** a column whose name is empty, so an invalid column name: a structural error, and the column is kept in position.
+- An empty `lead:` value. **Used:** the same, a lead column with an invalid empty name. No case yet.
+
+The alternatives are to skip empty declarations, which shifts every positional cell after them, or to treat them as malformed lines.
+
+## Q27. How many errors for several unnamed cells after a named one
+
+**Cases:** `base-6-row-unnamed-after-named-several` (+ `--strict`).
+**Spec:** base §3 ("Once a named cell appears, every later cell in the row MUST be named"); base §6.
+
+- **A (used).** One per row, as for too many cells (Q10), since the rule is about the row.
+- **B.** One per unnamed cell.
+
+The other cell rules are one error per cell, as used: each undeclared name and each column set a second time.
+
+## Q28. A profile file with no frontmatter, or an unclosed one
+
+**Cases:** `base-2.3-profile-without-frontmatter`, `base-2.3-profile-unclosed` (+ `--strict`).
+**Spec:** base §2.3 ("Only the profile file's frontmatter is used"; "If the profile's frontmatter has any errors…").
+
+- A profile whose text doesn't start with `---`. **Used:** it supplies no keys, and it isn't an error: it has no frontmatter, so it has no errors in it.
+- A profile whose frontmatter is never closed. **Used:** `profile-has-errors`, and it supplies no keys, because an unclosed block is not frontmatter (§6).
+
+Either could instead be unresolvable-profile, since such a file is arguably not a profile.
+
+## Q29. What counts as whitespace
+
+**Cases:** `base-3-whitespace-is-space-and-tab`.
+**Spec:** base §2.1, §2.2 (`sep` not whitespace), §3 (blank lines, trimming, indent). Only the duration grammar (§5) says `WSP`.
+
+- **A (used).** Whitespace is space and tab, as `WSP` means in RFC 5234. A no-break space is content: it is kept at the end of a cell, a line holding only one is a row, and `sep` may be one.
+- **B.** Unicode whitespace, as most languages' `trim` does. Parsers then disagree on exotic characters unless the spec lists them.
+
+## Q30. Trailing whitespace in an unterminated quoted cell
+
+**Cases:** `base-6-row-unterminated-quote-trailing-space` (+ `--strict`).
+**Spec:** base §6 ("Unterminated quoted cell … Cell runs to end of line"); base §3 (inside quotes, whitespace is preserved).
+
+- **A (used).** Kept. The cell is still a quoted cell, and quoted whitespace is preserved: `"open   ` gives `open   `.
+- **B.** Trimmed, since the missing quote suggests the whitespace was never meant to be kept.
 
 ---
 

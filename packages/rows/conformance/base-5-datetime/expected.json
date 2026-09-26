@@ -1,6 +1,6 @@
 {
   "spec": ["base §5 datetime: RFC 3339, offset required"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-value", "line": 7 },

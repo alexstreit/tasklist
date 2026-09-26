@@ -1,6 +1,6 @@
 {
   "spec": ["ext §7: durations compare in minutes where the column can convert both; other pairs are skipped", "base §5 duration"],
-  "needs": ["extensions", "types"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "validation", "code": "out-of-order", "line": 8 }],
   "rows": [

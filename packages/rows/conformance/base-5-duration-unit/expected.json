@@ -1,6 +1,6 @@
 {
   "spec": ["base §5 duration: with unit=U, a single signed number is that many U", "base §4 unit"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-value", "line": 10 },

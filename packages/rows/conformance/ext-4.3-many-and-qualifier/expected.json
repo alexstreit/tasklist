@@ -1,6 +1,6 @@
 {
   "spec": ["ext §4.3"],
-  "needs": ["extensions", "types"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-value", "line": 7 },

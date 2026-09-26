@@ -1,0 +1,14 @@
+{
+  "spec": ["base §4", "base §6 frontmatter: column name not matching the grammar"],
+  "stage": "base",
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "structural", "code": "invalid-column-name", "line": 2 }],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "a", "type": "text" },
+    { "name": "", "type": "text" },
+    { "name": "b", "type": "text" }
+  ],
+  "rows": [{ "line": 4, "lead": "X", "values": { "a": "1", "": "2", "b": "3" } }]
+}

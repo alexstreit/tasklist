@@ -1,6 +1,6 @@
 {
   "spec": ["ext §6.2: the first row MUST have zero indent; a recovered row opens its own indent as a level"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "structural", "code": "bad-indent", "line": 6 }],
   "rows": [

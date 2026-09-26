@@ -1,6 +1,6 @@
 {
   "spec": ["ext §6.2: if an indented row also has a value in the parent column, the two MUST agree"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "validation", "code": "parent-mismatch", "line": 6 }],
   "rows": [

@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.3: a profile may not set format, table, profile, sep, comment or include; unknown and x- keys pass through", "base §6 frontmatter"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "structural", "code": "forbidden-profile-key", "line": 2 }],
   "columns": [

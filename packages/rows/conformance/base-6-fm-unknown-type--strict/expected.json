@@ -1,6 +1,6 @@
 {
   "spec": ["base §6 modes: validation errors do not fail a file"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [{ "class": "validation", "code": "unknown-type", "line": 2 }],
   "rows": [{ "line": 4, "lead": "A", "values": { "est": "2d", "color": "red" } }]

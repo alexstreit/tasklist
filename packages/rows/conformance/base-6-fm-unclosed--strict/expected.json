@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 frontmatter: no closing ---", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [
     { "class": "syntax", "code": "unclosed-frontmatter", "line": 1 },

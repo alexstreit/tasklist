@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 frontmatter: column name not matching the grammar", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [{ "class": "structural", "code": "invalid-column-name", "line": 2 }]
 }

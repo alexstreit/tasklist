@@ -1,5 +1,6 @@
 {
   "spec": ["base §4: declarations are separated by the file's delimiter", "base §8 quoting"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "structural", "code": "too-many-cells", "line": 5 }],
   "columns": [

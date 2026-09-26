@@ -1,6 +1,6 @@
 {
   "spec": ["ext §7: null values are skipped; each row is compared with the previous row whose value is not null"],
-  "needs": ["extensions", "types"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "validation", "code": "out-of-order", "line": 9 }],
   "rows": [

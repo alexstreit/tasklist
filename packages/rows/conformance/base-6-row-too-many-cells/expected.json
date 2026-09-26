@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 rows: more unnamed cells than columns"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "structural", "code": "too-many-cells", "line": 4 }],
   "rows": [{ "line": 4, "lead": "A", "values": { "est": "1" }, "overflow": ["x"] }]

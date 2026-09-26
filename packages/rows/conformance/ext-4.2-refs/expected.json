@@ -1,6 +1,6 @@
 {
   "spec": ["ext §4.2"],
-  "needs": ["extensions", "types"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "unresolved-ref", "line": 7 },

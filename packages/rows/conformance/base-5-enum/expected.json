@@ -1,6 +1,6 @@
 {
   "spec": ["base §5 enum"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [{ "class": "validation", "code": "invalid-value", "line": 6 }],
   "columns": [

@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 rows: named cell whose name is undeclared or is the lead column", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [
     { "class": "structural", "code": "invalid-cell-name", "line": 4 },

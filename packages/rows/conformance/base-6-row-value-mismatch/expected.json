@@ -1,6 +1,6 @@
 {
   "spec": ["base §6 rows: value does not match its column"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-value", "line": 4 },

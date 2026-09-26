@@ -1,6 +1,6 @@
 {
   "spec": ["plan §2.10 example (examples/example.plan with profile: plan)", "plan §2.1 profile"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "table": "example",

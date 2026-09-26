@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.1: identity applies when any lead cell has an anchor; the key column is id by default"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "columns": [

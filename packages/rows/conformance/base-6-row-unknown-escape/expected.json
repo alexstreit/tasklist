@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 rows: unknown escape"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "syntax", "code": "unknown-escape", "line": 4 }],
   "rows": [{ "line": 4, "lead": "A", "values": { "a": "x\\qy" } }]

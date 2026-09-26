@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 rows: unknown escape", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [{ "class": "syntax", "code": "unknown-escape", "line": 4 }]
 }

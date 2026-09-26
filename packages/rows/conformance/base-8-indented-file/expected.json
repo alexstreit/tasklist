@@ -1,5 +1,6 @@
 {
   "spec": ["base §8 indented file"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "columns": [

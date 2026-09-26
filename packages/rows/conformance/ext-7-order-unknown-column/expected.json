@@ -1,6 +1,6 @@
 {
   "spec": ["ext §7: order names a column"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "structural", "code": "unknown-order-column", "line": 2 }],
   "rows": [

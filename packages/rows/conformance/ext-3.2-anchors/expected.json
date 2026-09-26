@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.2", "anchors §2"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "rows": [

@@ -1,5 +1,6 @@
 {
   "spec": ["base §8 flat table"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "table": "expenses",

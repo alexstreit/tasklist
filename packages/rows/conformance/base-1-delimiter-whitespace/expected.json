@@ -1,0 +1,9 @@
+{
+  "spec": ["base §1: the frontmatter runs to the next --- line", "base §2.1: frontmatter lines are trimmed"],
+  "stage": "base",
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "syntax", "code": "malformed-frontmatter-line", "line": 3 }],
+  "table": "t",
+  "rows": [{ "line": 5, "lead": "A" }]
+}

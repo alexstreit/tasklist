@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.3", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [{ "class": "structural", "code": "profile-has-errors", "line": 2 }]
 }

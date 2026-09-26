@@ -1,6 +1,6 @@
 {
   "spec": ["ext §5: markers removed with the whitespace after them", "base §4: the lead column is always required"],
-  "needs": ["extensions", "types"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "validation", "code": "required", "line": 5 }],
   "rows": [{ "line": 5, "lead": null, "values": { "est": "1d" }, "markers": ["done"] }]

@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.1: a non-null key MUST match the Text Anchors ID grammar", "anchors §1"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-id", "line": 4 },

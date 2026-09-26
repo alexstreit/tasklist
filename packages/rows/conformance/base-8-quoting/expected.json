@@ -1,5 +1,6 @@
 {
   "spec": ["base §8 quoting", "base §3"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "columns": [

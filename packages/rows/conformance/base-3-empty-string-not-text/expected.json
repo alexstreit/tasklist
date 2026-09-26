@@ -1,6 +1,6 @@
 {
   "spec": ["base §3 null and empty: \"\" is valid only in text columns"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [{ "class": "validation", "code": "invalid-value", "line": 4 }],
   "rows": [

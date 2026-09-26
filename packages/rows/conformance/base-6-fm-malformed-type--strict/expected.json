@@ -1,6 +1,6 @@
 {
   "spec": ["base §6 frontmatter: malformed type", "base §6 modes"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": true,
   "errors": [{ "class": "structural", "code": "malformed-type", "line": 2 }]
 }

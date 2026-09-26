@@ -1,6 +1,6 @@
 {
   "spec": ["ext §9 example: people.rows"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "table": "people",

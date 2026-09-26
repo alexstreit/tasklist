@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 frontmatter: unresolvable profile", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [{ "class": "structural", "code": "unresolvable-profile", "line": 2 }]
 }

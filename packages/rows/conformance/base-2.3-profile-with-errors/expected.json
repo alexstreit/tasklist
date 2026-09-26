@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.3: errors in a profile's frontmatter", "base §6 frontmatter"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "structural", "code": "profile-has-errors", "line": 2 }],
   "columns": [

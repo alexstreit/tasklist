@@ -1,6 +1,6 @@
 {
   "spec": ["base §6 modes: validation errors do not fail a file"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-value", "line": 4 },

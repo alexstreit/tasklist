@@ -1,6 +1,6 @@
 {
   "spec": ["ext §5 example: ~~Login", "ext §5: a marker repeated in one row"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "structural", "code": "repeated-marker", "line": 4 },

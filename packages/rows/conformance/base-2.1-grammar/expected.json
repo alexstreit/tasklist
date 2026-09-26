@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.1", "base §2.2"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "table": "a\"b\\c\\n",

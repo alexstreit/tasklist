@@ -1,6 +1,6 @@
 {
   "spec": ["base §6 frontmatter: invalid option value", "base §4 options"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [
     { "class": "structural", "code": "invalid-option-value", "line": 2 },

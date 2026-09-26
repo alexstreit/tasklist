@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.2 format", "base §6 frontmatter: unsupported format"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "structural", "code": "unsupported-format", "line": 2 }],
   "rows": [{ "line": 5, "lead": "A", "values": { "est": "1" } }]

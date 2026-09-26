@@ -33,7 +33,7 @@ Case names start with the spec and section they come from: `base-6-…`, `ext-5-
 | Field      | Required | Meaning                                                                                  |
 | ---------- | -------- | ---------------------------------------------------------------------------------------- |
 | `spec`     | yes      | The spec sections the case comes from, e.g. `["base §6 rows"]`.                          |
-| `needs`    | no       | Parser stages the case depends on beyond base tokenising: `"types"`, `"extensions"`.     |
+| `stage`    | yes      | The first implementation stage that can pass the case: `base`, `types` or `extensions`.   |
 | `disputed` | no       | `true` when the case rests on an open question in QUESTIONS.md.                          |
 | `failed`   | yes      | Strict-mode failure. Always `false` in tolerant mode.                                    |
 | `errors`   | yes      | Every error, as `{ class, code, line }`. Complete and compared ignoring order.           |
@@ -116,4 +116,12 @@ The specs define classes, not codes (DESIGN §4). These codes are the library's;
 
 ## Runner
 
-`conformance.test.ts` checks every case's shape, and that every case with a syntax or structural error has a `--strict` variant. It runs the cases against `parseRows` once the library exports it (Task 17).
+`conformance.test.ts` checks every case's shape, and that every case with a syntax or structural error has a `--strict` variant. It runs the cases of the enabled stages against `parseRows` and skips the rest.
+
+Stages are cumulative, and a case belongs to the first stage whose features it needs:
+
+- `base`: frontmatter, keys, profiles, declarations, tokenising, quoting, named cells, overflow, the recovery tables, and modes. Types are read as written.
+- `types`: typed values and their validation, `required`, `unique`, `default=`, option values, and unknown or malformed types.
+- `extensions`: everything in the extensions spec.
+
+Task 17 enables `base`, Task 18 adds `types`, and Task 19 adds `extensions`.

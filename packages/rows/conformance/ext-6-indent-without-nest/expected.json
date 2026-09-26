@@ -1,6 +1,6 @@
 {
   "spec": ["ext §6.1: when nest is absent, indentation has no meaning", "base §9"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "rows": [

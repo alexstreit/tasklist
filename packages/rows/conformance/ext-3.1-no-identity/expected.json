@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.1: identity applies only when the file sets key or a lead cell has an anchor"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "columns": [

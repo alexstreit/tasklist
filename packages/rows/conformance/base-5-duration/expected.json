@@ -1,6 +1,6 @@
 {
   "spec": ["base §5 duration", "TASKS 18 duration table"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "invalid-value", "line": 14 },

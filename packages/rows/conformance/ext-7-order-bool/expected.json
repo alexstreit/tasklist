@@ -1,6 +1,6 @@
 {
   "spec": ["ext §7: bools compare with false before true"],
-  "needs": ["extensions", "types"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "validation", "code": "out-of-order", "line": 7 }],
   "rows": [

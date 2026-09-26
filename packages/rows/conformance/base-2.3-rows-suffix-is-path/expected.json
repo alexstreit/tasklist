@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.3: a value ending in .rows is a path"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "columns": [

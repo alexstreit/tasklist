@@ -1,6 +1,6 @@
 {
   "spec": ["base §4 default"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [],
   "rows": [

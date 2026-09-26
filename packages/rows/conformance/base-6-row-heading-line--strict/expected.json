@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 rows: heading line", "base §6 modes"],
+  "stage": "base",
   "failed": true,
   "errors": [
     { "class": "structural", "code": "heading-line", "line": 4 },

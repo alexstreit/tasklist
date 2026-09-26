@@ -1,5 +1,6 @@
 {
   "spec": ["base §3 lead cell", "base §3 named cells: only non-lead cells are named", "base §9"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "rows": [

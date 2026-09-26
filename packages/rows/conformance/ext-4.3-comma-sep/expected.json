@@ -1,6 +1,6 @@
 {
   "spec": ["ext §4.3: where sep is ,, a cell with several references is quoted"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "rows": [

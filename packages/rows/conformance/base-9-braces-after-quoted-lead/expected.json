@@ -1,5 +1,6 @@
 {
   "spec": ["base §9: {...} groups after the closing quote of a lead cell", "base §6 rows: text after closing quote"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "syntax", "code": "text-after-quote", "line": 3 }],
   "rows": [

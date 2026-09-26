@@ -1,0 +1,4 @@
+---
+columns: notes:text default="a | b" | x
+---
+A | n | y

@@ -1,6 +1,6 @@
 {
   "spec": ["ext §6.1: the nest column MUST be a ref to the current table, without options"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "structural", "code": "invalid-nest-column", "line": 2 }],
   "columns": [

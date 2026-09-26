@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.3: a value containing / is a path; only the frontmatter is used"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "columns": [

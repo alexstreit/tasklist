@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 rows: unnamed cell after a named cell"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "structural", "code": "unnamed-after-named", "line": 4 }],
   "rows": [{ "line": 4, "lead": "A", "values": { "notes": "x" }, "overflow": ["2d"] }]

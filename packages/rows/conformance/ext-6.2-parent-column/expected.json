@@ -1,6 +1,6 @@
 {
   "spec": ["ext §6.2: a row with zero indent may take its parent from the column; an indented row's column value must agree"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "validation", "code": "unresolved-ref", "line": 7 }],
   "rows": [

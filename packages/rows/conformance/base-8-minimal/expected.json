@@ -1,5 +1,6 @@
 {
   "spec": ["base §8 minimal", "base §7"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "table": "shopping",

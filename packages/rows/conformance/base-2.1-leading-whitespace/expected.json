@@ -1,5 +1,6 @@
 {
   "spec": ["base §2.1: lines are trimmed; whitespace may precede the colon"],
+  "stage": "base",
   "failed": false,
   "errors": [],
   "table": "x",

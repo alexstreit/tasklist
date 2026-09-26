@@ -1,6 +1,6 @@
 {
   "spec": ["anchors §1", "anchors §2: a brace group containing anything other than #ID tokens is ordinary text"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "rows": [

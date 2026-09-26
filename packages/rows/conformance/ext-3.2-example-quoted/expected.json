@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.2 example: \"Email {#home}\""],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [],
   "columns": [{ "name": "name", "type": "text" }],

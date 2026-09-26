@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 frontmatter: malformed frontmatter line", "base §2.1"],
+  "stage": "base",
   "failed": false,
   "errors": [
     { "class": "syntax", "code": "malformed-frontmatter-line", "line": 2 },

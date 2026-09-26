@@ -1,6 +1,6 @@
 {
   "spec": ["base §6 frontmatter: unknown type", "base §5: x- types read as text"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [{ "class": "validation", "code": "unknown-type", "line": 2 }],
   "columns": [

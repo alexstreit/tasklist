@@ -1,6 +1,6 @@
 {
   "spec": ["ext §5: CHAR is one character that is not alphanumeric, whitespace, \", #, {, \\, =, the delimiter, or the first character of the comment marker"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "structural", "code": "invalid-marker", "line": 2 },

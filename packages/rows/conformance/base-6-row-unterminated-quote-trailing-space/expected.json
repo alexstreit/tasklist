@@ -1,0 +1,8 @@
+{
+  "spec": ["base §6 rows: unterminated quoted cell", "base §3 quoted cells"],
+  "stage": "base",
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "syntax", "code": "unterminated-quote", "line": 4 }],
+  "rows": [{ "line": 4, "lead": "A", "values": { "a": "open   " } }]
+}

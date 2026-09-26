@@ -1,6 +1,6 @@
 {
   "spec": ["ext §6.2 example", "plan §2.4 0/8/4 case"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [{ "class": "structural", "code": "bad-indent", "line": 6 }],
   "columns": [

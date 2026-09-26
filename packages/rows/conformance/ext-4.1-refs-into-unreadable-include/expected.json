@@ -1,6 +1,6 @@
 {
   "spec": ["ext §4.1: every reference into an unreadable include is a validation error", "ext §4.2"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "structural", "code": "unresolvable-include", "line": 2 },

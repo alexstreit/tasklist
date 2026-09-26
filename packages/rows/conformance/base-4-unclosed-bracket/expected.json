@@ -1,6 +1,6 @@
 {
   "spec": ["base §4: a delimiter inside [...] does not separate declarations", "base §6 frontmatter: malformed type"],
-  "needs": ["types"],
+  "stage": "types",
   "failed": false,
   "errors": [{ "class": "structural", "code": "malformed-type", "line": 2 }],
   "columns": [

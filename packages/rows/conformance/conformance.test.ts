@@ -1,15 +1,19 @@
-// Runs the language-neutral conformance suite (README.md). The shape checks run now; the cases
-// themselves run against parseRows once the library exports it (Task 17).
+// Runs the language-neutral conformance suite (README.md): shape checks for every case, and the
+// cases of the enabled stages against parseRows.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import * as rows from '../src/index';
+import { parseRows } from '../src/index';
 
 const dir = fileURLToPath(new URL('.', import.meta.url));
 const read = (...parts: string[]) => readFileSync(join(dir, ...parts), 'utf8');
 
 type ErrorClass = 'syntax' | 'structural' | 'validation';
+type Stage = 'base' | 'types' | 'extensions';
+
+// Task 17 enables base, Task 18 adds types, Task 19 adds extensions.
+const ENABLED_STAGES = new Set<Stage>(['base']);
 interface ExpectedError { class: ErrorClass; code: string; line: number }
 interface ExpectedRow {
   line: number;
@@ -24,7 +28,7 @@ interface ExpectedRow {
 }
 interface Expected {
   spec: string[];
-  needs?: ('types' | 'extensions')[];
+  stage: Stage;
   disputed?: boolean;
   failed: boolean;
   errors: ExpectedError[];
@@ -85,10 +89,10 @@ describe('conformance suite shape', () => {
     expect(name.endsWith(STRICT)).toBe(o.mode === 'strict');
 
     const e = c.expected;
-    expect(Object.keys(e).filter((k) => !['spec', 'needs', 'disputed', 'failed', 'errors', 'table', 'columns', 'rows'].includes(k))).toEqual([]);
+    expect(Object.keys(e).filter((k) => !['spec', 'stage', 'disputed', 'failed', 'errors', 'table', 'columns', 'rows'].includes(k))).toEqual([]);
     expect(e.spec.length).toBeGreaterThan(0);
     expect(typeof e.failed).toBe('boolean');
-    for (const n of e.needs ?? []) expect(['types', 'extensions']).toContain(n);
+    expect(['base', 'types', 'extensions']).toContain(e.stage);
     for (const err of e.errors) {
       expect(codes.get(err.code), `code ${err.code}`).toBe(err.class);
       expect(Number.isInteger(err.line) && err.line >= 1).toBe(true);
@@ -122,7 +126,7 @@ describe('conformance suite shape', () => {
       expect(sortErrors(c.expected.errors)).toEqual(sortErrors(base!.expected.errors));
       expect(c.expected.failed).toBe(fails(base!.expected));
       expect(c.expected.disputed).toBe(base!.expected.disputed);
-      expect(c.expected.needs).toEqual(base!.expected.needs);
+      expect(c.expected.stage).toBe(base!.expected.stage);
     },
   );
 
@@ -132,29 +136,19 @@ describe('conformance suite shape', () => {
   });
 });
 
-// Until Task 17 the library exports nothing, and the cases below are skipped.
-const parseRows = (rows as Record<string, any>).parseRows as ((text: string, options?: object) => any) | undefined;
+describe('conformance cases', () => {
+  const later = cases.filter((c) => !ENABLED_STAGES.has(c.expected.stage));
+  if (later.length > 0) it.skip.each(later.map((c) => [c.name, c.expected.stage] as const))('%s (stage %s)', () => {});
 
-describe('rows library', () => {
-  it('does not export parseRows yet (Task 17 turns the suite on)', () => {
-    expect(parseRows).toBeUndefined();
-  });
-});
-
-describe.skipIf(!parseRows)('conformance cases', () => {
-  it.each(cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+  it.each(cases.filter((c) => ENABLED_STAGES.has(c.expected.stage)).map((c) => [c.name, c] as const))('%s', (_name, c) => {
     const { profileFiles, ...options } = c.options;
-    const doc = parseRows!(c.input, {
-      ...options,
-      resolveProfile: (path: string) => profileFiles?.[path],
-    });
+    const doc = parseRows(c.input, { ...options, resolveProfile: (path) => profileFiles?.[path] });
     const e = c.expected;
 
     expect(doc.failed).toBe(e.failed);
     expect(sortErrors(doc.errors)).toEqual(sortErrors(e.errors));
 
-    // The projections below assume DESIGN §4's shapes; Task 17 fixes them to the real types.
-    const columns: any[] = doc.schema.columns;
+    const columns = doc.schema.columns;
     if (e.table !== undefined) expect(doc.schema.table).toBe(e.table);
     if (e.columns) {
       expect(columns.map((col) => ({ name: col.name, type: col.type, ...(col.implicit ? { implicit: true } : {}) }))).toEqual(e.columns);
@@ -163,15 +157,13 @@ describe.skipIf(!parseRows)('conformance cases', () => {
 
     // A column whose name an earlier column already has is keyed name@index (README).
     const keys = columns.map((col, i) => (columns.findIndex((other) => other.name === col.name) < i ? `${col.name}@${i}` : col.name));
-    const actual = doc.rows.map((row: any) => ({
+    const actual = doc.rows.map((row) => ({
       line: row.line,
       lead: row.lead.text,
       indent: row.indent.width,
-      values: Object.fromEntries(
-        row.cells.flatMap((cell: any, i: number) => (i > 0 && cell && cell.text !== null ? [[keys[i], cell.text]] : [])),
-      ),
-      overflow: row.overflow.map((cell: any) => (cell.name ? `${cell.name.text}=${cell.text}` : cell.text)),
-      markers: row.markers.map((m: any) => m.name),
+      values: Object.fromEntries(row.cells.flatMap((cell, i) => (i > 0 && cell && cell.text !== null ? [[keys[i], cell.text]] : []))),
+      overflow: row.overflow.map((cell) => (cell.name ? `${cell.name.text}=${cell.text ?? ''}` : cell.text)),
+      markers: row.markers.map((m) => m.name),
       id: row.id,
       aliases: row.aliases,
       parent: row.parent?.line ?? null,

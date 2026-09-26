@@ -1,5 +1,6 @@
 {
   "spec": ["base §6 frontmatter: column name not matching the grammar", "base §3 named cells"],
+  "stage": "base",
   "failed": false,
   "errors": [{ "class": "structural", "code": "invalid-column-name", "line": 2 }],
   "columns": [

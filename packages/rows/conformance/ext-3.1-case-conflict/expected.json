@@ -1,6 +1,6 @@
 {
   "spec": ["ext §3.1: two keys that differ only by case", "anchors §1"],
-  "needs": ["extensions"],
+  "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "validation", "code": "id-case-conflict", "line": 1 },
