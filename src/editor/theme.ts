@@ -24,9 +24,11 @@ const chrome = EditorView.theme({
   '.cm-foldPlaceholder': { backgroundColor: 'var(--hover)', border: '1px solid var(--border)', color: 'var(--fg-muted)' },
   // @codemirror/lint draws underlines and gutter markers as fixed-colour SVGs; redraw them from the variables.
   '.cm-lintRange': { backgroundImage: 'none', textDecorationLine: 'underline', textDecorationStyle: 'wavy', textDecorationSkipInk: 'none' },
+  '.cm-lintRange-error': { textDecorationColor: 'var(--diag-error)' },
   '.cm-lintRange-warning': { textDecorationColor: 'var(--diag-warning)' },
   '.cm-lintRange-info': { textDecorationColor: 'var(--diag-info)' },
   '.cm-lintRange-active': { backgroundColor: 'var(--diag-active)' },
+  '.cm-lint-marker-error': { content: 'normal', backgroundColor: 'var(--diag-error)', clipPath: 'circle(42%)' },
   '.cm-lint-marker-warning': { content: 'normal', backgroundColor: 'var(--diag-warning)', clipPath: 'polygon(50% 8%, 96% 90%, 4% 90%)' },
   '.cm-lint-marker-info': { content: 'normal', backgroundColor: 'var(--diag-info)', clipPath: 'inset(18% round 2px)' },
 });

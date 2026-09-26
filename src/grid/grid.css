@@ -17,9 +17,13 @@
 .plan-sheet tr.front-matter { user-select: none; }
 /* A blank line still needs the height of a row. */
 .plan-sheet tr.blank td.raw::before { content: '\200b'; }
+.plan-sheet td.error { box-shadow: inset 0 0 0 2px var(--diag-error); }
 .plan-sheet td.warning { box-shadow: inset 0 0 0 2px var(--diag-warning); }
 .plan-sheet td.info { box-shadow: inset 0 0 0 2px var(--diag-info); }
 .plan-sheet tr.draft td { background: var(--near-row-bg); }
 .plan-sheet tr.total td { border-top: 1px solid var(--border); font-weight: 600; }
 .plan-sheet tr.new-task td { border-top: 1px solid var(--border-soft); }
 .plan-sheet .cell-input { width: 100%; box-sizing: border-box; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--accent-border); border-radius: 2px; padding: 1px 4px; }
+/* Why an edit was not made, beside the cell (spec §4b.2). */
+.plan-sheet td:has(> .sheet-notice) { position: relative; }
+.plan-sheet .sheet-notice { position: absolute; left: 0; top: 100%; z-index: 2; white-space: normal; min-width: 16em; max-width: 28em; padding: 3px 6px; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--diag-error); border-radius: 3px; }

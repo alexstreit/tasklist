@@ -28,7 +28,11 @@
   /* editor tokens (cm-plan-*) */
   --tok-front-matter: #7c6f64;
   --tok-comment: #8a8a8a;
-  --tok-done-marker: #16a34a;
+  --tok-marker: #16a34a;
+  --tok-anchor: #7c3aed;
+  --tok-name: #0f766e;
+  --tok-quoted: #be185d;
+  --tok-escape: #831843;
   --tok-separator: #9ca3af;
   --tok-duration: #1d4ed8;
   --tok-additive: #b45309;
@@ -43,6 +47,7 @@
   --gutter-fg: #6c6c6c;
   --gutter-border: #dddddd;
   --fold: #6b7280;
+  --diag-error: #dc2626;
   --diag-warning: #f59e0b;
   --diag-info: #9ca3af;
   --diag-active: #ffdd9980;
@@ -70,7 +75,11 @@
 
     --tok-front-matter: #a89f91;
     --tok-comment: #8b8b8b;
-    --tok-done-marker: #4ade80;
+    --tok-marker: #4ade80;
+    --tok-anchor: #c4b5fd;
+    --tok-name: #5eead4;
+    --tok-quoted: #f9a8d4;
+    --tok-escape: #fbcfe8;
     --tok-separator: #6b7280;
     --tok-duration: #93c5fd;
     --tok-additive: #fbbf24;
@@ -84,6 +93,7 @@
     --gutter-fg: #9ca3af;
     --gutter-border: #374151;
     --fold: #9ca3af;
+    --diag-error: #f87171;
     --diag-warning: #fbbf24;
     --diag-info: #9ca3af;
     --diag-active: #86714a80;

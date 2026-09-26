@@ -141,6 +141,8 @@ export interface DocumentTotal {
 }
 
 export interface Model {
+  /** The rows document the model was read from: its text, schema and spans. Editors ask the rows edit API and tokenizer for edits and tokens against it. */
+  doc: RowsDocument;
   columns: Column[];
   roots: ModelNode[];
   /** Every line of the file in order, as parsed. Lossless, like the tree: an

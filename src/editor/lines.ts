@@ -1,16 +1,13 @@
-// Stateless line classification shared by the language mode, folding and
-// keymap. Mirrors spec §2.2 for everything except front matter, which needs
-// document position and is handled by the language mode's parser state.
+// Stateless line classification shared by folding and the keymap: rows'
+// body line kinds (base §1), with the document's comment marker. Front matter
+// needs document position and is the highlighter's business.
 
 export { indentOf } from '../editing/lines';
 
-export type LineKind = 'blank' | 'comment' | 'reserved' | 'item';
+export type LineKind = 'blank' | 'comment' | 'item';
 
-export function lineKind(text: string): LineKind {
-  const trimmed = text.trim();
-  if (trimmed === '') return 'blank';
-  if (trimmed.startsWith('//') || (trimmed.startsWith('<!--') && trimmed.endsWith('-->'))) return 'comment';
-  if (trimmed.startsWith('#')) return 'reserved';
-  return 'item';
+export function lineKind(text: string, comment: string): LineKind {
+  const trimmed = text.trimStart();
+  if (trimmed.trimEnd() === '') return 'blank';
+  return trimmed.startsWith(comment) ? 'comment' : 'item';
 }
-

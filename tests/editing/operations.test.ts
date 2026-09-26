@@ -116,4 +116,11 @@ describe('toggleComment', () => {
     expect(applied(text, toggleComment(text, range(1, 3)))).toBe('// a\n\n// b\n');
     expect(applied('\n', toggleComment('\n', range(1)))).toBe('// \n');
   });
+
+  it('uses the comment marker it is given', () => {
+    const text = 'Auth\n    Login // not a comment here\n';
+    const once = applied(text, toggleComment(text, range(2), '#'));
+    expect(once).toBe('Auth\n    # Login // not a comment here\n');
+    expect(applied(once, toggleComment(once, range(2), '#'))).toBe(text);
+  });
 });

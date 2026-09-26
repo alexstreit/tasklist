@@ -9,11 +9,11 @@ import type { Model } from '../core';
 import { planDiagnostics, showDiagnostics } from './diagnostics';
 import { planFolding } from './folding';
 import { planKeys } from './keymap';
-import { plan } from './language';
+import { plan, showSyntax } from './language';
 import { convertTabsOnPaste } from './pasteTabs';
 import { planTheme } from './theme';
 
-export { planLanguage, planHighlightStyle, planTags } from './language';
+export { showSyntax } from './language';
 export { planKeymap, selectSubtree, indentLines, outdentLines, moveLinesUp, moveLinesDown, toggleCommentLines } from './keymap';
 export { showDiagnostics, toLintDiagnostics } from './diagnostics';
 
@@ -77,7 +77,8 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
       view.focus();
     },
     update(model) {
-      showDiagnostics(view, model.diagnostics);
+      showSyntax(view, model);
+      showDiagnostics(view, model.diagnostics, (edits) => buffer.apply(edits, 'text-editor'));
     },
     destroy() {
       buffer.destroyView();

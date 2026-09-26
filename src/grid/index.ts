@@ -1,12 +1,13 @@
 // Grid editor. A task sheet over the shared buffer: every change it makes is
 // a text edit like any other. Spec §4b.
 
+import type { EditResult } from 'rows';
 import { formatDuration } from '../core';
 import type { Cell, Column, Diagnostic, Model, ModelNode, Node, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
-import { deleteLines, indent, insertLineAbove, moveDown, moveUp, outdent } from '../editing';
+import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
-import { appendItem, itemLine, setDone, setField, setLine, setTitle } from './edits';
+import { canMarkDone, insertItem, setDone, setField, setLine, setTitle } from './edits';
 import './grid.css';
 
 /** Cell columns: the WBS cell (which selects the row), the done checkbox, the title, then the declared columns. */
@@ -141,6 +142,38 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (edits.length > 0) buffer.apply(edits, 'grid');
   }
 
+  // A brief message by a cell, saying why an edit was not made (spec §4b.2).
+  // It goes when the cell is next redrawn, or after a few seconds.
+  const note = document.createElement('div');
+  note.className = 'sheet-notice';
+  note.setAttribute('role', 'status');
+  let noteTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function notice(td: HTMLElement | null, message: string): void {
+    if (!td) return;
+    note.textContent = message;
+    td.append(note);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => note.remove(), 4000);
+  }
+
+  /**
+   * Make a rows edit against the document the model was read from, and
+   * return the edits applied; or show why it can't be made, leave the cell as
+   * it was, and return null. The model trails the buffer by the shell's
+   * debounce, and edits against an older text would land in the wrong place.
+   */
+  function write(td: HTMLElement | null, make: (current: Model) => EditResult): TextEdit[] | null {
+    const result: EditResult =
+      model && model.doc.text === buffer.text() ? make(model) : { refused: 'the grid is still reading the last change; try again' };
+    if ('refused' in result) {
+      notice(td, `Not changed: ${result.refused}`);
+      return null;
+    }
+    apply(result.edits);
+    return result.edits;
+  }
+
   /** The cells a row offers, left to right. A non-item line has only its raw cell. */
   function columnsOf(row: Row): number[] {
     if (row.kind === 'line') return [WBS, TITLE];
@@ -225,8 +258,10 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     // would make Tab walk the checkbox column instead of the grid.
     box.tabIndex = -1;
     // Done through an ancestor: shown, but only the ancestor's marker can clear it.
-    box.disabled = node.done && !node.source.done;
-    box.addEventListener('change', () => apply(setDone(buffer.text(), node, box.checked)));
+    box.disabled = !canMarkDone(model!) || (node.done && !node.source.done);
+    box.addEventListener('change', () => {
+      if (!write(check, (current) => setDone(current, node, box.checked))) box.checked = !box.checked;
+    });
     check.append(box);
 
     const title = addCell(tr, node.line, TITLE, 'title');
@@ -236,7 +271,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     node.cells.forEach((cell, i) => fill(addCell(tr, node.line, DECLARED + i), columns[i], cell));
   }
 
-  /** A comment, blank or reserved line: one full-width cell holding the raw text. */
+  /** A comment or blank line: one full-width cell holding the raw text. */
   function addLineRow(body: HTMLTableSectionElement, row: Row & { kind: 'line' }, columns: Column[]): void {
     const tr = body.insertRow();
     tr.dataset.line = String(row.line);
@@ -394,15 +429,12 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   }
 
   function commit(row: Row, column: number, value: string): void {
-    const text = buffer.text();
-    const edits =
-      row.kind === 'line'
-        ? setLine(text, row.span, value)
-        : column === TITLE
-          ? setTitle(text, row.node, value)
-          : setField(text, row.node, column - DECLARED, value);
     endEdit(row, column);
-    apply(edits);
+    if (row.kind === 'line') return apply(setLine(buffer.text(), row.span, value));
+    const { node } = row;
+    write(cellFor(row.line, column), (current) =>
+      column === TITLE ? setTitle(current, node, value) : setField(current, node, column - DECLARED, value),
+    );
   }
 
   /**
@@ -458,36 +490,49 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     updateToolbar();
   }
 
+  /**
+   * Write a new item and put the place on its title. The anchor is in
+   * post-edit coordinates: the last character the insert wrote, which is on
+   * the new line whether rows put the line break before it or after it.
+   */
+  function insert(td: HTMLElement | null, where: { beforeLine: number } | 'end', indent: number, title: string): boolean {
+    const edits = write(td, (current) => insertItem(current, where, indent, title));
+    if (!edits) return false;
+    if (edits.length === 0) return true;
+    at = { anchor: edits[0].from + edits[0].insert.length - 1, column: TITLE };
+    held = true;
+    restore();
+    return true;
+  }
+
   function commitDraft(): void {
     const pending = draft;
     if (!pending) return;
-    draft = null;
-    const line = itemLine(pending.indent, draftInput.value);
-    draftInput.value = '';
-    if (line === null) {
+    const title = draftInput.value;
+    if (title.trim() === '') {
+      draft = null;
+      draftInput.value = '';
       build();
       restore();
       return;
     }
-    const edits = insertLineAbove(buffer.text(), { fromLine: lineAt(buffer.text(), pending.anchor), toLine: 0 }, line);
-    buffer.apply(edits, 'grid');
-    // Post-edit coordinates: the line the insert just created, minus its newline.
-    at = { anchor: edits[0].from + edits[0].insert.length - 1, column: TITLE };
-    held = true;
-    restore();
+    // A refused insert keeps the draft and what was typed, with the reason beside it.
+    draft = null;
+    if (!insert(draftInput.parentElement, { beforeLine: lineAt(buffer.text(), pending.anchor) }, pending.indent, title)) {
+      draft = pending;
+      return;
+    }
+    draftInput.value = '';
   }
 
   function addTask(): void {
     const value = newTask.value;
+    // Cleared first: the focus move after the insert blurs this input, which adds a task again.
     newTask.value = '';
     // At the indent of the last item line, not of a trailing comment or blank (§4b.1).
     const last = [...rows].reverse().find((row) => row.kind === 'item');
-    const edits = appendItem(buffer.text(), value, last?.indent ?? 0);
-    if (edits.length === 0) return;
-    buffer.apply(edits, 'grid');
-    at = { anchor: edits[0].from + edits[0].insert.length - 1, column: TITLE };
-    held = true;
-    restore();
+    // A refused insert keeps what was typed, with the reason beside it.
+    if (!insert(newTask.parentElement, 'end', last?.indent ?? 0, value)) newTask.value = value;
   }
 
   /** Put the place back where it was, following the line if it moved. */
@@ -553,9 +598,9 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     {
       id: 'done',
       label: 'Toggle done',
-      run: (row) => row.kind === 'item' && apply(setDone(buffer.text(), row.node, !row.node.done)),
+      run: (row) => row.kind === 'item' && write(cellFor(row.line, DONE), (current) => setDone(current, row.node, !row.node.done)),
       // A row done through an ancestor has no marker of its own to clear.
-      enabled: (row) => row.kind === 'item' && (!row.node.done || row.node.source.done),
+      enabled: (row) => row.kind === 'item' && canMarkDone(model!) && (!row.node.done || row.node.source.done),
     },
   ];
 

@@ -1,89 +1,96 @@
-// Highlighting per spec §4.1, checked through the syntax tree's style tags.
+// @vitest-environment jsdom
+// Highlighting per spec §4.1, as the view shows it. Which span gets which
+// class is tests/editor/syntax.test.ts; this checks what reaches the DOM,
+// done dimming, and the context taken from the latest model.
 
-import { highlightTree } from '@lezer/highlight';
-import { describe, expect, it } from 'vitest';
-import { planHighlightStyle, planLanguage } from '../../src/editor';
-import { example, state } from './helpers';
+import { EditorState } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { analyze } from '../../src/core';
+import { planEditor, showSyntax, toggleCommentLines } from '../../src/editor';
+import example from '../../examples/example.plan?raw';
 
-interface Styled {
-  text: string;
-  classes: string[];
+let view: EditorView;
+
+beforeEach(() => {
+  // jsdom has no layout; CodeMirror only needs these to not throw.
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
+});
+
+afterEach(() => view.destroy());
+
+/** A view on `doc`, given the model for it as the shell would. */
+function open(doc: string): void {
+  view = new EditorView({ state: EditorState.create({ doc, extensions: planEditor() }), parent: document.body });
+  showSyntax(view, analyze(doc));
 }
 
-function styled(doc: string): Styled[] {
-  const tree = planLanguage.parser.parse(doc);
-  const out: Styled[] = [];
-  highlightTree(tree, planHighlightStyle, (from, to, cls) => out.push({ text: doc.slice(from, to), classes: cls.split(' ') }));
-  return out;
-}
+const lines = () => [...view.contentDOM.querySelectorAll<HTMLElement>('.cm-line')];
+const texts = (cls: string) => [...view.contentDOM.querySelectorAll(`.${cls}`)].map((el) => el.textContent);
+const doneLines = () => lines().flatMap((el, i) => (el.classList.contains('cm-plan-done') ? [i + 1] : []));
 
-/** Classes on the styled token with exactly this text, occurring on the given 1-based line. */
-function classesOf(doc: string, line: number, text: string): string[] {
-  const lineStart = doc.split('\n').slice(0, line - 1).join('\n').length + (line > 1 ? 1 : 0);
-  const lineEnd = lineStart + doc.split('\n')[line - 1].length;
-  const tree = planLanguage.parser.parse(doc);
-  let found: string[] | null = null;
-  highlightTree(tree, planHighlightStyle, (from, to, cls) => {
-    if (from >= lineStart && to <= lineEnd && doc.slice(from, to) === text) found = cls.split(' ');
-  });
-  if (!found) throw new Error(`no styled token "${text}" on line ${line}`);
-  return found;
-}
-
-describe('language mode', () => {
-  it('styles every category of the §2.10 example distinctly', () => {
-    const doc = example;
-    const cases: [number, string, string][] = [
-      [1, '---', 'cm-plan-front-matter'],
-      [2, 'profile: plan', 'cm-plan-front-matter'],
-      [4, '// Q4 auth work. Estimates are rough.', 'cm-plan-comment'],
-      [5, '|', 'cm-plan-separator'],
-      [5, '2d', 'cm-plan-duration'],
-      [6, '~', 'cm-plan-done-marker'],
-      [8, '+', 'cm-plan-additive'],
-      [8, '1d', 'cm-plan-duration'],
-    ];
-    for (const [line, text, cls] of cases) {
-      expect(classesOf(doc, line, text), `${text} on line ${line}`).toContain(cls);
-    }
-    // Done line: marker, separator and value all carry the done class.
-    expect(classesOf(doc, 6, '~')).toContain('cm-plan-done');
-    expect(classesOf(doc, 6, '4h')).toEqual(expect.arrayContaining(['cm-plan-duration', 'cm-plan-done']));
-    expect(classesOf(doc, 6, '|')).toEqual(expect.arrayContaining(['cm-plan-separator', 'cm-plan-done']));
-    // Not-done neighbours carry no done class.
-    expect(classesOf(doc, 7, '6h')).not.toContain('cm-plan-done');
-    expect(classesOf(doc, 5, '2d')).not.toContain('cm-plan-done');
-
-    const distinct = new Set([...cases.map((c) => c[2]), 'cm-plan-done']);
-    expect(distinct.size).toBe(7);
+describe('highlighting in the view', () => {
+  it('shows every category of the §2.10 example', () => {
+    open(example);
+    expect(texts('cm-plan-front-matter')).toEqual(['---', 'profile: plan', '---']);
+    expect(texts('cm-plan-comment')).toEqual(['// Q4 auth work. Estimates are rough.', '// Audit log            | 2d     <- dropped for now']);
+    expect(texts('cm-plan-marker')).toEqual(['~']);
+    expect(texts('cm-plan-additive')).toEqual(['+']);
+    expect(texts('cm-plan-duration')).toEqual(['2d', '4h', '6h', '1d', '2h', '3h', '1d']);
+    expect(texts('cm-plan-separator').length).toBe(13);
   });
 
-  it('dims descendants of a done parent, not the following sibling', () => {
-    const doc = '~Auth | 2d\n    Login | 4h\n        Deep | 1h\nAdmin | 1d\n';
-    expect(classesOf(doc, 2, '4h')).toContain('cm-plan-done');
-    expect(classesOf(doc, 3, '1h')).toContain('cm-plan-done');
-    expect(classesOf(doc, 4, '1d')).not.toContain('cm-plan-done');
-    expect(classesOf(doc, 4, '|')).not.toContain('cm-plan-done');
+  it('shows anchors, cell names, quoted values and escapes', () => {
+    open('~Login {#login} | 4h | owner=bob | "a \\"b\\" | c"\n');
+    expect(texts('cm-plan-anchor')).toEqual(['{#login}']);
+    expect(texts('cm-plan-name')).toEqual(['owner', '=']);
+    expect(texts('cm-plan-escape')).toEqual(['\\"', '\\"']);
+    expect(texts('cm-plan-quoted').join('')).toBe('"a \\"b\\" | c"');
+  });
+
+  it('dims done lines and the descendants of a done parent, not the following sibling', () => {
+    open('~Auth | 2d\n    Login | 4h\n        Deep | 1h\nAdmin | 1d\n');
+    expect(doneLines()).toEqual([1, 2, 3]);
+  });
+
+  it('keeps done lines on their text through an edit, before the next model arrives', () => {
+    open('Auth\n~Login\n');
+    view.dispatch({ changes: { from: 0, insert: 'New\n' } });
+    expect(doneLines()).toEqual([3]);
   });
 
   it('only treats --- on line 1 as front matter', () => {
-    const doc = 'Auth | 2d\n---\n';
-    expect(styled(doc).some((s) => s.classes.includes('cm-plan-front-matter'))).toBe(false);
+    open('Auth | 2d\n---\n');
+    expect(texts('cm-plan-front-matter')).toEqual([]);
   });
 
-  it('leaves reserved # lines to the diagnostics layer', () => {
-    expect(styled('# heading\n')).toEqual([]);
+  it('shows the lines after an unclosed opening --- as rows, as the parser reads them', () => {
+    open('---\nAuth | 2d\n');
+    expect(texts('cm-plan-front-matter')).toEqual(['---']);
+    expect(texts('cm-plan-duration')).toEqual(['2d']);
   });
 
-  it('does not style non-value fields or titles', () => {
-    const doc = 'Auth | 2d | alice | 4h later\n';
-    const texts = styled(doc).map((s) => s.text);
-    expect(texts).not.toContain('alice');
-    expect(texts).not.toContain('4h later');
-    expect(texts).not.toContain('Auth ');
+  it('ignores a model for other text than the view shows', () => {
+    open('Auth\n');
+    showSyntax(view, analyze('~Auth\n'));
+    expect(doneLines()).toEqual([]);
   });
 
-  it('declares // as the line comment token', () => {
-    expect(state('x').languageDataAt<{ line: string }>('commentTokens', 0)[0]).toEqual({ line: '//' });
+  it('declares the document comment marker as the line comment token', () => {
+    open('Auth\n');
+    expect(view.state.languageDataAt<{ line: string }>('commentTokens', 0)[0]).toEqual({ line: '//' });
+    const doc = '---\ncomment: #\n---\nAuth\n';
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+    showSyntax(view, analyze(doc));
+    expect(view.state.languageDataAt<{ line: string }>('commentTokens', 0)[0]).toEqual({ line: '#' });
+  });
+
+  it('Ctrl+/ toggles the document comment marker', () => {
+    const doc = '---\ncomment: #\n---\nAuth\n';
+    open(doc);
+    view.dispatch({ selection: { anchor: doc.indexOf('Auth') } });
+    toggleCommentLines(view);
+    expect(view.state.doc.toString()).toBe('---\ncomment: #\n---\n# Auth\n');
   });
 });

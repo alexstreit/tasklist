@@ -85,5 +85,5 @@ export function compute(tree: Tree, columns: Column[]): Model {
   });
 
   diagnostics.sort((a, b) => a.line - b.line);
-  return { columns, roots, lines: tree.nodes, totals, diagnostics };
+  return { doc: tree.doc, columns, roots, lines: tree.nodes, totals, diagnostics };
 }

@@ -2,7 +2,7 @@
 
 Work these in order. Each task is one Claude Code session. A task is done only when every acceptance criterion is met and the human has reviewed.
 
-**Status:** Tasks 1–21 complete. Next: Task 22.
+**Status:** Tasks 1–22 complete.
 
 ---
 
@@ -289,6 +289,8 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Decisions taken:** mouse editing is click-to-focus, double-click-to-edit (§4b.4 only defines keyboard entry, which is Task 14; spec §4b.3 updated). Front matter rows are deferred to Task 15 with the other non-item rows. Editors expose `{ update, setCursorLine, destroy }` (spec §3.4) — that replaced the shell's `showDiagnostics` call, so grid diagnostics in Task 15 need no shell change. Cell edits live in `src/grid/edits.ts` (pure, text in / `TextEdit[]` out); field addressing counts the line's `|` positions rather than parsed fields, because a trailing `|` is a slot the parser drops.
 
+**Superseded by Task 22:** cell edits go through the rows edit API. A column that isn't the next slot is written by name (`Auth | notes=later`), never padded, and clearing it removes it. `src/grid/edits.ts` no longer counts `|`.
+
 **Human review:** in the browser, check the Text/Grid toggle, double-click editing, the derived/override/additive cells on the §2.10 example, and the new-task row.
 
 ---
@@ -353,7 +355,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Acceptance criteria**
 
-- [x] A comment row edited to remove the `//` becomes an item row on the next render, and vice versa.
+- [x] A comment row edited to remove the `//` becomes an item row on the next render, and vice versa. (Since Task 22, not the other way: a title cell edits only the title, so `//` typed there is quoted and stays in the title; spec §4b.1.)
 - [x] Deleting a comment row deletes exactly that line.
 - [x] A blank row between two items renders and can be deleted; inserting above an item with a blank line above it inserts directly above the item, not above the blank.
 - [x] `4 hours` in an estimate cell shows a warning outline with the correct message on hover; fixing it clears immediately.
@@ -595,13 +597,37 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 
 **Acceptance criteria**
 
-- [ ] Highlighting distinguishes markers, anchors, cell names, quoted values and escapes, and never disagrees with the parser (a test runs both over every conformance input).
-- [ ] In the grid, typing `a | b` into notes produces `notes="a | b"` or a quoted positional cell, and reads back as `a | b`.
-- [ ] Renaming a titled row with an anchor in the grid keeps the anchor.
-- [ ] Toggling done in the grid on a row with markers and anchors changes only the marker.
-- [ ] Lint action "Add unit=h hpd=8 dpw=5" is undoable with one Ctrl+Z.
-- [ ] The colour-token test still passes.
-- [ ] Manual, both themes: error, warning and info are distinguishable in the text editor and the grid.
+- [x] Highlighting distinguishes markers, anchors, cell names, quoted values and escapes, and never disagrees with the parser (a test runs both over every conformance input). — `tests/editor/syntax.test.ts`, over all 253 cases: line kinds, and per row the markers, anchors, names, quoted values and which values get a type colour. It failed first on `base-6-row-invalid-cell-name` (see below).
+- [x] In the grid, typing `a | b` into notes produces `notes="a | b"` or a quoted positional cell, and reads back as `a | b`. — both, in `tests/grid/grid.test.ts`: named on a row that sets `owner=bob`, positional where notes is the next slot.
+- [x] Renaming a titled row with an anchor in the grid keeps the anchor. — and the marker and cells.
+- [x] Toggling done in the grid on a row with markers and anchors changes only the marker. — asserted on the whole text, both ways.
+- [x] Lint action "Add unit=h hpd=8 dpw=5" is undoable with one Ctrl+Z. — `tests/editor/fixes.test.ts`, through the mounted text editor and a `CodeMirrorBuffer`: one buffer change with origin `text-editor`, and one Ctrl+Z keydown restores the text and both diagnostics.
+- [x] The colour-token test still passes.
+- [x] Manual, both themes: error, warning and info are distinguishable in the text editor and the grid. — checked in the browser, with the rest of the Task 22 manual checklist (token colours, done dimming, unclosed frontmatter, lint fix undo, `comment:` toggling, named/quoted/anchored grid edits, refusal notes, a refused insert kept as a draft, Open/Save As file types).
+
+**How it's built:**
+- `Model` gained `doc`, the rows document it was read from (spec §3.2). The grid needs it for the edit API and the highlighter for its context. Renderers ignore it.
+- Highlighting: the `StreamLanguage` is gone, since it can't see the parsed document. `src/editor/syntax.ts` is a pure `styleLine(text, state, syntax)` over `tokenizeLine`. `src/editor/language.ts` keeps the latest model's syntax (sep, comment, markers, column types, frontmatter end) and done lines in a state field, mapped through edits until the next model. A view plugin decorates the visible lines. Done lines, own or inherited, come from the model as line decorations.
+- Lint: `error` has its own underline and gutter marker. Fixes are lint actions that apply through `buffer.apply(…, 'text-editor')`, and do nothing if the text changed since the diagnostic was made.
+- Grid: `src/grid/edits.ts` is `setTitle`/`setField`/`setDone`/`insertItem` over `setLead`/`setCell`/`setMarker`/`insertRow`, each returning `EditResult`, plus `setLine` for comment and blank rows. One `write` path in the grid applies the edits or shows `Not changed: <reason>` in a `role="status"` note beside the cell, leaving the cell and buffer as they were. The note goes on the next redraw or after 4 s. A refused checkbox is unticked again. A refused inserted row stays a draft with its text. The done checkbox and toolbar button are disabled when the document has neither a `done` marker nor a bool `done` column.
+- `toggleComment(text, range, comment = '//')`; the keymap passes the document's marker. Folding and Ctrl+Shift+Up classify lines with it too, and `src/editor/lines.ts` lost `reserved`.
+- Open accepts `.plan` and `.rows`; Save As still defaults to `untitled.plan`.
+- Theme: `--tok-done-marker` is now `--tok-marker` (every marker gets it). New `--tok-anchor`, `--tok-name`, `--tok-quoted`, `--tok-escape`, `--diag-error`.
+
+**Decisions taken:**
+- The highlighter resolves cells with the parser's rules, not just token positions. The tokenizer marks `ratio=` as a cell name, but the parser reads an undeclared name as part of an unnamed cell, and an unnamed cell after a named one, or past the declared columns, as overflow. The conformance test caught this, and DESIGN §7 now says so.
+- The grid refuses an edit while its model trails the buffer (the shell's 50 ms debounce), with the same note. Before this task that case silently wrote at stale offsets.
+- Typed values are trimmed and tabs become spaces before they go to rows. A title that is unchanged after trimming is a no-op.
+- "New documents start with `profile: plan`": the only document the app creates is the startup one, `examples/example.plan`, which already says `profile: plan`. There is no New command, so nothing else changed.
+
+**Rewritten tests:**
+- `tests/editor/language.test.ts`: rewritten for the decoration highlighter in a jsdom view. The token-class checks moved to `tests/editor/syntax.test.ts`. `~` is `cm-plan-marker` (was `cm-plan-done-marker`), and done is a line class. "leaves reserved `#` lines to the diagnostics layer" is gone: a `#` line is a row.
+- `tests/grid/edits.test.ts`: rewritten for `EditResult` and the rows rules: named rather than padded cells, quoting, anchors kept, `done=true` removed, `insertItem` refusals.
+- `tests/grid/grid.test.ts`: "pads a title-only line…" now expects `Auth | notes=later`. "turns a comment row into an item row…, and back again" drops the "back again": `// Audit log` typed into a title is quoted.
+
+**Not done, deliberately:** `insertLineAbove` in `src/editing` has no caller in `src/` now (the grid uses `insertRow`). It stays because spec §3.8 lists it. The `@lezer/highlight` devDependency is unused by `src/`. Removing it would touch the lockfile, so that's left for review.
+
+**Spec questions:** none opened. The DESIGN §7 addition describes existing parser behaviour.
 
 ---
 

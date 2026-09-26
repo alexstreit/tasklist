@@ -11,7 +11,6 @@ import type { TextEdit } from '../buffer';
 export type { LineRange } from './lines';
 
 const UNIT = '    ';
-const COMMENT = '//';
 
 export function indent(text: string, range: LineRange): TextEdit[] {
   return lines(text)
@@ -80,29 +79,30 @@ export function deleteLines(text: string, range: LineRange): TextEdit[] {
 }
 
 /**
- * Toggle `// ` on the range. Commenting inserts at the shallowest indent in
+ * Toggle `comment` and a space on the range; the marker is the document's
+ * (rows `comment:`, `//` by default). Commenting inserts at the shallowest indent in
  * the range so the block stays aligned, and skips blank lines unless the
  * range is a single line. Uncommenting wins when every non-blank line in the
  * range is already commented.
  */
-export function toggleComment(text: string, range: LineRange): TextEdit[] {
+export function toggleComment(text: string, range: LineRange, comment = '//'): TextEdit[] {
   const block = lines(text).slice(range.fromLine - 1, range.toLine);
   const content = block.filter((line) => line.text.trim() !== '');
   if (content.length === 0) {
-    return block.length > 1 ? [] : [{ from: block[0].from, to: block[0].from, insert: `${COMMENT} ` }];
+    return block.length > 1 ? [] : [{ from: block[0].from, to: block[0].from, insert: `${comment} ` }];
   }
 
-  if (content.every((line) => line.text.trimStart().startsWith(COMMENT))) {
+  if (content.every((line) => line.text.trimStart().startsWith(comment))) {
     return content.map((line) => {
       const start = line.from + indentOf(line.text);
-      const rest = line.text.slice(indentOf(line.text) + COMMENT.length);
-      return { from: start, to: start + COMMENT.length + (rest.startsWith(' ') ? 1 : 0), insert: '' };
+      const rest = line.text.slice(indentOf(line.text) + comment.length);
+      return { from: start, to: start + comment.length + (rest.startsWith(' ') ? 1 : 0), insert: '' };
     });
   }
   const column = Math.min(...content.map((line) => indentOf(line.text)));
   return content.map((line) => ({
     from: line.from + column,
     to: line.from + column,
-    insert: `${COMMENT} `,
+    insert: `${comment} `,
   }));
 }

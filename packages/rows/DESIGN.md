@@ -205,7 +205,7 @@ The only refusals:
 
 ## 7. Highlighting
 
-`tokenizeLine` returns token spans: indent, marker, lead, anchor, delimiter, cell name, `=`, quoted value, escape, plain value, and comment. It also returns a frontmatter-state transition, so a line-at-a-time highlighter (CodeMirror's `StreamLanguage`) can carry state across lines. Value types come from the schema, which the tokenizer doesn't need. A highlighter that wants per-type colours (durations, signs) reads the column for each cell index from the latest parsed document.
+`tokenizeLine` returns token spans: indent, marker, lead, anchor, delimiter, cell name, `=`, quoted value, escape, plain value, and comment. It also returns a frontmatter-state transition, so a line-at-a-time highlighter (CodeMirror's `StreamLanguage`) can carry state across lines. Value types come from the schema, which the tokenizer doesn't need. A highlighter that wants per-type colours (durations, signs) reads the columns from the latest parsed document. It resolves cells with the parser's rules, because tokens are syntactic: a `name` token whose name no settable column has is read by the parser as part of an unnamed cell (base §6), and an unnamed cell after a named one, or past the declared columns, is overflow with no type. The tokenizer can't know that a frontmatter block is never closed, so carried on its own it shows such a file as frontmatter to the end. A highlighter with a parsed document takes the frontmatter extent from the document's lines instead.
 
 ## 8. Conformance suite
 

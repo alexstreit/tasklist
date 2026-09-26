@@ -14,6 +14,7 @@ import type { KeyBinding } from '@codemirror/view';
 import { indent, moveDown, moveUp, outdent, toggleComment } from '../editing';
 import type { LineRange } from '../editing';
 import type { TextEdit } from '../buffer';
+import { commentOf } from './language';
 import { indentOf, lineKind } from './lines';
 import { subtreeEnd } from './subtree';
 
@@ -23,9 +24,9 @@ function selectedLines(state: EditorState): LineRange {
   return { fromLine: state.doc.lineAt(from).number, toLine: state.doc.lineAt(to).number };
 }
 
-function lineCommand(op: (text: string, range: LineRange) => TextEdit[], userEvent: string): StateCommand {
+function lineCommand(op: (text: string, range: LineRange, state: EditorState) => TextEdit[], userEvent: string): StateCommand {
   return ({ state, dispatch }) => {
-    const edits = op(state.doc.toString(), selectedLines(state));
+    const edits = op(state.doc.toString(), selectedLines(state), state);
     if (edits.length > 0) dispatch(state.update({ changes: edits, userEvent }));
     return true;
   };
@@ -50,7 +51,8 @@ function moveCommand(direction: -1 | 1): StateCommand {
 
 export const indentLines = lineCommand(indent, 'input.indent');
 export const outdentLines = lineCommand(outdent, 'delete.dedent');
-export const toggleCommentLines = lineCommand(toggleComment, 'input.comment');
+// The comment marker is the document's own (spec §3.8).
+export const toggleCommentLines = lineCommand((text, range, state) => toggleComment(text, range, commentOf(state)), 'input.comment');
 export const moveLinesUp = moveCommand(-1);
 export const moveLinesDown = moveCommand(1);
 
@@ -58,14 +60,15 @@ export const moveLinesDown = moveCommand(1);
 export const selectSubtree: StateCommand = ({ state, dispatch }) => {
   const { doc } = state;
   const { from, to } = state.selection.main;
+  const comment = commentOf(state);
   let limit = Infinity;
   for (let n = doc.lineAt(from).number; n >= 1; n--) {
     const line = doc.line(n);
-    if (lineKind(line.text) !== 'item') continue;
+    if (lineKind(line.text, comment) !== 'item') continue;
     const indent = indentOf(line.text);
     if (indent >= limit) continue;
     limit = indent;
-    const end = subtreeEnd(doc, line)?.to ?? line.to;
+    const end = subtreeEnd(doc, line, comment)?.to ?? line.to;
     if (line.from < from || end > to) {
       dispatch(state.update({ selection: { anchor: line.from, head: end }, userEvent: 'select' }));
       return true;

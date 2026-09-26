@@ -18,7 +18,8 @@ export interface FileStore {
   saveAs(text: string): Promise<boolean>;
 }
 
-const TYPES = [{ description: 'Plan files', accept: { 'text/plain': ['.plan', '.txt'] } }];
+// Open takes plan and rows files; Save As offers .plan first (spec §6).
+const TYPES = [{ description: 'Plan and rows files', accept: { 'text/plain': ['.plan', '.rows'] } }];
 const DEFAULT_NAME = 'untitled.plan';
 
 // Not in TypeScript's DOM lib yet.
@@ -89,7 +90,7 @@ function fallbackStore(document: Document): FileStore {
       return new Promise((resolve) => {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.plan,.txt,text/plain';
+        input.accept = '.plan,.rows';
         input.addEventListener('change', async () => {
           const file = input.files?.[0];
           if (!file) return resolve(null);

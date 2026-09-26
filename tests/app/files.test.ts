@@ -35,6 +35,7 @@ describe('native store', () => {
     expect(store.name).toBeNull();
     expect(store.inPlace).toBe(true);
     expect(await store.open()).toEqual({ name: 'q4.plan', text: 'Auth | 2d\n' });
+    expect(win.showOpenFilePicker.mock.calls[0][0].types[0].accept).toEqual({ 'text/plain': ['.plan', '.rows'] });
     expect(store.name).toBe('q4.plan');
     expect(await store.save('Auth | 3d\n')).toBe(true);
     expect(file.written).toEqual(['Auth | 3d\n']);
@@ -94,6 +95,7 @@ describe('fallback store', () => {
     const store = createFileStore(window);
     const opened = store.open();
     expect(input?.type).toBe('file');
+    expect(input?.accept).toBe('.plan,.rows');
     Object.defineProperty(input, 'files', { value: [new File(['A | 1h\n'], 'a.plan')] });
     input!.dispatchEvent(new Event('change'));
     expect(await opened).toEqual({ name: 'a.plan', text: 'A | 1h\n' });

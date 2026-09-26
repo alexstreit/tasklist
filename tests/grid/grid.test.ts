@@ -101,10 +101,11 @@ describe('cell editing', () => {
     expect(buffer.text()).toBe('Auth | 4h\n');
   });
 
-  it('pads a title-only line when a later column is edited, and trims the padding when it is cleared', () => {
+  it('names a later column on a title-only line rather than padding, and removes it when it is cleared', () => {
     open('Auth\n');
     edit(1, NOTES, 'later');
-    expect(buffer.text()).toBe('Auth | | | later\n');
+    expect(buffer.text()).toBe('Auth | notes=later\n');
+    expect(cell(1, NOTES).textContent).toBe('later');
     edit(1, NOTES, '');
     expect(buffer.text()).toBe('Auth\n');
   });
@@ -591,7 +592,7 @@ describe('non-item rows', () => {
     expect(raw(2).colSpan).toBe(2 + 3);
   });
 
-  it('turns a comment row into an item row when the // goes, and back again', () => {
+  it('turns a comment row into an item row when the // goes', () => {
     open('Auth | 2d\n    // Audit log | 2d\n');
     click(cell(2, TITLE), 'dblclick');
     expect(input().value).toBe('    // Audit log | 2d');
@@ -601,11 +602,13 @@ describe('non-item rows', () => {
     expect(row(2)!.classList.contains('item')).toBe(true);
     expect(cell(2, WBS).textContent).toBe('1.1');
     expect(cell(2, EST).textContent).toBe('2d');
-    // And back: the row becomes a comment again.
+    // Not back through the title cell: a title is a title, so `//` typed there is quoted (spec §4b.1).
     click(cell(2, TITLE), 'dblclick');
-    input().value = '    // Audit log | 2d';
+    input().value = '// Audit log';
     press(input(), 'Enter');
-    expect(row(2)!.classList.contains('line')).toBe(true);
+    expect(buffer.text()).toBe('Auth | 2d\n    "// Audit log" | 2d\n');
+    expect(row(2)!.classList.contains('item')).toBe(true);
+    expect(cell(2, TITLE).textContent).toBe('// Audit log');
   });
 
   it('deletes exactly the comment line', () => {
@@ -688,5 +691,123 @@ describe('diagnostics', () => {
     open('# heading\nAuth | 2d\n');
     expect(cell(1, TITLE).classList.contains('error')).toBe(true);
     expect(cell(1, TITLE).title).toBe(analyze('# heading\nAuth | 2d\n').diagnostics[0].message);
+  });
+});
+
+describe('named and quoted cells, markers and anchors', () => {
+  // A named cell, a quoted value containing the delimiter, a marker and anchors.
+  const FILE = [
+    '---',
+    'profile: plan',
+    '---',
+    'Auth {#auth}                | 2d',
+    '    ~Login page {#login}    | 4h  | owner=bob',
+    '    Password reset          | 6h  | alice | "see a | b"',
+    'Admin                       |     | bob',
+    '',
+  ].join('\n');
+  const lineOf = (text: string, line: number) => text.split('\n')[line - 1];
+  /** A cell's text without any notice beside it. */
+  const shown = (td: HTMLElement) =>
+    [...td.childNodes].filter((n) => !(n instanceof HTMLElement && n.classList.contains('sheet-notice'))).map((n) => n.textContent).join('');
+
+  it('shows decoded values, named cells in their column, and titles without markers or anchors', () => {
+    open(FILE);
+    expect(cell(4, TITLE).textContent).toBe('Auth');
+    expect(cell(5, TITLE).textContent).toBe('Login page');
+    expect(cell(5, OWNER).textContent).toBe('bob');
+    expect(cell(6, NOTES).textContent).toBe('see a | b');
+    expect(cell(5, DONE).querySelector('input')!.checked).toBe(true);
+  });
+
+  it('edits a quoted value as its decoded text, and writes it back quoted', () => {
+    open(FILE);
+    click(cell(6, NOTES), 'dblclick');
+    expect(input().value).toBe('see a | b');
+    input().value = 'see c | d';
+    press(input(), 'Enter');
+    expect(lineOf(buffer.text(), 6)).toBe('    Password reset          | 6h  | alice | "see c | d"');
+    expect(cell(6, NOTES).textContent).toBe('see c | d');
+  });
+
+  it('typing a | b into notes writes a quoted cell, named or positional, that reads back as a | b', () => {
+    open(FILE);
+    // Line 5 sets owner by name, so notes is named too.
+    edit(5, NOTES, 'a | b');
+    expect(lineOf(buffer.text(), 5)).toBe('    ~Login page {#login}    | 4h  | owner=bob | notes="a | b"');
+    expect(cell(5, NOTES).textContent).toBe('a | b');
+    // On line 7 notes is the next slot.
+    edit(7, NOTES, 'a | b');
+    expect(lineOf(buffer.text(), 7)).toBe('Admin                       |     | bob | "a | b"');
+    expect(cell(7, NOTES).textContent).toBe('a | b');
+  });
+
+  it('edits and clears a named cell in place', () => {
+    open(FILE);
+    edit(5, OWNER, 'carol');
+    expect(lineOf(buffer.text(), 5)).toBe('    ~Login page {#login}    | 4h  | owner=carol');
+    edit(5, OWNER, '');
+    expect(lineOf(buffer.text(), 5)).toBe('    ~Login page {#login}    | 4h');
+  });
+
+  it('renaming a row with an anchor keeps the anchor, the marker and the cells', () => {
+    open(FILE);
+    edit(5, TITLE, 'Sign-in page');
+    expect(lineOf(buffer.text(), 5)).toBe('    ~Sign-in page {#login}    | 4h  | owner=bob');
+    expect(cell(5, TITLE).textContent).toBe('Sign-in page');
+  });
+
+  it('toggling done on a row with a marker and anchors changes only the marker', () => {
+    open(FILE);
+    click(cell(5, DONE).querySelector('input')!);
+    expect(buffer.text()).toBe(FILE.replace('~Login page', 'Login page'));
+    click(cell(4, DONE).querySelector('input')!);
+    expect(lineOf(buffer.text(), 4)).toBe('~Auth {#auth}                | 2d');
+  });
+
+  it('shows why rows refused a cell edit, and leaves the cell and the buffer as they were', () => {
+    const text = '---\nprofile: plan\ncolumns: est:duration unit=h | owner:text | my.notes:text\n---\nAuth\n';
+    open(text);
+    edit(5, NOTES, 'later');
+    expect(buffer.text()).toBe(text);
+    expect(shown(cell(5, NOTES))).toBe('');
+    const note = cell(5, NOTES).querySelector('.sheet-notice')!;
+    expect(note.getAttribute('role')).toBe('status');
+    expect(note.textContent).toBe("Not changed: column my.notes can't be named and isn't the next positional slot");
+    // The next edit clears it.
+    edit(5, EST, '4h');
+    expect(host.querySelector('.sheet-notice')).toBeNull();
+  });
+
+  it('keeps a refused new row as a draft, with the reason beside it', () => {
+    // Line 3 at indent 4 matches no open level after A at 0 and B at 8.
+    const text = 'A\n        B\n    // note\n';
+    open(text);
+    click(cell(3, WBS));
+    press(cell(3, WBS), 'Insert');
+    const draft = host.querySelector<HTMLInputElement>('tr.draft input')!;
+    draft.value = 'X';
+    press(draft, 'Enter');
+    expect(buffer.text()).toBe(text);
+    expect(host.querySelector('tr.draft')!.textContent).toContain("Not changed: an indent of 4 doesn't fit the nesting here");
+    expect(draft.value).toBe('X');
+    press(draft, 'Escape');
+    expect(host.querySelector('tr.draft')).toBeNull();
+    expect(buffer.text()).toBe(text);
+  });
+
+  it('refuses to edit against a model older than the buffer, and says so', () => {
+    grid.destroy();
+    host.remove();
+    host = document.createElement('div');
+    document.body.append(host);
+    buffer = new InMemoryBuffer('Auth | 2d\n');
+    grid = mountGrid(buffer, host, { onCursorLine: () => {} });
+    grid.update(analyze(buffer.text()));
+    // A change the grid has not had a model for yet, as during the shell's debounce.
+    buffer.apply([{ from: 0, to: 0, insert: 'New\n' }], 'text-editor');
+    edit(1, EST, '3d');
+    expect(buffer.text()).toBe('New\nAuth | 2d\n');
+    expect(cell(1, EST).querySelector('.sheet-notice')!.textContent).toBe('Not changed: the grid is still reading the last change; try again');
   });
 });

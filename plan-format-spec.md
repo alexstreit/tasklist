@@ -186,6 +186,8 @@ Each item carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`), computed from t
 
 `compute(tree, columns) → Model`. Pure function. Walks the tree bottom-up and attaches `effective`, `childSum`, `mode`, `hasValue`, `childrenHaveValue`, `done`, `doneSum` and diagnostics to each node, plus document totals. No renderer or exporter performs arithmetic.
 
+The model carries the rows document it was read from (`doc`), so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. Renderers ignore it.
+
 The model also carries `lines`: every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
 
 `analyze(text, filename?) → Model` composes `parseRows`, `readPlan` and `compute` and is the single entry point the app shell and any tooling call. The shell passes the current file name, or none for a new document (§2.1). A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `readPlan` or `compute` directly (lint-enforced).
@@ -309,7 +311,7 @@ The line operations in `src/editing/` stay in the app. They work on whole lines 
 
 ### 4.1 Language mode
 
-Tokens come from the rows library's `tokenizeLine`, the same tokenizer the parser uses. Highlighting covers: done lines (dimmed, including implicitly done descendants), comment lines, markers, anchors (`{#id}`), delimiters, cell names (`owner=`), quoted values and their escapes, duration values, the `+` sign, and the frontmatter block.
+Tokens come from the rows library's `tokenizeLine`, the same tokenizer the parser uses. Its context (separator, comment marker, markers), the column types and the frontmatter extent come from the latest model's rows document, mapped through edits until the next model arrives. Before the first model the tokenizer's own frontmatter state is carried from line 1. Cells are resolved to columns by the parser's rules, so a value is coloured by the type of the column the parser gives it. Highlighting covers: done lines (dimmed, including implicitly done descendants), comment lines, markers, anchors (`{#id}`), delimiters, cell names (`owner=`), quoted values and their escapes, duration values, the `+` sign, and the frontmatter block.
 
 ### 4.2 Folding
 
@@ -340,7 +342,7 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 ### 4b.1 Rows
 
 - One row per **item** line. Columns, left to right: WBS (outline number, read-only, doubles as the row selector), done (checkbox), title, then each declared column in order.
-- Comment and blank lines render as greyed rows: a WBS cell with no number, then one cell spanning the remaining columns and holding the raw line text, indentation included. They are editable as raw text — editing one into an item line, or an item line into a comment, is an ordinary text edit and the row changes kind on the next render — and they can be selected, deleted and moved like any row.
+- Comment and blank lines render as greyed rows: a WBS cell with no number, then one cell spanning the remaining columns and holding the raw line text, indentation included. They are editable as raw text — editing one into an item line is an ordinary text edit and the row changes kind on the next render — and they can be selected, deleted and moved like any row. The reverse is not a grid edit: an item's title cell edits only the title (§4b.2), so a `//` typed there is quoted and reads back as part of the title. An item is commented out in the text editor.
 - Front matter renders as a single collapsed greyed row at the top, read-only.
 - A read-only **total** row at the bottom shows document `effective` and `doneSum` per summable column.
 - Below the total row is one blank **new task** row. Typing into it inserts a new item line at the end of the document at the indent of the last item line (or indent 0 if none).
@@ -356,6 +358,8 @@ Every cell edit goes through the rows edit API (§3.9). The grid never builds ro
 - Writing a column that the row doesn't set yet follows `setCell`'s rules: append it positionally if it is the next slot, otherwise write it as a named cell (`notes=…`). The grid never pads with empty cells. Clearing a cell removes it, or empties it if later cells depend on its position.
 - A cell with a diagnostic has a coloured outline (error, warning or info) and shows the message on hover. A diagnostic whose span falls in a cell marks that cell. One with no span, or on overflow cells, marks the row's WBS cell. Anything inside the frontmatter marks its collapsed row.
 - Implicit columns (`parent`, and `id` when identity is on) are not shown in v1.
+- When rows refuses an edit, the grid leaves the cell as it was and shows the reason beside it briefly; it never fails silently. An inserted row that rows refuses stays a draft with its text. An edit made while the model still trails the buffer (the shell's debounce) is refused the same way, since its offsets would be for the older text.
+- Typed values are trimmed, and a tab becomes a space, since the buffer holds no tabs (§2.2).
 
 ### 4b.3 Selection and focus
 
