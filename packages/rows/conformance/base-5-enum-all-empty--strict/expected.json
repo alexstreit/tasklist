@@ -1,7 +1,6 @@
 {
   "spec": ["base §5 enum", "base §6 modes"],
   "stage": "types",
-  "disputed": true,
   "failed": true,
   "errors": [
     { "class": "structural", "code": "malformed-type", "line": 2 },

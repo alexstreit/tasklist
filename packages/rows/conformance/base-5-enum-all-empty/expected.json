@@ -1,7 +1,6 @@
 {
-  "spec": ["base §5 enum: enum[] is malformed; empty values are ignored"],
+  "spec": ["base §5 enum: an enum whose values are all empty is malformed, like enum[]"],
   "stage": "types",
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "structural", "code": "malformed-type", "line": 2 },

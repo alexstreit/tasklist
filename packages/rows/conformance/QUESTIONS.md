@@ -6,13 +6,7 @@ Where a question says a rule has "no class", the class matters because strict mo
 
 ---
 
-## Q39. Leftovers from Q37 and Q38: leap seconds, and enums with only empty values
-
-**Cases:** `base-5-enum-all-empty` (+ `--strict`).
-**Spec:** base §5 (equality: datetimes "as instants"; Enum: "`enum[]` is a malformed type", and empty values are ignored).
-
-- A leap second. **Used:** `23:59:60Z` is the same instant as the following `00:00:00Z`, as POSIX time counts it. No case.
-- `enum[,]` or `enum[ ]`, where every value is empty. **Used:** malformed, the same as `enum[]`, because nothing is left once the empty values are ignored. The alternative is a structural error per empty value, as Q38 says, leaving an enum that accepts no value.
+None open.
 
 ---
 
@@ -245,3 +239,9 @@ Where a question says a rule has "no class", the class matters because strict mo
 **Decision:** `enum[]` is malformed. Empty and repeated values are each structural, and the value is ignored; they use the new `invalid-enum-value` code. Values are case-sensitive, and there is no rule about values that differ only by case. An enum whose values are all empty wasn't covered, and is now part of Q39.
 **Spec changed:** base §5 (the Enum paragraph); base §6 (the malformed-type row, and a new row).
 **Cases:** `base-5-enum-value-edges` (+ `--strict`) now expects `enum[x,,y]` to read as `enum[x,y]` and `enum[x,x]` as `enum[x]`, each with an error.
+
+### Q39. Leftovers from Q37 and Q38: leap seconds, and enums with only empty values
+
+**Decision:** as used. A leap second equals the second that follows it, so `23:59:60Z` and the next `00:00:00Z` are the same instant. An enum whose values are all empty, such as `enum[,]` or `enum[ ]`, is malformed, like `enum[]`. There was no version bump, because this only makes explicit what 0.8 already implies.
+**Spec changed:** base §5 (the Equality and Enum paragraphs).
+**Cases:** `base-5-enum-all-empty` (+ `--strict`) is no longer disputed. `base-5-datetime-leap-second` is new.

@@ -125,7 +125,7 @@ Unrecognised options are ignored and retained. The options in this table are err
 | `duration`      | see below                 |
 | `enum[a,b,...]` | one of the listed values  |
 
-**Enum.** The values are separated by commas and trimmed. A value MUST NOT contain `,` or `]`. `enum[]` is a malformed type. An empty value, as in `enum[x,,y]`, and a repeated value, as in `enum[x,x]`, are each a structural error, and the value is ignored. Values are case-sensitive, and values that differ only by case are distinct. The brackets protect their contents (§4), so `enum[low, high]` is valid in any file, including one whose `sep` is `,`.
+**Enum.** The values are separated by commas and trimmed. A value MUST NOT contain `,` or `]`. `enum[]` is a malformed type, and so is an enum whose values are all empty, such as `enum[,]`. An empty value, as in `enum[x,,y]`, and a repeated value, as in `enum[x,x]`, are each a structural error, and the value is ignored. Values are case-sensitive, and values that differ only by case are distinct. The brackets protect their contents (§4), so `enum[low, high]` is valid in any file, including one whose `sep` is `,`.
 
 **Duration.**
 
@@ -145,7 +145,7 @@ A duration is a bag of unit terms, not a normalised quantity. Minutes and hours 
 **Equality.** Two values of a column are equal when:
 
 - numbers are numerically equal, so `1` and `1.0` are equal;
-- dates and datetimes are the same instant, so `2026-09-01T10:00:00Z` and `2026-09-01T11:00:00+01:00` are equal;
+- dates and datetimes are the same instant, so `2026-09-01T10:00:00Z` and `2026-09-01T11:00:00+01:00` are equal, and a leap second such as `23:59:60Z` equals the second that follows it;
 - text, enum and bool values are the same sequence of code points;
 - durations convert to the same number of minutes, using only the conversions their column permits (`m` and `h` always, `d` and `h` with `hpd`, `w` and `d` with `dpw`), so `1h` and `60m` are equal. Durations that can't both be converted compare as bags of terms, so `1d 4h` and `4h 1d` are equal without `hpd`. Either way the sign counts: `+1h` and `1h` differ.
 

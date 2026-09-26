@@ -32,7 +32,7 @@ export function parseType(declared: string, extensions: boolean): ParsedType {
       else if (values.includes(v)) ignored.push('repeated');
       else values.push(v);
     }
-    // With no values left, as in enum[] or enum[,], the type is malformed (Q39).
+    // With no values left, as in enum[] or enum[,], the type is malformed (base §5).
     if (values.length === 0) return { ok: false, problem: 'malformed' };
     return { ok: true, type: `enum[${values.join(',')}]`, kind: 'enum', enumValues: values, ignored };
   }
