@@ -168,6 +168,11 @@ setLead(doc, row, text): EditResult
 setCell(doc, row, column, text: string | null): EditResult
 setMarker(doc, row, name, on: boolean): EditResult
 insertRow(doc, at: { beforeLine: number } | 'end', indent: number, lead: string, cells?: Record<string, string>): EditResult
+setLevel(doc, row, level: number): EditResult
+moveRow(doc, row, dir: 'up' | 'down'): EditResult
+deleteRow(doc, row): EditResult
+repairRow(doc, row): TextEdit[]
+levelIndent(doc, at: { beforeLine: number } | 'end', level: number): number | null
 formatValue(doc, column | 'lead', text): string   // quotes exactly when base §3 requires
 ```
 
@@ -177,9 +182,13 @@ Rules:
 - **`setCell`** follows these steps, in order:
   1. If the column's cell exists, replace its value span. The `NAME=` prefix and the padding stay.
   2. Otherwise, if the column is the next positional slot and the row has no named cells, append ` | value`.
-  3. Otherwise, append a named cell `NAME=value`. This never pads with empty cells.
+  3. Otherwise, append a named cell `NAME=value`. This never pads with empty cells, except in the one case below.
   4. `null` removes the cell. It removes a trailing positional cell together with its delimiter. An interior positional cell is emptied, since removing it would shift the cells after it.
 - **`setMarker`** inserts or removes the marker character straight after the indent. When the column has no marker, it sets the value by name. A row with both a marker and an explicit `done=false` has both corrected.
+- **`setCell` padding exception.** When a column can't be set by name (its name is invalid or duplicated) and the row doesn't reach it, `setCell` pads with empty cells up to it instead of refusing. This is the only case where it pads. It can't pad a row that has a named or overflow cell, since the padding would be unnamed cells after it; that is still a refusal.
+- **`setLevel(doc, row, level)`, `moveRow(doc, row, 'up' | 'down')`, `deleteRow(doc, row)`.** These are level-based structure edits, with the behaviour described in plan spec §4b.6.4 and the same `EditResult` return, refusals and no-new-errors invariant as the other edit functions. They are generic, not plan-specific: any host with `nest` needs them.
+- **`repairRow(doc, row): TextEdit[]`.** Returns the `auto`-tier repairs for a row: rewriting cells from their recovered text, quoting a heading-like lead, and snapping the indent to the recovered level. It is idempotent: `repairRow` on its own output returns no edits.
+- **`levelIndent`** is the indent a row inserted there would take at a level, by the rule in plan spec §4b.6.4, or `null` when that level isn't open there or the document has no `nest`. Hosts pass it to `insertRow`.
 - Every edit function is tested by the same property: for random documents and random edits, parsing the edited text gives the intended value in the target, every other row, cell, marker, anchor and comment is unchanged, and the text has no syntax or structural error it didn't have before (counted by code).
 - An edit that has nothing to change returns `{ edits: [] }`. An edit that can't be made without breaking the rules above returns `{ refused }` with the reason, and the host leaves the text as it is.
 
@@ -189,10 +198,16 @@ Details the rules above leave open:
 - **Implicit columns** are only ever written as named cells.
 - **`setCell` on the lead** is `setLead`, with `null` written as the empty string: a row always has a lead cell.
 - **Appending after an unterminated quote** first closes the quote where its text ends, so that cell's text is unchanged and the new cell isn't swallowed by it.
-- **Removing a named cell** empties it (`NAME=`) instead, when an unnamed overflow cell follows it: removing it would make that cell positional.
+- **Removing a named cell** empties it (`NAME=`) instead, when an overflow cell follows it: removing it would make an unnamed overflow cell positional, or a later repeat of the same column its value. The emptied cell is written with nothing between the `=` and the next delimiter (`b=| x`), since whitespace after the `=` would unname it (base §3).
 - **A row keeps its line.** Removing the last cell of a row that begins with a delimiter leaves the delimiter (`|`), so the row doesn't turn into a blank line; the row already began with the delimiter. Removing the only marker before an empty lead writes the lead as `""`: `~` becomes `""` and `~ | 1d` becomes `"" | 1d`, since a row that begins with the delimiter is a structural error.
 - **`insertRow`** writes the declared columns positionally while they run on from the lead, and the rest by name. A column that can't be named is written in position, with empty cells before it. A name in `cells` that isn't a column throws, since that's a mistake in the host.
 - **`setMarker`** with a name that is neither a marker nor a column throws, for the same reason.
+- **Levels** are depths in the indentation tree of ext §6.2 (the parser's `indentLevels`), not the parent column. A level is open at a position when it is at most one deeper than the row above. Its indent is the one its siblings there already use, or the parent's indent plus the file's usual step: the most common difference between a row's indent and its parent's, or 4 when there is none.
+- **`setLevel`** moves the row's descendants with it, by the same number of spaces, so they stay its descendants (MS Project's indent and outdent). Rows after them keep their indent, so outdenting a row can make its later siblings its children.
+- **`moveRow`** swaps the row's line with the line above or below it. Only the moved row's indent changes: when the other line is a row, the row takes the indent, among the levels open at its new position and its own indent, that adds no indent error, preferring the level nearest its old one, then the smallest change in spaces. The row's own text stays where it is in the buffer, so positions in it map through the move.
+- **`deleteRow`** removes the line together with the line break after it (the last line takes the one before it only when there is none). Each child of the row takes the row's indent, and the child's subtree moves with it.
+- **`repairRow`** rewrites a cell only when a syntax error (`unterminated-quote`, `text-after-quote`, `unknown-escape`) falls inside it. It writes the cell's recovered text through `formatValue`, so it quotes only when needed. The indent is snapped to the level the parser recovered: the indent of the recovered parent's other children there, or 0 for a row with no recovered parent. The rows after it that the recovery put at its level or below move by the same amount, so the tree is unchanged. If the snapped indents would change any row's parent or still leave the row at no level, there is no indent repair.
+- **Nothing makes a row the first line if it reads as a `---` delimiter** in a file without frontmatter, since that would open a frontmatter block.
 - **`applyEdits(text, edits)`** applies a function's edits, for hosts without an editor of their own.
 
 Edit functions throw on host mistakes, such as an unknown column or marker name, and refuse on document states.
@@ -200,8 +215,12 @@ Edit functions throw on host mistakes, such as an unknown column or marker name,
 The only refusals:
 
 - **`setCell` on the key of a row whose ID is in an anchor**, set to `null` or to text that isn't an ID. A valid ID renames the anchor, and the key cell too if it is written, so no anchor/key mismatch (ext §3.2) is created. References to the old ID are not rewritten (`renameId` is deferred, plan spec §7). A value the anchor can't hold would have to move the ID out of the anchor, or remove the anchor and so the row's ID, and neither is what a cell edit asks for. Hosts change such an ID by editing the text.
-- **`setCell` on a column that can't be named** (base §6: a name that doesn't match the grammar or is already used), when the row doesn't set it and it isn't the next positional slot. The only way to write it would be padding with empty cells, which `setCell` never does. `setMarker` on a column without a marker refuses in the same case, and so does a marker change whose contradicting cell can't be corrected.
+- **`setCell` on a column that can't be named** (base §6: a name that doesn't match the grammar or is already used), when the row doesn't set it, it isn't the next positional slot, and the row has a named or overflow cell, so padding up to it would put unnamed cells after them. `setMarker` refuses in the same case for a column without a marker, and so does a marker change whose contradicting cell can't be corrected.
 - **`insertRow` at an indent that nesting doesn't allow there** (ext §6.2), when `nest` is set: the new row's indent matches no open level, or it leaves a later row's indent matching none. Either would be a structural error. The check is the parser's own indent walk (`indentLevels`), run over the row indents with the new one inserted.
+- **`setLevel`** without `nest`, at a level that isn't open there, or when moving the subtree would leave a row at an indent that matches no level.
+- **`moveRow`** when there is no body line above or below to swap with (a frontmatter line doesn't count), or when no indent for the moved row avoids a new indent error. Moving a parent below its first child is the common case: the child would be left indented on its own.
+- **`deleteRow`** when promoting the descendants would leave a row at an indent that matches no level, or when the row holds the last anchor in a file whose identity comes only from anchors (ext §3.1) while another row sets the implicit key by name: without identity that cell would name no column.
+- **`setLevel`, `moveRow` and `deleteRow`** when the new first line would read as a `---` delimiter in a file without frontmatter.
 
 ## 7. Highlighting
 

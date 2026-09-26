@@ -28,8 +28,12 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
  * a heading, a comment or a frontmatter delimiter.
  */
 export function formatValue(doc: RowsDocument, column: Column | 'lead', text: string): string {
+  return quote(doc, column === 'lead' || column.index === 0, text);
+}
+
+/** formatValue for a lead or any other cell, overflow cells included. */
+function quote(doc: RowsDocument, lead: boolean, text: string): string {
   const { sep, comment, markers, extensions } = doc.schema;
-  const lead = column === 'lead' || column.index === 0;
   const needsQuotes =
     text === '' ||
     text.includes(sep) ||
@@ -111,7 +115,7 @@ export function setLead(doc: RowsDocument, row: Row, text: string): EditResult {
 /**
  * Sets one cell (DESIGN §6). Refuses when the value can't be written: the key of a row whose ID is
  * in an anchor, set to null or to text that isn't an ID; or a column that can't be named, when it
- * isn't set and isn't the next positional slot.
+ * isn't set, isn't the next positional slot, and padding up to it would follow a named or overflow cell.
  */
 export function setCell(doc: RowsDocument, row: Row, column: Column, text: string | null): EditResult {
   if (column.index === 0) return setLead(doc, row, text ?? '');
@@ -131,9 +135,12 @@ export function setCell(doc: RowsDocument, row: Row, column: Column, text: strin
     if (cell.text === null) return { edits: [] };
     const cells = sourceCells(row);
     const later = cells.slice(cells.indexOf(cell) + 1);
-    // Removing a named cell must not turn later unnamed (overflow) cells positional.
-    if (later.length === 0 || (cell.name && later.every((c) => c.name))) return { edits: [removeCell(doc, row, cell)] };
-    return { edits: [{ from: cell.valueFrom, to: cell.valueTo, insert: '' }] };
+    // Removing a named cell must not turn a later overflow cell positional, or make a repeat of its column the value.
+    if (later.length === 0 || (cell.name && later.every((c) => c.name && c.column))) return { edits: [removeCell(doc, row, cell)] };
+    // An emptied named cell stays named only with no whitespace after its `=` (base §3).
+    let to = cell.valueTo;
+    if (cell.name) while (isWs(doc.text[to])) to++;
+    return { edits: [{ from: cell.valueFrom, to, insert: '' }] };
   }
 
   if (text === null) return { edits: [] };
@@ -142,7 +149,12 @@ export function setCell(doc: RowsDocument, row: Row, column: Column, text: strin
   const named = [...row.cells.slice(1), ...row.overflow].some((c) => c?.name);
   if (!column.implicit && column.index === positional + 1 && !named && row.overflow.length === 0) return { edits: appendCell(doc, row, value) };
   if (column.settable) return { edits: appendCell(doc, row, `${column.name}=${value}`) };
-  return { refused: `column ${column.name} can't be named and isn't the next positional slot` };
+  // The one case setCell pads: empty cells up to a column that can't be named.
+  if (!column.implicit && !named && row.overflow.length === 0) {
+    const pads = Array<string>(column.index - positional - 1).fill('');
+    return { edits: appendCell(doc, row, [...pads, value].join(` ${doc.schema.sep} `)) };
+  }
+  return { refused: `column ${column.name} can't be named, and padding up to it would follow a named cell` };
 }
 
 /** The value a bool column has for a row: its marker, its cell, or its default. */
@@ -246,4 +258,217 @@ export function insertRow(
   const end = doc.text.length;
   if (doc.text === '') return { edits: [{ from: 0, to: 0, insert: line }] };
   return { edits: [{ from: end, to: end, insert: doc.endsWithNewline ? line + '\n' : '\n' + line }] };
+}
+
+// ---------- levels (ext §6.2; plan spec §4b.6.4) ----------
+
+/** The parser's indent walk over row indents, with each row's depth in the indentation tree. */
+function indentTree(widths: number[]) {
+  const levels = indentLevels(widths);
+  const depth: number[] = [];
+  levels.forEach((l) => depth.push(l.parent === null ? 0 : depth[l.parent] + 1));
+  return { levels, depth };
+}
+
+const badCount = (widths: number[]) => indentLevels(widths).filter((l) => l.bad).length;
+
+/** The levels open before row `at`: the row above it and that row's ancestors, root first. */
+function openBefore(levels: { parent: number | null }[], at: number): number[] {
+  const open: number[] = [];
+  for (let r: number | null = at > 0 ? at - 1 : null; r !== null; r = levels[r].parent) open.unshift(r);
+  return open;
+}
+
+/** The file's usual step: the most common indent difference between a row and its parent, 4 when there is none. */
+function usualStep(widths: number[], levels: { parent: number | null; bad: boolean }[]): number {
+  const counts = new Map<number, number>();
+  levels.forEach((l, i) => {
+    if (l.parent !== null && !l.bad) counts.set(widths[i] - widths[l.parent], (counts.get(widths[i] - widths[l.parent]) ?? 0) + 1);
+  });
+  let [step, most] = [4, 0];
+  for (const [d, n] of counts) if (n > most || (n === most && d < step)) [step, most] = [d, n];
+  return step;
+}
+
+/**
+ * The indent for `level` at row position `at`: the indent its new siblings already use, or the
+ * parent's indent plus the usual step. With `lookahead`, the row now at `at` is one of those
+ * siblings when it is a child of the new parent. Null when the level isn't open there.
+ */
+function indentFor(widths: number[], at: number, level: number, lookahead: boolean): number | null {
+  const { levels } = indentTree(widths);
+  const open = openBefore(levels, at);
+  if (!Number.isInteger(level) || level < 0 || level > open.length) return null;
+  if (level === 0) return 0;
+  if (level < open.length) return widths[open[level]];
+  const parent = open[level - 1];
+  if (lookahead && at < widths.length && levels[at].parent === parent && !levels[at].bad) return widths[at];
+  return widths[parent] + usualStep(widths, levels);
+}
+
+/** A row that would become line 1 reading as `---` opens a frontmatter block that isn't there. */
+const opensFrontmatter = (doc: RowsDocument, firstLine: string) => doc.frontmatter === null && isDelimiterLine(firstLine);
+
+/** Edits giving each row its indent in `widths`: only rows whose indent changes are touched. */
+function indentEdits(rows: Row[], widths: number[]): TextEdit[] {
+  return rows.flatMap((r, k) => (widths[k] === r.indent.width ? [] : [{ from: r.indent.from, to: r.indent.to, insert: ' '.repeat(widths[k]) }]));
+}
+
+/**
+ * The indent a row inserted before a line (or at the end) would take at `level` (plan spec
+ * §4b.6.4). Null when the document has no nesting or that level isn't open there.
+ */
+export function levelIndent(doc: RowsDocument, at: { beforeLine: number } | 'end', level: number): number | null {
+  if (!doc.schema.nest) return null;
+  const before = at === 'end' ? doc.rows.length : doc.rows.filter((r) => r.line < at.beforeLine).length;
+  return indentFor(doc.rows.map((r) => r.indent.width), before, level, true);
+}
+
+/**
+ * Puts a row at a level of the indentation tree, taking its descendants with it (DESIGN §6). Indent
+ * makes it the last child of its previous sibling, outdent the next sibling of its parent. Refuses
+ * without nesting, at a level that isn't open there, or when a row would be left at an indent that
+ * fits no level.
+ */
+export function setLevel(doc: RowsDocument, row: Row, level: number): EditResult {
+  if (!doc.schema.nest) return { refused: 'the document has no nesting' };
+  const { rows } = doc;
+  const widths = rows.map((r) => r.indent.width);
+  const { depth } = indentTree(widths);
+  const i = rows.indexOf(row);
+  const indent = indentFor(widths, i, level, false);
+  if (indent === null) return { refused: `level ${level} isn't open here` };
+  let end = i + 1;
+  while (end < rows.length && depth[end] > depth[i]) end++;
+  const next = widths.map((w, k) => (k >= i && k < end ? w + indent - widths[i] : w));
+  if (badCount(next) > badCount(widths)) return { refused: `level ${level} here would leave a row at an indent that fits no level` };
+  if (row.line === 1 && opensFrontmatter(doc, ' '.repeat(indent) + doc.text.slice(row.indent.to, row.to))) {
+    return { refused: 'the row would read as a frontmatter delimiter' };
+  }
+  return { edits: indentEdits(rows, next) };
+}
+
+/**
+ * Swaps a row with the line above or below it (DESIGN §6). When that line is a row, the moved row's
+ * indent snaps to the valid level nearest its own at the new position. Refuses when there is no body
+ * line to swap with, or no indent leaves every row at a level.
+ */
+export function moveRow(doc: RowsDocument, row: Row, dir: 'up' | 'down'): EditResult {
+  const other = doc.lines[row.line - 1 + (dir === 'up' ? -1 : 1)];
+  if (!other || other.kind.startsWith('fm-')) return { refused: `there is no line ${dir === 'up' ? 'above' : 'below'} to swap with` };
+  const otherText = doc.text.slice(other.from, other.to);
+  let indent = row.indent.width;
+
+  if (other.row && doc.schema.nest) {
+    const { rows } = doc;
+    const widths = rows.map((r) => r.indent.width);
+    const was = indentTree(widths).depth[rows.indexOf(row)];
+    const order = rows.slice();
+    const [k, j] = [rows.indexOf(row), rows.indexOf(other.row)];
+    [order[k], order[j]] = [order[j], order[k]];
+    const swapped = order.map((r) => r.indent.width);
+    const candidates = new Set([indent]);
+    for (let level = 0; ; level++) {
+      const w = indentFor(swapped, j, level, false);
+      if (w === null) break;
+      candidates.add(w);
+    }
+    const scored = [...candidates].flatMap((w) => {
+      const next = swapped.map((x, m) => (m === j ? w : x));
+      if (badCount(next) > badCount(widths)) return [];
+      return [{ w, far: Math.abs(indentTree(next).depth[j] - was), shift: Math.abs(w - indent) }];
+    });
+    scored.sort((a, b) => a.far - b.far || a.shift - b.shift || a.w - b.w);
+    if (scored.length === 0) return { refused: 'moving it would leave a row at an indent that fits no level' };
+    indent = scored[0].w;
+  }
+
+  const indentTo = indent === row.indent.width ? row.from : row.indent.to;
+  const newIndent = indent === row.indent.width ? '' : ' '.repeat(indent);
+  const first = dir === 'up' ? newIndent + doc.text.slice(indentTo, row.to) : otherText;
+  if (Math.min(row.line, other.line) === 1 && opensFrontmatter(doc, first)) return { refused: 'the new first line would read as a frontmatter delimiter' };
+  // The row's own text stays in place, so positions in it map through the move.
+  if (dir === 'down') {
+    return { edits: [{ from: row.from, to: indentTo, insert: `${otherText}\n${newIndent}` }, { from: row.to, to: other.to, insert: '' }] };
+  }
+  return { edits: [{ from: other.from, to: indentTo, insert: newIndent }, { from: row.to, to: row.to, insert: `\n${otherText}` }] };
+}
+
+/**
+ * Deletes a row's line and promotes its descendants one level, so the rest of the tree keeps its
+ * shape (DESIGN §6). Refuses when that would leave a row at an indent that fits no level.
+ */
+export function deleteRow(doc: RowsDocument, row: Row): EditResult {
+  const next = doc.lines[row.line];
+  // The last line goes with the newline after it, if any, so a blank line above it stays a line.
+  const edits: TextEdit[] = [{ from: row.from, to: next ? next.from : doc.text.length, insert: '' }];
+  if (row.line === 1 && next && opensFrontmatter(doc, doc.text.slice(next.from, next.to))) {
+    return { refused: 'the new first line would read as a frontmatter delimiter' };
+  }
+  // Without its last anchor the file has no identity (ext §3.1), so a cell naming the implicit key would name no column.
+  const { key, keys } = doc.schema;
+  const lastAnchor = row.anchors.length > 0 && !('key' in keys) && doc.rows.every((r) => r === row || r.anchors.length === 0);
+  if (lastAnchor && key?.implicit && doc.rows.some((r) => r !== row && r.cells[key.index]?.name)) {
+    return { refused: `it has the last anchor, and other rows set ${key.name} by name` };
+  }
+  if (!doc.schema.nest) return { edits };
+
+  const { rows } = doc;
+  const widths = rows.map((r) => r.indent.width);
+  const { levels, depth } = indentTree(widths);
+  const i = rows.indexOf(row);
+  const promoted = widths.slice();
+  let shift = 0;
+  for (let k = i + 1; k < rows.length && depth[k] > depth[i]; k++) {
+    if (levels[k].parent === i) shift = widths[i] - widths[k]; // each child takes the row's indent, its subtree with it
+    promoted[k] += shift;
+  }
+  const [after, rest] = [promoted.filter((_, k) => k !== i), rows.filter((_, k) => k !== i)];
+  if (badCount(after) > badCount(widths)) return { refused: 'promoting its children would leave a row at an indent that fits no level' };
+  return { edits: [...edits, ...indentEdits(rest, after)] };
+}
+
+const RECOVERED = new Set(['unterminated-quote', 'text-after-quote', 'unknown-escape']);
+
+/**
+ * The `auto` repairs for a row (DESIGN §6): cells rewritten from their recovered text, a heading-like
+ * lead quoted, and an indent that fits no level snapped to the level the parser recovered. The rows
+ * after it at that level move with it, so the tree is unchanged. Idempotent.
+ */
+export function repairRow(doc: RowsDocument, row: Row): TextEdit[] {
+  const edits: TextEdit[] = [];
+  for (const cell of sourceCells(row)) {
+    const broken = row.errors.some((e) => RECOVERED.has(e.code) && e.from! >= cell.from && e.to! <= cell.to);
+    if (!broken || cell.text === null) continue;
+    edits.push({ from: cell.valueFrom, to: cell.valueTo, insert: quote(doc, cell === row.lead, cell.text) });
+  }
+  const lead = row.lead;
+  if (row.errors.some((e) => e.code === 'heading-line') && !edits.some((e) => e.from === lead.valueFrom) && lead.text !== null && !lead.quoted) {
+    const quoted = quote(doc, true, lead.text);
+    if (quoted !== lead.text) edits.push({ from: lead.valueFrom, to: lead.valueTo, insert: quoted });
+  }
+  if (row.errors.some((e) => e.code === 'bad-indent')) edits.push(...snapIndent(doc, row));
+  return edits;
+}
+
+/** The indent edits that put a bad-indent row, and the rows after it at its level, where the parser recovered them. */
+function snapIndent(doc: RowsDocument, row: Row): TextEdit[] {
+  const { rows } = doc;
+  const widths = rows.map((r) => r.indent.width);
+  const { levels } = indentTree(widths);
+  const i = rows.indexOf(row);
+  const parent = levels[i].parent;
+  let target = 0;
+  if (parent !== null) {
+    const open = openBefore(levels, i);
+    target = widths[open[open.indexOf(parent) + 1]];
+  }
+  const floor = parent === null ? 0 : widths[parent];
+  const next = widths.slice();
+  for (let k = i; k < rows.length && (k === i || widths[k] > floor); k++) next[k] += target - widths[i];
+  const after = indentLevels(next);
+  const kept = !after[i].bad && after.every((l, k) => l.parent === levels[k].parent) && badCount(next) < badCount(widths);
+  const firstLine = ' '.repeat(next[0]) + doc.text.slice(rows[0].indent.to, rows[0].to);
+  if (!kept || next.some((w) => w < 0) || (rows[0].line === 1 && opensFrontmatter(doc, firstLine))) return [];
+  return indentEdits(rows, next);
 }

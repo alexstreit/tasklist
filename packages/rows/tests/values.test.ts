@@ -9,7 +9,7 @@ describe('duration values (base §5)', () => {
     expect(duration(text)).not.toBeNull();
   });
 
-  it.each(['4 2d', '2d 4', '1d1d', '2dh', 'd 2', '4x', '4'])('%s is invalid', (text) => {
+  it.each(['4 2d', '2d 4', '1d1d', '2dh', 'd 2', '4x', '4', '"4h\\n"', '"+\\n4h"'])('%s is invalid', (text) => {
     expect(duration(text)).toBeNull();
   });
 

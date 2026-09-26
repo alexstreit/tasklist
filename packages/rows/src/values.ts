@@ -75,7 +75,7 @@ export function parseDuration(text: string, unit: DurationUnit | undefined): Val
     const sign = text[0] === '+' || text[0] === '-' ? text[0] : null;
     return { type: 'duration', sign, terms: { [unit]: Number(sign ? text.slice(1) : text) }, bare: true };
   }
-  const m = /^(?:([+-])[ \t]*)?(.*)$/.exec(text)!;
+  const m = /^(?:([+-])[ \t]*)?([\s\S]*)$/.exec(text)!;
   const sign = (m[1] || null) as '+' | '-' | null;
   const terms: Partial<Record<DurationUnit, number>> = {};
   const TERM = /^(\d+(?:\.\d+)?)[ \t]*([mhdw])/;

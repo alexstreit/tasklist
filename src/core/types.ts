@@ -10,10 +10,16 @@ export interface Span {
   to: number;
 }
 
-/** A labelled edit that resolves a diagnostic (spec §2.9). */
+/** How a fix is applied (spec §4b.6.1): with a grid edit to its line, on a click, or after a preview. */
+export type FixTier = 'auto' | 'click' | 'confirm';
+
+/** A labelled edit that resolves a diagnostic (spec §2.9, §4b.6.2). */
 export interface Fix {
   label: string;
+  tier: FixTier;
   edits: TextEdit[];
+  /** Required for `confirm`: the affected lines before (`- `) and after (`+ `). */
+  preview?: string;
 }
 
 export interface Diagnostic {

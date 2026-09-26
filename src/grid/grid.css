@@ -27,3 +27,19 @@
 /* Why an edit was not made, beside the cell (spec §4b.2). */
 .plan-sheet td:has(> .sheet-notice) { position: relative; }
 .plan-sheet .sheet-notice { position: absolute; left: 0; top: 100%; z-index: 2; white-space: normal; min-width: 16em; max-width: 28em; padding: 3px 6px; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--diag-error); border-radius: 3px; }
+/* The problems list (spec §4b.6.3). */
+.problems { border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+.problems > summary { padding: 4px 8px; cursor: pointer; color: var(--fg-muted); user-select: none; }
+.problems ol { list-style: none; margin: 0; padding: 0 8px 6px; max-height: 14em; overflow: auto; }
+.problems li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 2px 0; }
+.problems .problem { display: flex; gap: 8px; align-items: baseline; font: inherit; color: var(--fg); background: none; border: none; padding: 0; text-align: left; cursor: pointer; }
+.problems .problem:hover .message, .problems .problem:focus .message { text-decoration: underline; }
+.problems .severity { font-weight: 600; min-width: 4.5em; }
+.problems li.error .severity { color: var(--diag-error); }
+.problems li.warning .severity { color: var(--diag-warning); }
+.problems li.info .severity { color: var(--fg-muted); }
+.problems .where { color: var(--fg-muted); }
+.problems .fix { font: inherit; font-size: 12px; border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 0 8px; cursor: pointer; }
+.problems .fix-preview { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.problems .fix-preview pre { flex-basis: 100%; margin: 2px 0; padding: 4px 6px; font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--hover); border-radius: 3px; white-space: pre-wrap; }
+.problems .sheet-notice { flex-basis: 100%; font-size: 12px; color: var(--fg); border-left: 2px solid var(--diag-error); padding-left: 6px; }

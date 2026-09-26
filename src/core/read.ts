@@ -3,6 +3,7 @@
 
 import { durationToMinutes } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, Row, RowsDocument, RowsError } from 'rows';
+import { preview, rowFixes } from './fixes';
 import type { Column, Diagnostic, Field, Fix, ItemNode, Node, Tree } from './types';
 
 /** rows base and extension keys (spec §2.9); any other key that isn't `x-` gets an info. */
@@ -24,7 +25,7 @@ function conversionFix(column: RowsColumn): Fix[] | undefined {
     .filter(([key]) => !column.options.some((o) => o.key === key))
     .map(([key, value]) => `${key}=${value}`);
   if (missing.length === 0) return undefined;
-  return [{ label: `Add ${missing.join(' ')}`, edits: [{ from: column.to, to: column.to, insert: ` ${missing.join(' ')}` }] }];
+  return [{ label: `Add ${missing.join(' ')}`, tier: 'click', edits: [{ from: column.to, to: column.to, insert: ` ${missing.join(' ')}` }] }];
 }
 
 export function readPlan(doc: RowsDocument): Tree {
@@ -103,13 +104,15 @@ export function readPlan(doc: RowsDocument): Tree {
     const content = text.slice(row.indent.to, row.to);
     if (content.startsWith('<!--')) {
       const inner = content.slice(4).replace(/-->\s*$/, '').trim();
+      const edits = [{ from: row.indent.to, to: row.to, insert: inner === '' ? schema.comment : `${schema.comment} ${inner}` }];
       diagnostics.push({
         line: row.line,
         span: { from: row.indent.to, to: row.to },
         severity: 'info',
         code: 'html-comment',
         message: `HTML comments are not comments here; use ${schema.comment}`,
-        fixes: [{ label: `Change to a ${schema.comment} comment`, edits: [{ from: row.indent.to, to: row.to, insert: inner === '' ? schema.comment : `${schema.comment} ${inner}` }] }],
+        // The row leaves the grid, so it is confirmed first (spec §4b.6.6).
+        fixes: [{ label: `Change to a ${schema.comment} comment`, tier: 'confirm', edits, preview: preview(text, edits) }],
       });
     }
 
@@ -127,6 +130,9 @@ export function readPlan(doc: RowsDocument): Tree {
       outlineNumber: '',
     };
   };
+
+  // The tree and title fixes (spec §4b.6.6), on the rows errors they resolve.
+  for (const row of doc.rows) rowFixes(doc, row, (e) => byError.get(e)!);
 
   const items = new Map<Row, ItemNode>();
   const nodes: Node[] = doc.lines.map((line): Node => {

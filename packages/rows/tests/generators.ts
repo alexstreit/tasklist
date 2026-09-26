@@ -69,11 +69,30 @@ export function generateNested(random: () => number): string {
   return lines.join('\n') + '\n';
 }
 
-/** The fixed set every property test runs over: 3,000 general files and 1,000 nested ones. */
+/** Nested files with the errors a grid must repair: bad indents, overflow, and quoting and heading errors. */
+export function generateBroken(random: () => number): string {
+  const pick = <T,>(xs: T[]) => xs[Math.floor(random() * xs.length)];
+  const lines = ['---', 'nest: parent', 'markers: done=~', pick(['columns: est:duration unit=h | owner | notes', 'columns: est | my.notes', 'columns: a | a | b']), '---'];
+  const count = 1 + Math.floor(random() * 9);
+  for (let i = 0; i < count; i++) {
+    if (random() < 0.15) lines.push(pick(['', '// c', '    // c']));
+    let line = pick(['', '', '', '  ', '    ', '    ', '      ', '        ', '        ', '\t']);
+    line += pick(['', '', '~', '~~', '# ', '#', '"', '"# ', '| ']) + `R${i}` + pick(['', '', '', '"', ' {#a}', '"x {#b}', '\\q"']);
+    const cells = Math.floor(random() * 5);
+    for (let j = 0; j < cells; j++) {
+      line += pick([' | 2h', ' | "x', ' | "a"b', ' | "a\\qb"', ' | bob', ' | owner=al', ' | ratio=2', ' | est=1h', ' | x', ' | "p | q"', ' |', ' | parent=#a', ' | a=1']);
+    }
+    lines.push(line);
+  }
+  return lines.join('\n') + (random() < 0.8 ? '\n' : '');
+}
+
+/** The fixed set every property test runs over: 3,000 general files, 1,000 nested ones and 1,000 broken ones. */
 export function generatedFiles(): { text: string; options: ParseOptions }[] {
   const random = mulberry32(17);
   return [
     ...Array.from({ length: 3000 }, () => ({ text: generate(random), options: PROFILES })),
     ...Array.from({ length: 1000 }, () => ({ text: generateNested(random), options: {} as ParseOptions })),
+    ...Array.from({ length: 1000 }, () => ({ text: generateBroken(random), options: {} as ParseOptions })),
   ];
 }

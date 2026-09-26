@@ -3,11 +3,11 @@
 
 import type { EditResult } from 'rows';
 import { formatDuration } from '../core';
-import type { Cell, Column, Diagnostic, Model, ModelNode, Node, Span } from '../core';
+import type { Cell, Column, Diagnostic, Fix, Model, ModelNode, Node, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
-import { canMarkDone, insertItem, setDone, setField, setLine, setTitle } from './edits';
+import { canMarkDone, deleteItem, insertIndent, insertItem, moveItem, setDone, setField, setLine, setTitle, shiftItem, withRepairs } from './edits';
 import './grid.css';
 
 /** Cell columns: the WBS cell (which selects the row), the done checkbox, the title, then the declared columns. */
@@ -71,9 +71,15 @@ const within = (outer: Span, inner: Span): boolean => inner.from >= outer.from &
 export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHooks): GridEditor {
   const bar = document.createElement('div');
   bar.className = 'sheet-toolbar';
+  // The problems list (spec §4b.6.3): its count shows even when it is collapsed.
+  const problems = document.createElement('details');
+  problems.className = 'problems';
+  const problemCount = document.createElement('summary');
+  const problemList = document.createElement('ol');
+  problems.append(problemCount, problemList);
   const table = document.createElement('table');
   table.className = 'plan-sheet';
-  parent.replaceChildren(bar, table);
+  parent.replaceChildren(bar, problems, table);
 
   let model: Model | null = null;
   let rows: Row[] = [];
@@ -260,7 +266,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     // Done through an ancestor: shown, but only the ancestor's marker can clear it.
     box.disabled = !canMarkDone(model!) || (node.done && !node.source.done);
     box.addEventListener('change', () => {
-      if (!write(check, (current) => setDone(current, node, box.checked))) box.checked = !box.checked;
+      if (!write(check, (current) => withRepairs(current, setDone(current, node, box.checked), [node]))) box.checked = !box.checked;
     });
     check.append(box);
 
@@ -433,7 +439,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (row.kind === 'line') return apply(setLine(buffer.text(), row.span, value));
     const { node } = row;
     write(cellFor(row.line, column), (current) =>
-      column === TITLE ? setTitle(current, node, value) : setField(current, node, column - DECLARED, value),
+      withRepairs(current, column === TITLE ? setTitle(current, node, value) : setField(current, node, column - DECLARED, value), [node]),
     );
   }
 
@@ -480,10 +486,12 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     });
   }
 
-  // Structural operations. Spec §4b.4; the edits themselves are src/editing's.
+  // Structural operations. Spec §4b.4. On item rows they work in levels
+  // (§4b.6.4); comment and blank rows have none, so theirs are src/editing's.
 
   function startDraft(row: Row): void {
-    draft = { anchor: row.span.from, indent: row.indent };
+    const indent = row.kind === 'item' && model ? insertIndent(model, row.node, row.depth) : row.indent;
+    draft = { anchor: row.span.from, indent };
     draftInput.value = '';
     build();
     draftInput.focus();
@@ -491,15 +499,22 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   }
 
   /**
-   * Write a new item and put the place on its title. The anchor is in
-   * post-edit coordinates: the last character the insert wrote, which is on
-   * the new line whether rows put the line break before it or after it.
+   * Write a new item, with the repairs of the row it goes above, and put the
+   * place on its title. The anchor is in post-edit coordinates: the last
+   * character the insert wrote, which is on the new line whether rows put the
+   * line break before it or after it. The repairs all come after it.
    */
-  function insert(td: HTMLElement | null, where: { beforeLine: number } | 'end', indent: number, title: string): boolean {
-    const edits = write(td, (current) => insertItem(current, where, indent, title));
+  function insert(td: HTMLElement | null, where: { beforeLine: number } | 'end', indent: number, title: string, above?: Row): boolean {
+    let line: TextEdit | undefined;
+    const edits = write(td, (current) => {
+      const result = insertItem(current, where, indent, title);
+      if ('refused' in result || result.edits.length === 0) return result;
+      line = result.edits[0];
+      return withRepairs(current, result, above?.kind === 'item' ? [above.node] : []);
+    });
     if (!edits) return false;
-    if (edits.length === 0) return true;
-    at = { anchor: edits[0].from + edits[0].insert.length - 1, column: TITLE };
+    if (!line) return true;
+    at = { anchor: line.from + line.insert.length - 1, column: TITLE };
     held = true;
     restore();
     return true;
@@ -518,7 +533,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     }
     // A refused insert keeps the draft and what was typed, with the reason beside it.
     draft = null;
-    if (!insert(draftInput.parentElement, { beforeLine: lineAt(buffer.text(), pending.anchor) }, pending.indent, title)) {
+    const line = lineAt(buffer.text(), pending.anchor);
+    if (!insert(draftInput.parentElement, { beforeLine: line }, pending.indent, title, byLine.get(line))) {
       draft = pending;
       return;
     }
@@ -557,20 +573,32 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    * The toolbar (§4b.5). A button is enabled only when its operation would
    * change something, which for most of them is "the edit is not empty".
    */
+  /** A level-based operation on an item row; a refusal is shown by the current cell. */
+  function structure(row: Row & { kind: 'item' }, make: (current: Model) => EditResult): void {
+    write(cellFor(row.line, at?.column ?? WBS), make);
+  }
+
   const actions: { id: string; label: string; run(row: Row): void; enabled(row: Row): boolean }[] = [
     { id: 'insert', label: 'Insert row', run: startDraft, enabled: () => true },
     {
       id: 'delete',
       label: 'Delete row',
-      run: (row) => apply(deleteLines(buffer.text(), range(row))),
+      run: (row) => (row.kind === 'item' ? structure(row, (m) => deleteItem(m, row.node)) : apply(deleteLines(buffer.text(), range(row)))),
       enabled: () => true,
     },
     {
       id: 'indent',
       label: 'Indent',
-      run: (row) => apply(indent(buffer.text(), range(row))),
-      // Only a row that has a row above it at the same or greater indent can move deeper.
+      run: (row) =>
+        row.kind === 'item'
+          ? structure(row, (m) => withRepairs(m, shiftItem(m, row.node, row.depth, 1), [row.node], false))
+          : apply(indent(buffer.text(), range(row))),
+      // An item row needs a previous sibling to become its child: an item row above at the same or a greater depth.
       enabled: (row) => {
+        if (row.kind === 'item') {
+          const previous = rows.slice(0, rowIndex(row.line)).reverse().find((r) => r.kind === 'item');
+          return previous?.kind === 'item' && previous.depth >= row.depth;
+        }
         const previous = rows[rowIndex(row.line) - 1];
         return previous !== undefined && previous.indent >= row.indent;
       },
@@ -578,27 +606,33 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     {
       id: 'outdent',
       label: 'Outdent',
-      run: (row) => apply(outdent(buffer.text(), range(row))),
+      run: (row) =>
+        row.kind === 'item'
+          ? structure(row, (m) => withRepairs(m, shiftItem(m, row.node, row.depth, -1), [row.node], false))
+          : apply(outdent(buffer.text(), range(row))),
       // The same conditions the operations use, without re-reading the document
-      // on every focus move: there is indentation to remove, a line above, a line below.
-      enabled: (row) => row.indent > 0,
+      // on every focus move: a level or indentation to remove, a line above, a line below.
+      enabled: (row) => (row.kind === 'item' ? row.depth > 0 : row.indent > 0),
     },
     {
       id: 'up',
       label: 'Move up',
-      run: (row) => apply(moveUp(buffer.text(), range(row))),
-      enabled: (row) => row.line > 1,
+      run: (row) =>
+        row.kind === 'item' ? structure(row, (m) => withRepairs(m, moveItem(m, row.node, 'up'), [row.node], false)) : apply(moveUp(buffer.text(), range(row))),
+      // Never into the front matter.
+      enabled: (row) => row.line > 1 && model?.lines[row.line - 2]?.kind !== 'front-matter',
     },
     {
       id: 'down',
       label: 'Move down',
-      run: (row) => apply(moveDown(buffer.text(), range(row))),
+      run: (row) =>
+        row.kind === 'item' ? structure(row, (m) => withRepairs(m, moveItem(m, row.node, 'down'), [row.node], false)) : apply(moveDown(buffer.text(), range(row))),
       enabled: (row) => row.line < (model?.lines.length ?? 0),
     },
     {
       id: 'done',
       label: 'Toggle done',
-      run: (row) => row.kind === 'item' && write(cellFor(row.line, DONE), (current) => setDone(current, row.node, !row.node.done)),
+      run: (row) => row.kind === 'item' && write(cellFor(row.line, DONE), (current) => withRepairs(current, setDone(current, row.node, !row.node.done), [row.node])),
       // A row done through an ancestor has no marker of its own to clear.
       enabled: (row) => row.kind === 'item' && canMarkDone(model!) && (!row.node.done || row.node.source.done),
     },
@@ -800,6 +834,59 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     }
   }
 
+  /** Every diagnostic in document order, each with its row and its fixes (spec §4b.6.3). */
+  function renderProblems(): void {
+    const all = [...(model?.diagnostics ?? [])].sort((a, b) => a.line - b.line || (a.span?.from ?? -1) - (b.span?.from ?? -1));
+    problemCount.textContent = `Problems (${all.length})`;
+    problemList.replaceChildren(...all.map(problem));
+  }
+
+  function part(className: string, text: string): HTMLSpanElement {
+    const span = document.createElement('span');
+    span.className = className;
+    span.textContent = text;
+    return span;
+  }
+
+  function button(className: string, label: string, onClick: () => void): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = className;
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function problem(diagnostic: Diagnostic): HTMLLIElement {
+    const li = document.createElement('li');
+    li.className = diagnostic.severity;
+    li.dataset.line = String(diagnostic.line);
+    const row = byLine.get(diagnostic.line);
+    const where = row?.kind === 'item' && row.node.title !== '' ? row.node.title : `Line ${diagnostic.line}`;
+    // Focuses the row, or the cell the diagnostic's span falls in.
+    const go = button('problem', '', () => row && place(row.line, diagnostic.span ? columnFor(row, diagnostic) : WBS));
+    go.append(part('severity', diagnostic.severity), part('where', where), part('message', diagnostic.message));
+    li.append(go, ...(diagnostic.fixes ?? []).map((fix) => button('fix', fix.label, () => runFix(li, fix))));
+    return li;
+  }
+
+  /** Apply a fix; a confirm fix shows its exact change first, and cancelling writes nothing (spec §4b.6.1). */
+  function runFix(li: HTMLLIElement, fix: Fix): void {
+    if (fix.tier !== 'confirm') {
+      write(li, () => ({ edits: fix.edits }));
+      return;
+    }
+    li.querySelector('.fix-preview')?.remove();
+    const box = document.createElement('div');
+    box.className = 'fix-preview';
+    const pre = document.createElement('pre');
+    pre.textContent = fix.preview ?? '';
+    const ok = button('fix', 'Apply', () => write(li, () => ({ edits: fix.edits })));
+    box.append(pre, ok, button('fix', 'Cancel', () => box.remove()));
+    li.append(box);
+    ok.focus();
+  }
+
   function columnFor(row: Row, diagnostic: Diagnostic): number {
     if (!diagnostic.span) return WBS;
     if (row.kind === 'line') return TITLE;
@@ -813,6 +900,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       model = next;
       readModel(next);
       build();
+      renderProblems();
       restore();
       updateToolbar();
     },

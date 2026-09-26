@@ -108,7 +108,7 @@ else:             doneSum = sum(doneSum of children)
 
 ### 2.9 Diagnostics
 
-Every diagnostic carries a line, a severity, a code, a message, a span where one exists, and optional **fixes**, each a label plus `TextEdit[]`. A rows error keeps its rows code and message; the plan's own diagnostics have the codes below.
+Every diagnostic carries a line, a severity, a code, a message, a span where one exists, and optional **fixes**, each a label, a tier and `TextEdit[]` (§4b.6.2). A rows error keeps its rows code and message; the plan's own diagnostics have the codes below.
 
 | Source                                                                                      | Severity | Code                                        |
 | ------------------------------------------------------------------------------------------- | -------- | ------------------------------------------- |
@@ -293,7 +293,7 @@ function indent(text: string, r: LineRange): TextEdit[];
 // likewise: outdent, moveUp, moveDown, deleteLines, toggleComment
 ```
 
-Both the text editor keymap and the grid call them; neither reimplements them. The text editor derives the range from its selection; the grid from its selected row.
+The text editor keymap calls them, deriving the range from its selection. The grid's structure operations on item rows work in levels through the rows edit API instead (§4b.6.4); on comment and blank rows, which have no level, the grid calls these.
 
 ### 3.9 The rows library
 
@@ -303,7 +303,8 @@ What the plan tool uses:
 
 - `parseRows` for reading (§3.1);
 - `tokenizeLine` for highlighting (§4.1);
-- `setLead`, `setCell`, `setMarker` and `insertRow` for every cell-level edit from the grid (§4b.2).
+- `setLead`, `setCell`, `setMarker` and `insertRow` for every cell-level edit from the grid (§4b.2);
+- `setLevel`, `insertRow`, `moveRow`, `deleteRow` and `repairRow` for the grid's structure operations and `auto` repairs (§4b.6).
 
 The line operations in `src/editing/` stay in the app. They work on whole lines and don't depend on the format, except `toggleComment`, which takes the comment marker from the document.
 
@@ -355,7 +356,7 @@ Every cell edit goes through the rows edit API (§3.9). The grid never builds ro
 - **Done** checkbox calls `setMarker(done)`. A child of a done parent shows a checked, disabled checkbox.
 - **Summable cells** display the formatted `effective` (empty when `hasValue` is false; muted when `mode` is `derived`). Editing shows the **raw cell text** from the file, spreadsheet-formula style. Committing a non-empty value on a parent creates an override; committing an empty value on a parent restores derived. An additive value (`+…`) is shown with a marker and is read-only.
 - **Text cells** display and edit the decoded text. A `|` or a leading `"` typed into a cell is quoted automatically.
-- Writing a column that the row doesn't set yet follows `setCell`'s rules: append it positionally if it is the next slot, otherwise write it as a named cell (`notes=…`). The grid never pads with empty cells. Clearing a cell removes it, or empties it if later cells depend on its position.
+- Writing a column that the row doesn't set yet follows `setCell`'s rules: append it positionally if it is the next slot, otherwise write it as a named cell (`notes=…`). The grid pads with empty cells only in `setCell`'s one exception, a column that can't be named. Clearing a cell removes it, or empties it if later cells depend on its position.
 - A cell with a diagnostic has a coloured outline (error, warning or info) and shows the message on hover. A diagnostic whose span falls in a cell marks that cell. One with no span, or on overflow cells, marks the row's WBS cell. Anything inside the frontmatter marks its collapsed row.
 - Implicit columns (`parent`, and `id` when identity is on) are not shown in v1.
 - When rows refuses an edit, the grid leaves the cell as it was and shows the reason beside it briefly; it never fails silently. An inserted row that rows refuses stays a draft with its text. An edit made while the model still trails the buffer (the shell's debounce) is refused the same way, since its offsets would be for the older text.
@@ -371,19 +372,19 @@ Every cell edit goes through the rows edit API (§3.9). The grid never builds ro
 
 MS Project conventions; where Project has no default, the text editor's binding is used.
 
-| Key                     | Focused cell                                                                              | Editing cell                                   | Selected row                                                      |
-| ----------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------- |
-| Enter                   | move down one row (from the last item row: to the new-task row)                           | commit, then move down                         | —                                                                 |
-| Tab / Shift+Tab         | next / previous cell (wraps across rows)                                                  | commit, then next / previous cell              | —                                                                 |
-| F2 or any printable key | start editing (printable key replaces the content; F2 keeps it, caret at end)             | —                                              | —                                                                 |
-| Escape                  | —                                                                                         | cancel edit, restore display, buffer untouched | clear selection                                                   |
-| Delete                  | clear cell (commit empty)                                                                 | —                                              | delete the row's line; children re-attach upward, as in text mode |
-| Insert                  | insert a blank item row **above** at the current row's indent and start editing its title | —                                              | same                                                              |
-| Alt+Shift+Right / Left  | indent / outdent the row                                                                  | —                                              | same                                                              |
-| Alt+Up / Alt+Down       | move the row's line up / down                                                             | —                                              | same                                                              |
-| Space                   | toggle done when the focused cell is the checkbox                                         | —                                              | —                                                                 |
-| Ctrl+Z / Ctrl+Y         | buffer undo / redo                                                                        | Ctrl+Z cancels the edit                        | same as focused                                                   |
-| Arrow keys              | move focus                                                                                | —                                              | move selection                                                    |
+| Key                     | Focused cell                                                                                       | Editing cell                                   | Selected row                                                |
+| ----------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
+| Enter                   | move down one row (from the last item row: to the new-task row)                                    | commit, then move down                         | —                                                           |
+| Tab / Shift+Tab         | next / previous cell (wraps across rows)                                                           | commit, then next / previous cell              | —                                                           |
+| F2 or any printable key | start editing (printable key replaces the content; F2 keeps it, caret at end)                      | —                                              | —                                                           |
+| Escape                  | —                                                                                                  | cancel edit, restore display, buffer untouched | clear selection                                             |
+| Delete                  | clear cell (commit empty)                                                                          | —                                              | delete the row; its descendants move up one level (§4b.6.4) |
+| Insert                  | insert a blank item row **above** at the current row's level (§4b.6.4) and start editing its title | —                                              | same                                                        |
+| Alt+Shift+Right / Left  | indent / outdent the row                                                                           | —                                              | same                                                        |
+| Alt+Up / Alt+Down       | move the row's line up / down                                                                      | —                                              | same                                                        |
+| Space                   | toggle done when the focused cell is the checkbox                                                  | —                                              | —                                                           |
+| Ctrl+Z / Ctrl+Y         | buffer undo / redo                                                                                 | Ctrl+Z cancels the edit                        | same as focused                                             |
+| Arrow keys              | move focus                                                                                         | —                                              | move selection                                              |
 
 Insert-above is deliberate: inserting directly **below** a parent at the parent's indent would capture the parent's children; inserting above never does.
 
@@ -395,7 +396,116 @@ An inserted row is a **draft**: it appears in the grid at the right position and
 
 ### 4b.5 Toolbar
 
-Buttons for Insert row, Delete row, Indent, Outdent, Move up, Move down, Toggle done. Each mirrors a key above and is enabled only when it applies: indent only when the row above is at the same or a greater indent (a row directly below its parent is already as deep as it can usefully go), outdent only on an indented row, move up and move down only when there is a line to swap with, toggle done only on a row whose `~` is its own. All of them are disabled when nothing is selected. The toolbar acts on the current row, whether it is selected by its WBS cell or holds the focused cell. The editor toggle (Text / Grid) is in the app toolbar.
+Buttons for Insert row, Delete row, Indent, Outdent, Move up, Move down, Toggle done. Each mirrors a key above and is enabled only when it applies: indent only when the item row above is at the same or a greater level (a row directly below its parent is already as deep as it can usefully go; for a comment or blank row, the row above at the same or a greater indent), outdent only on a row below the top level (or an indented comment or blank row), move up and move down only when there is a line to swap with (never a front matter line), toggle done only on a row whose `~` is its own. All of them are disabled when nothing is selected. The toolbar acts on the current row, whether it is selected by its WBS cell or holds the focused cell. The editor toggle (Text / Grid) is in the app toolbar.
+
+### 4b.6 Errors and repair
+
+A grid user must never be stuck. Every error is visible in the grid. Every error that can be fixed without judgement is fixed as part of the user's own edits. Every other error offers a fix the user can apply without switching to the text editor.
+
+#### 4b.6.1 Rules
+
+- **Nothing is repaired on read.** Opening a file, or receiving another editor's change, never writes to the buffer. Only a user's own action writes. This protects text users mid-edit, and stops clients from correcting each other (thrashing).
+- **Every fix is deterministic and idempotent.** The same text gives the same edits on every client, and applying a fix twice changes nothing the second time.
+- **Every fix has a tier:**
+
+| Tier      | Applied                                               | Allowed only when                                                                               |
+| --------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `auto`    | As part of a grid edit that already touches that line | It keeps every value and changes nothing else in the document.                                  |
+| `click`   | When the user clicks it. No dialog; undoable.         | It keeps every value, or it only adds to the settings.                                          |
+| `confirm` | After a preview of the exact change and a warning     | It deletes or moves data, changes the tree, changes what other rows mean, or rewrites settings. |
+
+- A grid edit and its `auto` fixes are one transaction, so they undo in one step. A repair that collides with the edit is left out, since the edit is what the user asked for: one that overlaps or touches the edit's text in a cell, and a row's indent repairs, which go together, when they overlap it. Structure operations set levels themselves and take only cell repairs.
+- `auto` fixes also appear in the problems list as one-click fixes, for rows the user hasn't touched.
+
+#### 4b.6.2 Fix model
+
+Each entry in `Diagnostic.fixes` is:
+
+```ts
+interface Fix {
+  label: string; // "Rejoin into notes"
+  tier: "auto" | "click" | "confirm";
+  edits: TextEdit[];
+  preview?: string; // required for 'confirm': the affected lines before and after
+}
+```
+
+The text editor offers every fix as a lint action, whatever its tier; `confirm` fixes show their preview first.
+
+#### 4b.6.3 Problems list
+
+A panel in the grid view listing every diagnostic in document order, with its severity, message, row title (or line number), and its fixes as buttons. Clicking an entry focuses the row, or the cell when there is a span. The panel shows a count, even when collapsed. Diagnostics the grid can't show inline (hidden columns, settings, identity) appear only here.
+
+#### 4b.6.4 Structure operations work in levels
+
+Grid indent, outdent, insert, move and delete work on the **level** the parser assigned, never on raw spaces. They call the rows edit API (`setLevel`, `insertRow`, `moveRow`, `deleteRow`; DESIGN §6), which follows the no-new-errors invariant:
+
+- **Indent** makes the row the last child of its previous sibling. **Outdent** makes it the next sibling of its parent. The indent written is the one its new siblings already use, or the parent's indent plus the file's usual step (the most common indent difference in the file, default 4). The row's descendants move with it and stay its descendants, as in MS Project; the rows after them keep their indent, so outdenting a row makes its later siblings its children.
+- **Insert above** uses the target row's level, snapped to a valid indent.
+- **Move up / down** swaps the row with its neighbouring line and snaps its indent to the nearest valid level at the new position. It moves the row alone. When no indent for it leaves every row at a level, it is refused: moving a parent below its first child would leave that child indented on its own.
+- **Delete** removes the row and promotes its descendants by one level, so the rest of the tree keeps its shape.
+- Any structure operation on a row whose indent fits no level first rewrites it to the level recovered by the parser (`auto`).
+
+Comment and blank rows have no level, so the grid indents, moves and deletes them as raw lines (§3.8).
+
+Text-editor keys stay raw: Tab adds 4 spaces, whatever the result.
+
+#### 4b.6.5 Typed cell editors
+
+The grid edits each column with an editor for its type:
+
+- **duration:** free text, normalised when the user commits. `h`, `hr`, `hrs`, `hour` and `hours` become `h`; likewise `m`/`min`/`mins`/`minute(s)`, `d`/`day(s)`, `w`/`wk(s)`/`week(s)`. Case is ignored, so `4 Hours` and `1.5 days` become `4h` and `1.5d`. A bare number is kept as written when the column has `unit=`. Input that still isn't valid is written as typed, and shows its warning.
+- **date:** a date picker, plus typed `YYYY-MM-DD`.
+- **bool:** a checkbox.
+- **enum:** a dropdown of the declared values.
+- **number, text:** plain input.
+
+Normalisation applies only to what the user types, never to existing cells.
+
+#### 4b.6.6 Cases
+
+**Tree**
+
+| Case                                                   | Grid shows    | Fix                                                                                    | Tier    |
+| ------------------------------------------------------ | ------------- | -------------------------------------------------------------------------------------- | ------- |
+| Indent that fits no level                              | Red row       | Rewrite the indent to the recovered level. Structure ops also do this first (§4b.6.4). | `auto`  |
+| First row indented                                     | Red row       | Indent 0                                                                               | `auto`  |
+| `parent=` disagrees with indentation, or forms a cycle | Problems list | "Use indentation": remove the `parent` cell                                            | `click` |
+
+**Cells**
+
+| Case                                                                 | Grid shows                                     | Fix                                                                                                                                                                                    | Tier               |
+| -------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| Unterminated quote, text after a closing quote, unknown escape       | Red cell showing the recovered text            | Rewrite the cell from its recovered text, correctly quoted                                                                                                                             | `auto`             |
+| Overflow: more cells than columns, or unnamed cells after named ones | Badge on the WBS cell listing the extra values | "Rejoin into NOTES", where NOTES is the last declared column if it is `text`: its value becomes the original text from its cell to the end of the line, quoted. "Delete extra values". | `click`, `confirm` |
+| Cell named after an undeclared column (`ratio=2`)                    | As overflow                                    | As overflow                                                                                                                                                                            | `click`, `confirm` |
+| Column set twice in a row                                            | Badge showing both values                      | "Keep this value", for each                                                                                                                                                            | `confirm`          |
+| Invalid value (`4 hours`, bad date, unknown enum value)              | Cell warning                                   | Edit the cell; the typed editors prevent most of these (§4b.6.5)                                                                                                                       | —                  |
+
+**Titles**
+
+| Case                                     | Grid shows             | Fix                                          | Tier      |
+| ---------------------------------------- | ---------------------- | -------------------------------------------- | --------- |
+| Row begins with the delimiter (no title) | Empty red title        | Typing a title fixes it                      | —         |
+| Title reads as a heading (`# Foo`)       | Red row titled `# Foo` | Quote the title                              | `auto`    |
+| Repeated marker (`~~x`)                  | Done row titled `~x`   | "Remove extra marker"                        | `click`   |
+| Legacy `<!-- … -->` line                 | Item row               | "Make it a comment"; the row leaves the grid | `confirm` |
+
+**Settings.** Shown as a banner above the grid as well as in the problems list, because they affect every row.
+
+| Case                                                                                      | Fix                                                                                    | Tier      |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------- |
+| Unclosed `---`                                                                            | "Close settings": insert `---` after the last line that parses as a `key: value` entry | `confirm` |
+| Duration column without `hpd`, `dpw` or `unit`                                            | "Add unit=h hpd=8 dpw=5"                                                               | `click`   |
+| Duplicate or invalid column name                                                          | "Rename column…": the user types a name; only the declaration changes                  | `confirm` |
+| Malformed type, invalid option, bad `sep`/`comment`, unsupported `format`, profile errors | "Remove this setting" or "Remove this option"                                          | `confirm` |
+
+**Identity.** IDs are hidden in the grid, but concurrent edits and copy-paste create these.
+
+| Case                                        | Fix                                                                                                                                  | Tier      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| Duplicate ID, or IDs differing only by case | "Rename the later one": mint a new ID. The preview warns when anything references the ID, since it's ambiguous which row they meant. | `confirm` |
+| Reference to a missing ID                   | Shown only; the problems list focuses the row                                                                                        | —         |
 
 ## 5. Preview
 

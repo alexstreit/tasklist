@@ -266,11 +266,11 @@ describe('rows and structure', () => {
     expect(host.querySelector('tr.draft')).toBeNull();
   });
 
-  it('deletes a row and re-attaches its children to the previous item', () => {
+  it('deletes a row and promotes its children one level, so the rest of the tree keeps its shape', () => {
     open('Auth\n    Login | 4h\n        Deep | 1h\nAdmin\n');
     select(2);
     button('delete').click();
-    expect(buffer.text()).toBe('Auth\n        Deep | 1h\nAdmin\n');
+    expect(buffer.text()).toBe('Auth\n    Deep | 1h\nAdmin\n');
     expect(outline()).toEqual(['1', '1.1', '2']);
     // The selection lands on the row that took the deleted line.
     expect(row(2)!.cells[TITLE + 1].textContent).toBe('Deep');
@@ -300,16 +300,25 @@ describe('rows and structure', () => {
     expect(button('indent').disabled).toBe(true);
   });
 
-  it('moves a row with children by itself, and the selection goes with it', () => {
-    open('Auth\n    Login | 4h\nAdmin\n');
+  it('moves a row by itself, and the selection goes with it', () => {
+    open('Auth\n    Login | 4h\n    Reset\nAdmin\n');
+    select(3);
+    button('up').click();
+    expect(buffer.text()).toBe('Auth\n    Reset\n    Login | 4h\nAdmin\n');
+    expect(row(2)!.cells[TITLE + 1].textContent).toBe('Reset');
+    expect(row(2)!.classList.contains('selected')).toBe(true);
+    button('down').click();
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\n    Reset\nAdmin\n');
+    expect(row(3)!.classList.contains('selected')).toBe(true);
+  });
+
+  it('refuses to move a parent below its first child, which would leave the child at no level', () => {
+    const text = 'Auth\n    Login | 4h\nAdmin\n';
+    open(text);
     select(1);
     button('down').click();
-    expect(buffer.text()).toBe('    Login | 4h\nAuth\nAdmin\n');
-    expect(row(2)!.cells[TITLE + 1].textContent).toBe('Auth');
-    expect(row(2)!.classList.contains('selected')).toBe(true);
-    button('up').click();
-    expect(buffer.text()).toBe('Auth\n    Login | 4h\nAdmin\n');
-    expect(row(1)!.classList.contains('selected')).toBe(true);
+    expect(buffer.text()).toBe(text);
+    expect(cell(1, WBS).querySelector('.sheet-notice')!.textContent).toBe('Not changed: moving it would leave a row at an indent that fits no level');
   });
 
   it('disables move up on the first line and move down on the last', () => {
@@ -494,7 +503,7 @@ describe('keys', () => {
     expect(buffer.text()).toBe('Auth\n    Login | 4h\nAdmin | 1d\n');
     select(1);
     key('Delete');
-    expect(buffer.text()).toBe('    Login | 4h\nAdmin | 1d\n');
+    expect(buffer.text()).toBe('Login | 4h\nAdmin | 1d\n');
   });
 
   it('Insert opens a draft above the row, from a cell or a selected row', () => {
@@ -765,17 +774,22 @@ describe('named and quoted cells, markers and anchors', () => {
     expect(lineOf(buffer.text(), 4)).toBe('~Auth {#auth}                | 2d');
   });
 
-  it('shows why rows refused a cell edit, and leaves the cell and the buffer as they were', () => {
-    const text = '---\nprofile: plan\ncolumns: est:duration unit=h | owner:text | my.notes:text\n---\nAuth\n';
+  it('pads with empty cells up to a column that can’t be named, and otherwise shows why rows refused', () => {
+    const text = '---\nprofile: plan\ncolumns: est:duration unit=h | owner:text | my.notes:text\n---\nAuth\nAdmin | owner=bob\n';
     open(text);
     edit(5, NOTES, 'later');
-    expect(buffer.text()).toBe(text);
-    expect(shown(cell(5, NOTES))).toBe('');
-    const note = cell(5, NOTES).querySelector('.sheet-notice')!;
+    expect(lineOf(buffer.text(), 5)).toBe('Auth |  |  | later');
+    expect(shown(cell(5, NOTES))).toBe('later');
+    // Padding after a named cell would make an unnamed cell follow it.
+    const before = buffer.text();
+    edit(6, NOTES, 'later');
+    expect(buffer.text()).toBe(before);
+    expect(shown(cell(6, NOTES))).toBe('');
+    const note = cell(6, NOTES).querySelector('.sheet-notice')!;
     expect(note.getAttribute('role')).toBe('status');
-    expect(note.textContent).toBe("Not changed: column my.notes can't be named and isn't the next positional slot");
+    expect(note.textContent).toBe("Not changed: column my.notes can't be named, and padding up to it would follow a named cell");
     // The next edit clears it.
-    edit(5, EST, '4h');
+    edit(6, EST, '4h');
     expect(host.querySelector('.sheet-notice')).toBeNull();
   });
 

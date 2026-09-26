@@ -103,6 +103,8 @@ describe('spec §2.9 diagnostics', () => {
     const d = only(analyze(text));
     expect(d).toMatchObject({ line: 2, severity: 'info', code: 'html-comment' });
     expect(d.fixes).toHaveLength(1);
+    // The row leaves the grid: a confirm fix, with the lines before and after (spec §4b.6.6).
+    expect(d.fixes![0]).toMatchObject({ tier: 'confirm', preview: '-     <!-- note -->\n+     // note' });
     const fixed = applyEdits(text, d.fixes![0].edits);
     expect(fixed).toBe('A | 4h\n    // note\n');
     expect(analyze(fixed).diagnostics).toEqual([]);
@@ -126,7 +128,7 @@ describe('spec §2.9 diagnostics', () => {
     expect(model.totals[0]).toEqual({ effective: 0, doneSum: 0 });
     const [fix] = model.diagnostics[0].fixes!;
     expect(model.diagnostics[1].fixes).toEqual([fix]);
-    expect(fix.label).toBe('Add unit=h hpd=8 dpw=5');
+    expect(fix).toMatchObject({ label: 'Add unit=h hpd=8 dpw=5', tier: 'click' });
     const fixed = applyEdits(text, fix.edits);
     expect(fixed.split('\n')[1]).toBe('columns: est:duration unit=h hpd=8 dpw=5 | owner:text');
     const after = analyze(fixed, 'legacy.plan');
@@ -162,5 +164,62 @@ describe('spec §2.9 diagnostics', () => {
   it('override equal to child sum → no diagnostic', () => {
     const { model } = load('A | 4h\n    B | 4h');
     expect(model.diagnostics).toHaveLength(0);
+  });
+});
+
+describe('spec §4b.6.6 tree and title fixes', () => {
+  /** The one fix on the diagnostic with `code`, and the text after applying it. */
+  const fixOf = (text: string, code: string) => {
+    const d = analyze(text).diagnostics.find((x) => x.code === code)!;
+    expect(d.fixes, code).toHaveLength(1);
+    const fix = d.fixes![0];
+    return { fix, fixed: applyEdits(text, fix.edits) };
+  };
+
+  it('an indent that fits no level: auto, rewritten to the recovered level', () => {
+    const { fix, fixed } = fixOf('A\n        B\n    C\n    D\n', 'bad-indent');
+    expect(fix).toMatchObject({ label: 'Rewrite the indent', tier: 'auto' });
+    expect(fixed).toBe('A\n        B\n        C\n        D\n');
+    expect(analyze(fixed).diagnostics).toEqual([]);
+  });
+
+  it('a first row indented: auto, indent 0', () => {
+    const { fix, fixed } = fixOf('    A\nB\n', 'bad-indent');
+    expect(fix).toMatchObject({ label: 'Indent 0', tier: 'auto' });
+    expect(fixed).toBe('A\nB\n');
+  });
+
+  it('parent= that disagrees with the indentation, or forms a cycle: click, remove the parent cell', () => {
+    const mismatch = fixOf('A {#a}\nB {#b}\n    C | parent=#a\n', 'parent-mismatch');
+    expect(mismatch.fix).toMatchObject({ label: 'Use indentation', tier: 'click' });
+    expect(mismatch.fixed).toBe('A {#a}\nB {#b}\n    C\n');
+    const cycle = fixOf('A {#a} | parent=#b\nB {#b} | parent=#a\n', 'parent-cycle');
+    expect(cycle.fixed).toBe('A {#a}\nB {#b} | parent=#a\n');
+    expect(analyze(cycle.fixed).diagnostics).toEqual([]);
+  });
+
+  it('a title that reads as a heading: auto, quoted', () => {
+    const { fix, fixed } = fixOf('# Foo | 2h\n', 'heading-line');
+    expect(fix).toMatchObject({ label: 'Quote the title', tier: 'auto' });
+    expect(fixed).toBe('"# Foo" | 2h\n');
+    expect(analyze(fixed).roots[0].title).toBe('# Foo');
+  });
+
+  it('a repeated marker: click, the extra one removed', () => {
+    const { fix, fixed } = fixOf('~~x\n', 'repeated-marker');
+    expect(fix).toMatchObject({ label: 'Remove extra marker', tier: 'click' });
+    expect(fixed).toBe('~x\n');
+    expect(analyze(fixed).roots[0]).toMatchObject({ title: 'x', done: true });
+  });
+
+  it('a cell with a quoting error: auto, rewritten from its recovered text', () => {
+    const { fix, fixed } = fixOf('Login | 4h | alice | "call Bob | then Alice\n', 'unterminated-quote');
+    expect(fix).toMatchObject({ label: 'Rewrite the cell', tier: 'auto' });
+    expect(fixed).toBe('Login | 4h | alice | "call Bob | then Alice"\n');
+    expect(fixOf('A | "a"b\n', 'text-after-quote').fixed).toBe('A | ab\n');
+  });
+
+  it('a row that begins with the delimiter has no fix: typing a title fixes it', () => {
+    expect(analyze('| 2h\n').diagnostics.find((d) => d.code === 'row-begins-with-delimiter')!.fixes).toBeUndefined();
   });
 });

@@ -318,6 +318,8 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Human review:** in the browser, walk the toolbar on the §2.10 example — insert above a parent and above a first child, delete a parent, indent/outdent, move a parent row, toggle done.
 
+**Changed by Task 23:** on item rows the operations work in levels through the rows edit API (spec §4b.6.4); comment and blank rows still use `src/editing/`. Deleting a parent promotes its children one level instead of leaving them at their indent. Indent and outdent take the row's descendants with it. Moving a row still moves only that line, but snaps its indent, and is refused when no indent leaves every row at a level (a parent below its first child).
+
 ---
 
 ## Task 14 — Grid: keys
@@ -513,6 +515,8 @@ The extensions spec is at 0.6, after the analogies and the Q40/Q41 settlement. T
 - `setCell` on a column that can't be named when it isn't the next slot, since writing it would need padding. `setMarker` refuses in the same case for a column without a marker, and when a contradicting cell can't be corrected.
 - `insertRow` at an indent that nesting doesn't allow there, for the new row or a row after it. The check uses the parser's own indent walk, `indentLevels` in `extensions.ts`.
 
+**Changed by Task 23:** `setCell` now pads with empty cells up to a column that can't be named (DESIGN §6), and refuses only when the row has a named or overflow cell for the padding to follow; `setMarker` likewise. Emptying a named cell before an overflow cell writes `NAME=` with no space before the next delimiter, and also applies before a repeat of the same column.
+
 Removing the only marker before an empty lead writes the lead as `""` (`~` becomes `""`, `~ | 1d` becomes `"" | 1d`), so the row doesn't begin with the delimiter. A setLead on a quoted lead with an anchor keeps the anchor after the closing quote (Q13). No spec questions came up.
 
 ---
@@ -630,6 +634,84 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 **Cleanups after review:** `Model.doc` is for editors only (spec §3.2, CLAUDE.md non-negotiable 10); lint forbids `src/renderers/` and `src/exporters/` from importing `rows`. `insertLineAbove`, which had no caller left, is deleted with its tests and removed from spec §3.8. The `@lezer/highlight` devDependency is removed.
 
 **Spec questions:** none opened. The DESIGN §7 addition describes existing parser behaviour.
+
+---
+
+## Task 23 — Repair model and structure operations
+
+**Deliverables**
+
+- rows: `setLevel`, `moveRow`, `deleteRow`, `repairRow` and the `setCell` padding exception (DESIGN §6 additions), with the property tests extended to cover them. The fuzz generators must include files with bad indents, overflow and syntax errors.
+- The `Fix` model with tiers (spec §4b.6.2). Existing fixes get tiers: the hpd fix is `click` and the `<!--` fix is `confirm`.
+- The grid's structure operations use the level-based edits (spec §4b.6.4), and every grid edit applies `repairRow` to the rows it touches, in the same transaction.
+- The problems list (spec §4b.6.3).
+- The tree and title fixes from spec §4b.6.6.
+
+**Acceptance criteria**
+
+- [x] Property test: `setLevel`, `moveRow`, `deleteRow` and `repairRow` never add a syntax or structural error, and `repairRow` is idempotent. — `packages/rows/tests/edit.test.ts`. The generators gained `generateBroken`: 1,000 nested files with bad indents, tabs, overflow, unnamed cells after named ones, undeclared names, repeated markers, heading titles, unterminated quotes, text after a quote, unknown escapes and rows beginning with the delimiter. Every property test now runs over 5,000 files. `setLevel` writes on at least 1,000 of the 2,151 nested files, `moveRow` moves on at least 2,000 files, `deleteRow` deletes on at least 3,000, and `repairRow` repairs at least 1,000 rows (every row with an error). After parsing, no syntax or structural error is added (counted by code), and every value is unchanged apart from indents. The tree keeps its shape: `setLevel` keeps the row's descendants its descendants; after `deleteRow` its children take its parent; after `repairRow` every row keeps its parent. A refusal must be a documented one. `repairRow` on its own output returns nothing. A planted bug (snapping the row without the rows at its level) fails it.
+- [x] `A / B / C / D` (from extensions §6.2): deleting `B` gives a valid file whose tree is `A` with children `C` and `D`. — in rows and through the grid (`tests/grid/repair.test.ts`).
+- [x] On a `0 / 8 / 4` file, "Insert above" on the third row succeeds, and the third row is rewritten to a valid indent in the same undo step. — the draft shows at indent 8, the result is `A / B / X / C` with `B`, `X` and `C` at 8, the file is valid, and one undo restores the original.
+- [x] Moving a first child above its parent gives a valid file. — `Auth / Login` becomes `Login / Auth`, both at indent 0.
+- [x] A grid edit to a row with an unterminated quote in another cell leaves that cell's text unchanged and removes the error. — editing the estimate of `Login | 4h | alice | "call Bob | then Alice` closes the quote; notes still reads `call Bob | then Alice`.
+- [x] Opening a file with errors, or applying a remote change (simulated with `buffer.apply` using origin `remote`), writes nothing. — the grid test records every buffer change: none on opening `tests/fixtures/repair-cases.plan`, and only the `remote` one after it. Repairs are made only by grid edits (`withRepairs`), never by `analyze`.
+- [x] Every diagnostic on a fixture with one of each case in spec §4b.6.6 appears in the problems list, and clicking it focuses the right row. — `tests/fixtures/repair-cases.plan` has every case but the unclosed `---`, which can't coexist with the other settings cases and has its own test. Entries are in document order. Clicking one focuses a cell in its row, and a front matter entry has no row to focus.
+- [x] A grid edit plus its `auto` fixes undo with one Ctrl+Z. — over a `CodeMirrorBuffer`: one buffer change with origin `grid`, and one Ctrl+Z in the grid restores the text.
+
+**How it's built:**
+- rows (`packages/rows/src/edit.ts`): `setLevel`, `moveRow`, `deleteRow`, `repairRow` and `levelIndent`, all on the parser's `indentLevels`. `setCell` pads up to a column that can't be named. `formatValue`'s quoting is shared with `repairRow` for overflow cells.
+- core: `Fix` has a `tier` and an optional `preview` (spec §4b.6.2). `src/core/fixes.ts` adds the tree and title fixes to the diagnostics of the rows errors they resolve: `Rewrite the indent` or `Indent 0`, `Quote the title` and `Rewrite the cell` (auto, from `repairRow`), `Use indentation` and `Remove extra marker` (click). The hpd fix is `click`; the `<!--` fix is `confirm`, with a preview of the lines before and after.
+- grid (`src/grid/edits.ts`): `insertIndent`, `shiftItem`, `moveItem` and `deleteItem` over the rows functions, and `withRepairs`, which adds the repairs of the touched rows to an edit as one change. Cell, done and fix edits touch their row. "Insert above" touches the row it goes above, and structure operations touch the row they act on, taking only its cell repairs. Refusals show in the usual note. Comment and blank rows keep the `src/editing/` line operations.
+- grid (`src/grid/index.ts`): the problems list is a `<details>` between the toolbar and the sheet, `Problems (n)` in its summary, closed by default. Each entry shows the severity, the row's title (or `Line n`), the message and a button per fix. A `confirm` fix shows its preview with Apply and Cancel first.
+
+**Decisions taken** (spec §4b.5, §4b.6.1 and §4b.6.4, and DESIGN §6):
+- Indent and outdent move the row's descendants with it, as MS Project does. Moving only the row would hand its children to another parent or leave them at no level. Rows after the subtree keep their indent, so outdenting a row makes its later siblings its children.
+- Move up and down move the row alone, as the spec says, and refuse when no indent for it avoids a new indent error. The common case is a parent moved below its first child. The snapped indent is the valid one nearest the row's old level, then nearest its old indent.
+- The indent repair moves the rows the parser put at the repaired row's level, or below it, by the same amount. Snapping only the row would give those rows a bad indent, or new parents: in `A / B(8) / C(4) / D(4)`, `D` must move to 8 with `C`. When that would still change a parent, there is no indent repair.
+- A repair that collides with the grid edit is left out, and the edit is kept. In a cell, that is one that overlaps or touches the edit, since an append after a broken cell already closes it. For the indent repairs, which go together, it is one that overlaps the edit.
+- "Level" is the depth in the indentation tree, not the `parent=` relation. Rows added `levelIndent` for "Insert above", since `insertRow` takes an indent.
+- `deleteRow` refuses to delete the last anchor while another row sets the implicit `id` by name. Without identity (ext §3.1), that cell would name no column: a new structural error. The generator found this.
+- Fix buttons apply the fix's edits alone, with no repairs added, so a `confirm` fix writes exactly what its preview showed.
+- The cell `auto` repairs are already offered in the problems list (`Rewrite the cell`), since `repairRow` makes them for this task anyway. The other cell fixes, and the settings and identity fixes, are Task 24's.
+
+**Bugs the new generator found in existing rows code:**
+- `parseDuration` threw on a quoted duration containing an escaped newline. `(.*)$` doesn't match across `\n`, and the regex is now `[\s\S]*`. The value is invalid, as it should be (`tests/values.test.ts`).
+- `setCell(null)` on a named cell before an overflow cell wrote `NAME= |`. The space after `=` unnamed the cell (base §3), so one structural error turned into another. It now writes `NAME=|`.
+- `setCell(null)` on a cell whose column is set again later removed it, and the repeat became the value. It now empties the cell.
+
+**Rewritten tests:**
+- `tests/grid/grid.test.ts`:
+  - "deletes a row and re-attaches its children…" now expects the children promoted one level (`Auth / Deep`).
+  - "moves a row with children by itself…" is now two tests: a leaf moved up and back with the selection following it, and a parent moved below its first child being refused with a note.
+  - "Delete … deletes the line of a selected row" expects `Login` promoted to indent 0.
+  - "shows why rows refused a cell edit…" now expects `Auth |  |  | later` for the unnamable `my.notes`, and the refusal on a row with a named cell.
+- `tests/core/diagnostics.test.ts`: the `<!--` and conversion fixes assert their tiers, and the `<!--` fix its preview.
+- `packages/rows/tests/edit.test.ts`: the `setCell` and `setMarker` properties accept a refusal only when padding would follow a named or overflow cell.
+
+**Left for Task 24:** the text editor still applies every fix as a lint action straight away, `confirm` fixes included (their previews in the text editor are Task 24's). The problems list is not yet checked in a browser, in either theme.
+
+**Spec questions:** none opened. The decisions above are about the plan tool's grid and the rows edit API. None of them touches the rows specs or the conformance suite.
+
+---
+
+## Task 24 — Typed cell editors, overflow and settings fixes
+
+**Deliverables**
+
+- The typed cell editors and duration normalisation (spec §4b.6.5).
+- The cell, settings and identity fixes from spec §4b.6.6, with previews for `confirm`.
+- The settings banner.
+- The text editor offers every fix as a lint action; `confirm` fixes show their preview first.
+
+**Acceptance criteria**
+
+- [ ] `4 Hours`, `1.5 days`, `2 wks 3d` and `90 mins` commit as `4h`, `1.5d`, `2w 3d` and `90m`. `soon` is written as typed and shows a warning.
+- [ ] Normalisation never changes a cell the user didn't edit.
+- [ ] `Login page | 4h | alice | call Bob | then Alice`: "Rejoin into notes" gives `notes = "call Bob | then Alice"`, which reads back exactly.
+- [ ] Every `confirm` fix shows its preview, and cancelling writes nothing.
+- [ ] "Close settings" on an unclosed block inserts `---` after the last `key: value` line, and the settings lines leave the grid.
+- [ ] "Rename the later one" on a duplicate ID warns when the ID is referenced.
+- [ ] Manual, both themes: the problems list, the banner, the badges and the previews are readable, and every fixture case can be fixed without leaving the grid.
 
 ---
 

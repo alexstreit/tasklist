@@ -2,7 +2,7 @@
 export { parseRows } from './parse';
 export { tokenizeLine } from './tokenize';
 export { durationToMinutes } from './values';
-export { applyEdits, formatValue, insertRow, setCell, setLead, setMarker } from './edit';
+export { applyEdits, deleteRow, formatValue, insertRow, levelIndent, moveRow, repairRow, setCell, setLead, setLevel, setMarker } from './edit';
 export type { EditResult, TextEdit } from './edit';
 export type { TypeKind } from './values';
 export type { LineContext, LineState, LineTokens, Token, TokenType } from './tokenize';
