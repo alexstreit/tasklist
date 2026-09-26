@@ -279,6 +279,7 @@ export function resolveSchema(
     keys: Object.fromEntries([...keys].map(([k, v]) => [k, v.value])),
     lead: columns[0],
     columns,
+    extensions: options.extensions !== false,
     identity: false,
     key: null,
     nest: null,

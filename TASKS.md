@@ -492,13 +492,15 @@ The extensions spec is at 0.6, after the analogies and the Q40/Q41 settlement. T
 
 **Acceptance criteria**
 
-- [ ] The property test in DESIGN §6 runs over at least 1,000 generated documents and edits per function.
-- [ ] `setLead` on `    ~Login page {#login} | 4h` changes only the title; the indent, marker, anchor and cells are untouched.
-- [ ] `setLead` with a title beginning `~` (when `~` is a marker), `# ` or ending `{#x}` produces a quoted lead that reads back as that exact title.
-- [ ] `setCell` on `Auth | 2d` for `notes` (third column) writes `notes=…`, not padding; for `owner` (next slot) writes ` | bob`.
-- [ ] `setCell` with a value containing `|` quotes it.
-- [ ] `setCell(null)` on a trailing cell removes it and its delimiter; on an interior cell empties it.
-- [ ] `setMarker(done, false)` on `~Login` removes the `~`; on a row with `done=true` by name removes the named cell.
+- [x] The property test in DESIGN §6 runs over at least 1,000 generated documents and edits per function. — it reuses Task 19's generators (now `tests/generators.ts`): 4,000 files, general and nested, with markers, anchors and references. One edit per file: `setLead` on 3,556 files, `setCell` writing on over 1,000, `setMarker` on over 1,000, and `insertRow` on all 4,000. After parsing, the target reads back as intended, and every other row, cell, marker, anchor and non-row line is unchanged. A planted bug (appending after a trailing delimiter) fails it.
+- [x] `setLead` on `    ~Login page {#login} | 4h` changes only the title; the indent, marker, anchor and cells are untouched.
+- [x] `setLead` with a title beginning `~` (when `~` is a marker), `# ` or ending `{#x}` produces a quoted lead that reads back as that exact title.
+- [x] `setCell` on `Auth | 2d` for `notes` (third column) writes `notes=…`, not padding; for `owner` (next slot) writes ` | bob`.
+- [x] `setCell` with a value containing `|` quotes it.
+- [x] `setCell(null)` on a trailing cell removes it and its delimiter; on an interior cell empties it.
+- [x] `setMarker(done, false)` on `~Login` removes the `~`; on a row with `done=true` by name removes the named cell.
+
+**Decisions taken:** in DESIGN §6, under "Details the rules above leave open". `setCell` refuses in two documented cases only. The first is the key of an anchored row set to null or a non-ID, since a valid ID renames the anchor instead. The second is a column that can't be named when it isn't the next slot, since writing it would need padding. A setLead on a quoted lead with an anchor keeps the anchor after the closing quote (Q13). No spec questions came up.
 
 ---
 

@@ -161,6 +161,8 @@ Error codes are the library's own. The spec defines classes, not codes. Codes le
 Hosts never re-serialise a document. They ask the library for `TextEdit[]` against the text it parsed, apply them, and parse again.
 
 ```ts
+interface TextEdit { from: number; to: number; insert: string }   // offsets into doc.text
+
 setLead(doc, row, text): TextEdit[]
 setCell(doc, row, column, text: string | null): TextEdit[]
 setMarker(doc, row, name, on: boolean): TextEdit[]
@@ -178,6 +180,22 @@ Rules:
   4. `null` removes the cell. It removes a trailing positional cell together with its delimiter. An interior positional cell is emptied, since removing it would shift the cells after it.
 - **`setMarker`** inserts or removes the marker character straight after the indent. When the column has no marker, it sets the value by name. A row with both a marker and an explicit `done=false` has both corrected.
 - Every edit function is tested by the same property: for random documents and random edits, parsing the edited text gives the intended value in the target, and every other row, cell, marker, anchor and comment is unchanged.
+
+Details the rules above leave open:
+
+- **Edits don't validate.** A value that fails validation is written, and reads back as exactly the text given. `formatValue` quotes a value when base §3 requires it, and a lead when it would otherwise read as a marker, an anchor, a heading, a comment or a `---` delimiter (base §7: "quotes any value that would otherwise be misread").
+- **Implicit columns** are only ever written as named cells.
+- **`setCell` on the lead** is `setLead`, with `null` written as the empty string: a row always has a lead cell.
+- **Appending after an unterminated quote** first closes the quote where its text ends, so that cell's text is unchanged and the new cell isn't swallowed by it.
+- **Removing a named cell** empties it (`NAME=`) instead, when an unnamed overflow cell follows it: removing it would make that cell positional.
+- **A row keeps its line.** Removing the last cell of a row that begins with a delimiter, or the only marker of a row with nothing else, leaves the delimiter (`|`), so the row doesn't turn into a blank line. The row then begins with the delimiter, as `~ | 1d` does after its marker is removed.
+- **`insertRow`** writes the declared columns positionally while they run on from the lead, and the rest by name. A column that can't be named is written in position, with empty cells before it. A name in `cells` that isn't a column throws, since that's a mistake in the host.
+- **`applyEdits(text, edits)`** applies a function's edits, for hosts without an editor of their own.
+
+`setCell` returns no edits in two cases, the only refusals:
+
+- **The key of a row whose ID is in an anchor**, set to `null` or to text that isn't an ID. A valid ID renames the anchor, and the key cell too if it is written, so no anchor/key mismatch (ext §3.2) is created. A value the anchor can't hold would have to move the ID out of the anchor, or remove the anchor and so the row's ID, and neither is what a cell edit asks for. Hosts change such an ID by editing the text.
+- **A column that can't be named** (base §6: a name that doesn't match the grammar or is already used), when the row doesn't set it and it isn't the next positional slot. The only way to write it would be padding with empty cells, which `setCell` never does.
 
 ## 7. Highlighting
 

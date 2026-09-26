@@ -100,6 +100,7 @@ export interface Schema {
   lead: Column;
   columns: Column[]; // lead first, then declared, then implicit (ext §2)
   // Extensions; empty or off in a base-only parse.
+  extensions: boolean;
   identity: boolean; // ext §3.1
   key: Column | null; // when identity applies
   nest: { column: Column; valid: boolean } | null; // valid: a ref to this table without options (ext §6.1)

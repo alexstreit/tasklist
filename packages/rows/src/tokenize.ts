@@ -51,14 +51,14 @@ export interface ScannedRow {
 }
 
 const ESCAPES: Record<string, string> = { '"': '"', '\\': '\\', n: '\n', t: '\t' };
-const NAMED = /^[A-Za-z_][A-Za-z0-9_-]*=/;
-const HEADING = /^#+( |$)/;
+export const NAMED = /^[A-Za-z_][A-Za-z0-9_-]*=/;
+export const HEADING = /^#+( |$)/;
 // base §9: one or more {...} groups after the closing quote of a lead cell.
 const LEAD_GROUPS = /^([ \t]*\{[^{}]*\})+$/;
 // Text Anchors §1, §2: an anchor group, and a run of them preceded by whitespace (ext §3.2).
 const ID = '[A-Za-z0-9][A-Za-z0-9_-]*';
 const GROUP = `\\{[ \\t]*#${ID}(?:[ \\t]+#${ID})*[ \\t]*\\}`;
-const TRAILING_ANCHORS = new RegExp(`(?:^|[ \\t]+)(${GROUP}(?:[ \\t]*${GROUP})*)$`);
+export const TRAILING_ANCHORS = new RegExp(`(?:^|[ \\t]+)(${GROUP}(?:[ \\t]*${GROUP})*)$`);
 const TRAILING_ANCHORS_AFTER_QUOTE = new RegExp(`[ \\t]+(${GROUP}(?:[ \\t]*${GROUP})*)$`);
 
 export type BodyLineKind = 'blank' | 'comment' | 'row';
