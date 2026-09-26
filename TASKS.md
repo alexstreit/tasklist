@@ -447,7 +447,7 @@ Each property test was checked by planting a bug (an off-by-one in value spans, 
 
 Real calendar dates (Q12) apply: `2026-02-30` is invalid, `2028-02-29` valid. `datetime` follows RFC 3339 §5.6, including lower-case `t` and `z` and a seconds value of 60. `order` comparisons are left to Task 19.
 
-**Open spec questions:** Q32–Q36 in `packages/rows/conformance/QUESTIONS.md`, raised by implementing types: how much whitespace a duration allows, whether a default satisfies `required`, what `unique` compares, where a malformed type ends and an unknown one begins, and options that don't apply, flags with values, and repeated options. Each has a disputed types case, and the parser implements the used reading. Q31, the empty `lead:` value left over from Q26, is also open.
+**Spec questions:** Q31–Q36, raised by Tasks 17 and 18, were settled after review (see Resolved in `packages/rows/conformance/QUESTIONS.md`). They added `empty-value` and `duplicate-option` to the error codes, and value equality to base §5. Settling them raised Q37 (duration equality details) and Q38 (enum value edges), which are open with disputed cases.
 
 **Decisions taken (DESIGN-level):** `Column` gains `kind`, `enumValues`, `required`, `unique`, `default` (a `Value`), `unit`, `hpd` and `dpw`. `type` is the type after recovery, with enum values trimmed, so `enum[ low , high ]` reads as `enum[low,high]`. `ref` columns keep `kind: 'ref'` with a null value until Task 19. Declaration errors that come from a profile still collapse into `profile-has-errors` (base §2.3), so an unknown type in a profile fails strict mode.
 

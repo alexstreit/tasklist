@@ -1,0 +1,19 @@
+{
+  "spec": ["base §5 equality: datetimes as instants, durations as bags, enum by code point", "base §4 unique"],
+  "stage": "types",
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "not-unique", "line": 4 },
+    { "class": "validation", "code": "not-unique", "line": 5 },
+    { "class": "validation", "code": "not-unique", "line": 6 },
+    { "class": "validation", "code": "not-unique", "line": 4 },
+    { "class": "validation", "code": "not-unique", "line": 5 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "r1", "values": { "t": "2026-09-01T10:00:00Z", "d": "1d 4h", "e": "a" } },
+    { "line": 5, "lead": "r2", "values": { "t": "2026-09-01T11:00:00+01:00", "d": "4h 1d", "e": "B" } },
+    { "line": 6, "lead": "r3", "values": { "t": "2026-09-01t10:00:00.000z", "d": "28h", "e": "b" } },
+    { "line": 7, "lead": "r4", "values": { "d": "60m" } },
+    { "line": 8, "lead": "r5", "values": { "d": "1h" } }
+  ]
+}

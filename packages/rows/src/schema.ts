@@ -40,7 +40,17 @@ function collectKeys(entries: FrontmatterEntry[], errors: RowsError[]): Map<stri
   return keys;
 }
 
-type Report = (code: 'malformed-type' | 'unknown-type' | 'invalid-option-value', message: string) => void;
+type Report = (code: 'malformed-type' | 'unknown-type' | 'invalid-option-value' | 'duplicate-option', message: string) => void;
+
+// The base options (§4): whether each is a flag, and the column kinds it applies to (null = any).
+const OPTIONS: Record<string, { flag: boolean; kinds: string[] | null }> = {
+  required: { flag: true, kinds: null },
+  unique: { flag: true, kinds: null },
+  default: { flag: false, kinds: null },
+  unit: { flag: false, kinds: ['number', 'duration'] },
+  hpd: { flag: false, kinds: ['duration'] },
+  dpw: { flag: false, kinds: ['duration'] },
+};
 
 /** base §4 options and §5 types, with their recovery rows in base §6. */
 function readTypeAndOptions(column: Column, declared: string, extensions: boolean, report: Report): void {
@@ -57,25 +67,32 @@ function readTypeAndOptions(column: Column, declared: string, extensions: boolea
 
   const invalid = (option: string, why: string) => report('invalid-option-value', `Invalid option ${option}: ${why}; ignored.`);
   let defaultText: string | null = null;
-  // A repeated option: the last one is used.
+  const seen = new Set<string>();
   for (const { key, value } of column.options) {
+    const known = OPTIONS[key];
+    if (!known) continue; // unrecognised: ignored and retained (base §4)
     const option = value === null ? key : `${key}=${value}`;
-    if (key === 'required' || key === 'unique') {
-      if (value !== null) invalid(option, `${key} is a flag`);
-      else column[key] = true;
+    // A repeated option is an error, and the last one is used.
+    if (seen.has(key)) report('duplicate-option', `Option ${key} is repeated; the last one is used.`);
+    seen.add(key);
+    if (known.kinds && !known.kinds.includes(column.kind)) {
+      invalid(option, `${key} doesn't apply to ${column.type}`);
+    } else if (known.flag && value !== null) {
+      invalid(option, `${key} is a flag and takes no value`);
+    } else if (!known.flag && value === null) {
+      invalid(option, `${key} needs a value`);
+    } else if (key === 'required' || key === 'unique') {
+      column[key] = true;
     } else if (key === 'default') {
-      if (value === null) invalid(option, 'it needs a value');
-      else defaultText = value;
-    } else if (key === 'unit' && (column.kind === 'number' || column.kind === 'duration')) {
-      if (value === null) invalid(option, 'it needs a value');
-      else if (column.kind === 'duration' && !['m', 'h', 'd', 'w'].includes(value)) invalid(option, 'a duration unit is m, h, d or w');
-      else column.unit = value;
-    } else if ((key === 'hpd' || key === 'dpw') && column.kind === 'duration') {
+      defaultText = value;
+    } else if (key === 'unit') {
+      if (column.kind === 'duration' && !['m', 'h', 'd', 'w'].includes(value!)) invalid(option, 'a duration unit is m, h, d or w');
+      else column.unit = value!;
+    } else {
       const n = positiveNumber(value);
       if (n === null) invalid(option, 'it must be a positive number');
-      else column[key] = n;
+      else column[key as 'hpd' | 'dpw'] = n;
     }
-    // Anything else, including an option for another type, is ignored and retained (base §4).
   }
   if (defaultText !== null) {
     const value = readValue(defaultText, column);
@@ -191,10 +208,12 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
   };
 
   const lead = keys.get('lead');
-  if (lead) {
+  if (lead && lead.value !== '') {
     const piece = { text: lead.value, from: 0, to: lead.value.length };
     declare(lead.value, lead, piece);
   } else {
+    // A key with a default set to an empty value: the default applies (base §6).
+    if (lead) report(lead, 'empty-value', `lead is empty; ${DEFAULT_LEAD} is used.`);
     declare(DEFAULT_LEAD, null);
   }
   const declared = keys.get('columns');
@@ -204,7 +223,12 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
     errors.push(rowsError('profile-has-errors', profileLine, `Profile ${profileName} has errors in its frontmatter.`, ...profileSpan));
   }
 
-  const table = fileEntry('table')?.value ?? (options.filename !== undefined ? stem(options.filename) : null);
+  const tableEntry = fileEntry('table');
+  const defaultTable = options.filename !== undefined ? stem(options.filename) : null;
+  if (tableEntry?.value === '') {
+    errors.push(rowsError('empty-value', tableEntry.line, 'table is empty; the file name is used.', tableEntry.valueFrom, tableEntry.valueTo));
+  }
+  const table = tableEntry && tableEntry.value !== '' ? tableEntry.value : defaultTable;
   return {
     table,
     format: 'rows/1',

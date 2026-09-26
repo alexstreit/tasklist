@@ -1,0 +1,8 @@
+---
+columns: t:datetime unique | d:duration unique | e:enum[a,B,b] unique
+---
+r1 | 2026-09-01T10:00:00Z      | 1d 4h | a
+r2 | 2026-09-01T11:00:00+01:00 | 4h 1d | B
+r3 | 2026-09-01t10:00:00.000z  | 28h   | b
+r4 |                           | 60m
+r5 |                           | 1h

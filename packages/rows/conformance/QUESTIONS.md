@@ -6,65 +6,25 @@ Where a question says a rule has "no class", the class matters because strict mo
 
 ---
 
-## Q31. An empty `lead:` value
+Q37 and Q38 came up while settling Q34 and Q35. The parser implements each **Used** reading.
 
-**Cases:** `base-4-empty-lead-declaration` (+ `--strict`).
-**Spec:** base §2.2 (`lead`, default `name:text`); base §4.
+## Q37. Duration equality: the sign, and bare numbers
 
-Q26 settled empty declarations between delimiters in `columns`, but not an empty `lead:` value.
+**Cases:** `base-5-duration-equality-sign`.
+**Spec:** base §5 (equality: "durations are the same bag of terms"; "A leading sign is preserved as part of the value"; with `unit=U`, a bare number "is that many `U`").
 
-- **A (used).** The same as an empty declaration: a structural error, and the lead is an unnamed `text` column. The file still has a lead, but no name can refer to it.
-- **B.** An empty value is the same as leaving `lead` unset, so the lead is `name:text` and there is no error.
-- **C.** Invalid, so `name:text` is used, with a structural error.
+- A sign. **Used:** it is part of the value, so `+1d` and `1d` are different. The alternative is that equality looks only at the bag, so they are equal.
+- A bare number with `unit=`. **Used:** `4` in a `unit=h` column is the bag `{ h: 4 }`, so it equals `4h`. The alternative is that how the value was written counts, so they differ.
+- A leap second in a datetime. **Used:** `23:59:60Z` is the same instant as the following `00:00:00Z`, as POSIX time counts it. No case yet.
 
-Q32–Q36 came up while implementing the types stage (Task 18). The parser implements each **Used** reading.
+## Q38. Enum values: empty, repeated, and case
 
-## Q32. How much whitespace a duration allows
+**Cases:** `base-5-enum-value-edges` (+ `--strict`).
+**Spec:** base §5 (Enum: "The values are separated by commas and trimmed. A value MUST NOT contain `,` or `]`"); Q35's rule that `enum` without brackets is malformed.
 
-**Cases:** `base-5-duration-whitespace`.
-**Spec:** base §5 (`term = number [ WSP ] unit`, `duration = [ "+" / "-" ] term *( [ WSP ] term )`); base §1 (whitespace).
-
-In ABNF, `[ WSP ]` is at most one space or tab. The examples all use single spaces.
-
-- **A (used).** As written: at most one space or tab between a number and its unit, and between terms. `1d  4h` and `2  d` are invalid; `1d\t4h` is valid.
-- **B.** Any run of whitespace (`*WSP`), since a cell's interior whitespace is otherwise preserved without meaning, and a doubled space is an easy typo to make and hard to see.
-
-## Q33. Does a default satisfy `required`?
-
-**Cases:** `base-4-required-with-default`.
-**Spec:** base §4 (`required`: "Cell must not be null"; `default=V`: "Value assumed when null").
-
-- **A (used).** No. `required` is about what the row writes, so a null cell is an error even when the column has a default.
-- **B.** Yes. The cell's value is the default, so it isn't null, and `required` together with `default` means "fill it in, or it's this".
-
-## Q34. What `unique` compares
-
-**Cases:** `base-4-unique-compares-text`.
-**Spec:** base §4 (`unique`: "No two rows share a non-null value").
-
-- **A (used).** The decoded text. `1`, `1.0` and `01` are three values, and two invalid values with the same text are a duplicate.
-- **B.** The typed value, so `1` and `1.0` are the same number. That leaves open whether invalid values count, and whether durations such as `1h` and `60m` are equal.
-
-## Q35. Where a malformed type ends and an unknown one begins
-
-**Cases:** `base-5-type-declaration-edges` (+ `--strict`).
-**Spec:** base §5 (types; `x-` types; unknown types); base §6 ("Malformed type, such as a bad `enum[...]`" is structural; "Unknown type" is validation).
-
-**Used:** a type must be a name, optionally followed by one `[...]`. A type that isn't in that form is malformed. So is a known type with the wrong parameters: `a:` (an empty type), `b:enum` (no values), `c:enum[]` and `d:enum[x,,y]` (an empty value), and `f:number[3]` (a parameter on a type that takes none). A well-formed name the spec doesn't define is unknown: `g:foo[bar]`, and `h:Number`, because type names are case-sensitive.
-
-Also used, and not stated: a repeated enum value, as in `e:enum[x,x]`, is allowed. Enum values match case-sensitively, so `X` isn't a value of `enum[x,x]`.
-
-The alternative is that anything that isn't a known type is simply unknown (validation), and only a bad `enum[...]` is malformed (structural). That changes whether strict mode fails for `number[3]` or `a:`.
-
-## Q36. Options that don't apply, flags with values, and repeats
-
-**Cases:** `base-4-option-edges` (+ `--strict`).
-**Spec:** base §4 (the options table; "Unrecognised options are ignored and retained"); base §6 ("Invalid option value … Option ignored").
-
-- An option for another type, such as `unit=` or `hpd=` on a `text` column. **Used:** ignored and retained, with no error, like an unrecognised option. The alternative is an invalid option value.
-- A flag with a value, such as `required=yes`. **Used:** an invalid option value, so the flag is ignored and the column isn't required.
-- `default` with no value. **Used:** an invalid option value.
-- A repeated option, such as `hpd=8 hpd=6`. **Used:** the last one is used, with no error, as a repeated key's last value is used in frontmatter. Unlike a repeated key, it isn't reported. The alternative is to report it the way a key set twice is.
+- An empty value, as in `enum[]` or `enum[x,,y]`. **Used:** a malformed type. The alternative is that the empty value is simply not a value, so `enum[x,,y]` is `enum[x,y]` and `enum[]` accepts nothing.
+- A repeated value, as in `enum[x,x]`. **Used:** allowed and harmless. The alternative is a malformed type.
+- Case. **Used:** values match by code point, as §5 equality says for enums, so `X` isn't a value of `enum[x,x]`. This follows from Q34 and is listed here only to confirm it.
 
 ---
 
@@ -249,3 +209,39 @@ The alternative is that anything that isn't a known type is simply unknown (vali
 **Decision:** trimmed. `"open   ` gives `open`, and the value span ends before the whitespace.
 **Spec changed:** base §6 (the unterminated-quote row).
 **Cases:** `base-6-row-unterminated-quote-trailing-space` (+ `--strict`).
+
+### Q31. An empty `lead:` value
+
+**Decision:** a key that has a default, and is present but empty or unusable, is a structural error, and the default applies. This is stated once, generally, in base §6; the rows for `format`, `sep` and `comment` are instances of it. An empty `lead:` gives `name:text`, and an empty `table:` gives the file name's stem, each with the new `empty-value` code. An empty `columns:` declares no columns and is not an error, because `columns` has no default.
+**Spec changed:** base §2.2 (a paragraph after the key table); base §6 (a paragraph before the tables, and a new row).
+**Cases:** `base-4-empty-lead-declaration` (+ `--strict`) now expects `empty-value` and the default lead. `base-2.2-empty-table` (+ `--strict`) and `base-2.2-empty-columns` (+ `--strict`) are new.
+
+### Q32. How much whitespace a duration allows
+
+**Decision:** any run of whitespace: `*WSP` between a number and its unit, and between terms.
+**Spec changed:** base §5 (the duration grammar).
+**Cases:** `base-5-duration-whitespace` now has no errors.
+
+### Q33. Does a default satisfy `required`?
+
+**Decision:** no.
+**Spec changed:** base §4 (the `required` row).
+**Cases:** `base-4-required-with-default`.
+
+### Q34. What `unique` compares
+
+**Decision:** typed values, by a definition of value equality stated once in base §5. Numbers compare numerically, dates and datetimes as instants, text and enum values by code point, and durations as bags. Invalid values compare as their text. `order` (Task 19) uses the same definition. The spec also lists bool with text and enum, since only `true` and `false` are valid bools. Settling this raised Q37.
+**Spec changed:** base §5 (new paragraph: Equality).
+**Cases:** the former base-4-unique-compares-text case is renamed `base-4-unique-compares-values`, and now expects `1`, `1.0` and `01` to be duplicates. `base-5-value-equality` is new, covering datetimes, durations and enums.
+
+### Q35. Where a malformed type ends and an unknown one begins
+
+**Decision:** a type in the form `name` or `name[...]` that isn't known is unknown (validation). Anything else is malformed (structural), including brackets on a type that doesn't take them and `enum` without them.
+**Spec changed:** base §5 (the paragraph on type forms); base §6 (the malformed-type row).
+**Cases:** `base-5-type-declaration-edges` (+ `--strict`) keeps the settled columns (`a:`, `b:enum`, `f:number[3]`, `g:foo[bar]`, `h:Number`). The enum-value columns moved to `base-5-enum-value-edges`, for Q38, which the decision doesn't cover.
+
+### Q36. Options that don't apply, flags with values, and repeats
+
+**Decision:** a known option on a type it doesn't apply to is structural, and ignored. So is a flag given a value, or a value option given none. A repeated option is structural, and the last one is used; it has the new `duplicate-option` code. The others use `invalid-option-value`.
+**Spec changed:** base §4 (after the options table); base §6 (two new rows).
+**Cases:** `base-4-option-edges` (+ `--strict`) now expects five errors: `unit=` and `hpd=` on a `text` column, `required=yes`, a bare `default`, and a repeated `hpd`.

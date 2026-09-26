@@ -1,9 +1,11 @@
 {
-  "spec": ["base §4 unique: no two rows share a non-null value"],
+  "spec": ["base §4 unique", "base §5 equality: numbers numerically; invalid values as text"],
   "stage": "types",
-  "disputed": true,
   "failed": false,
   "errors": [
+    { "class": "validation", "code": "not-unique", "line": 4 },
+    { "class": "validation", "code": "not-unique", "line": 5 },
+    { "class": "validation", "code": "not-unique", "line": 6 },
     { "class": "validation", "code": "invalid-value", "line": 7 },
     { "class": "validation", "code": "invalid-value", "line": 8 },
     { "class": "validation", "code": "not-unique", "line": 7 },

@@ -1,16 +1,12 @@
 {
   "spec": ["base §5 types", "base §6 modes"],
   "stage": "types",
-  "disputed": true,
   "failed": true,
   "errors": [
     { "class": "structural", "code": "malformed-type", "line": 2 },
     { "class": "structural", "code": "malformed-type", "line": 2 },
     { "class": "structural", "code": "malformed-type", "line": 2 },
-    { "class": "structural", "code": "malformed-type", "line": 2 },
-    { "class": "structural", "code": "malformed-type", "line": 2 },
     { "class": "validation", "code": "unknown-type", "line": 2 },
-    { "class": "validation", "code": "unknown-type", "line": 2 },
-    { "class": "validation", "code": "invalid-value", "line": 4 }
+    { "class": "validation", "code": "unknown-type", "line": 2 }
   ]
 }

@@ -1,11 +1,10 @@
 {
-  "spec": ["base §2.2 lead", "base §4"],
+  "spec": ["base §6: a key with a default set to an empty value", "base §2.2 lead"],
   "stage": "base",
-  "disputed": true,
   "failed": false,
-  "errors": [{ "class": "structural", "code": "invalid-column-name", "line": 2 }],
+  "errors": [{ "class": "structural", "code": "empty-value", "line": 2 }],
   "columns": [
-    { "name": "", "type": "text" },
+    { "name": "name", "type": "text" },
     { "name": "a", "type": "text" }
   ],
   "rows": [{ "line": 5, "lead": "X", "values": { "a": "1" } }]

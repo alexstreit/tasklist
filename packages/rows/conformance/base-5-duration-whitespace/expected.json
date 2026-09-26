@@ -1,12 +1,8 @@
 {
-  "spec": ["base §5 duration: [ WSP ] between a number and its unit, and between terms"],
+  "spec": ["base §5 duration: *WSP between a number and its unit, and between terms"],
   "stage": "types",
-  "disputed": true,
   "failed": false,
-  "errors": [
-    { "class": "validation", "code": "invalid-value", "line": 4 },
-    { "class": "validation", "code": "invalid-value", "line": 5 }
-  ],
+  "errors": [],
   "rows": [
     { "line": 4, "lead": "a", "values": { "d": "1d  4h" } },
     { "line": 5, "lead": "b", "values": { "d": "2  d" } },

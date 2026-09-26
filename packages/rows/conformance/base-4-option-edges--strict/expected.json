@@ -1,10 +1,12 @@
 {
   "spec": ["base §4 options", "base §6 modes"],
   "stage": "types",
-  "disputed": true,
   "failed": true,
   "errors": [
     { "class": "structural", "code": "invalid-option-value", "line": 2 },
-    { "class": "structural", "code": "invalid-option-value", "line": 2 }
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "structural", "code": "invalid-option-value", "line": 2 },
+    { "class": "structural", "code": "duplicate-option", "line": 2 }
   ]
 }

@@ -59,8 +59,8 @@ function realDatetime(text: string): boolean {
 }
 
 /**
- * base §5: `[ "+" / "-" ] term *( [ WSP ] term )`, `term = number [ WSP ] unit`. `[ WSP ]` is at
- * most one space or tab. Each unit appears at most once.
+ * base §5: `[ "+" / "-" ] term *( *WSP term )`, `term = number *WSP unit`. Each unit appears at
+ * most once.
  */
 export function parseDuration(text: string, unit: DurationUnit | undefined): Value | null {
   if (unit !== undefined && NUMBER.test(text)) {
@@ -70,11 +70,11 @@ export function parseDuration(text: string, unit: DurationUnit | undefined): Val
   const m = /^([+-]?)(.*)$/.exec(text)!;
   const sign = (m[1] || null) as '+' | '-' | null;
   const terms: Partial<Record<DurationUnit, number>> = {};
-  const TERM = /^(\d+(?:\.\d+)?)[ \t]?([mhdw])/;
+  const TERM = /^(\d+(?:\.\d+)?)[ \t]*([mhdw])/;
   let rest = m[2];
   let first = true;
   while (rest !== '') {
-    if (!first && (rest[0] === ' ' || rest[0] === '\t')) rest = rest.slice(1);
+    if (!first) rest = rest.replace(/^[ \t]+/, '');
     const t = TERM.exec(rest);
     if (!t) return null;
     const u = t[2] as DurationUnit;
@@ -111,6 +111,38 @@ export function readValue(text: string, column: Column): Value | null {
 
 /** A positive number, as `hpd=` and `dpw=` take (base §4). */
 export const positiveNumber = (s: string | null): number | null => (s !== null && UNSIGNED.test(s) && Number(s) > 0 ? Number(s) : null);
+
+/**
+ * A key such that two cells of a column are equal (base §5) exactly when their keys are equal.
+ * A value that doesn't match its column compares as its text.
+ */
+export function equalityKey(cell: { text: string | null; value: Value | null }): string | null {
+  if (cell.text === null) return null;
+  const v = cell.value;
+  if (v === null) return `text:${cell.text}`;
+  switch (v.type) {
+    case 'number':
+      return `number:${v.value}`;
+    case 'datetime':
+      return `instant:${instant(v.text)}`;
+    case 'duration':
+      return `duration:${v.sign ?? ''}${(['m', 'h', 'd', 'w'] as const).map((u) => (v.terms[u] === undefined ? '' : `${u}${v.terms[u]}`)).join(' ')}`;
+    case 'ref':
+      return `text:${cell.text}`; // the extensions stage defines reference equality
+    default:
+      return `text:${cell.text}`; // text, enum, bool and date: by code point
+  }
+}
+
+/** A datetime as whole seconds since the epoch, plus its fraction without trailing zeros. */
+function instant(text: string): string {
+  const m = DATETIME.exec(text)!;
+  const [date, hour, minute, second, fraction = '', offset, offHour, offMinute] = m.slice(1);
+  const [y, mo, d] = date.split('-').map(Number);
+  const offsetMinutes = offset.length === 1 ? 0 : (offset[0] === '-' ? -1 : 1) * (Number(offHour) * 60 + Number(offMinute));
+  const seconds = Date.UTC(y, mo - 1, d, Number(hour), Number(minute)) / 1000 + Number(second) - offsetMinutes * 60;
+  return `${seconds}${fraction.replace(/0+$/, '').replace(/^\.$/, '')}`;
+}
 
 const MINUTES: Record<'m' | 'h', number> = { m: 1, h: 60 };
 

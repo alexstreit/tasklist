@@ -41,6 +41,8 @@ All keys are optional. Unknown keys are ignored. Keys beginning `x-` are for pri
 | `lead`    | `name:text`   | Declaration of the lead column (§4).                                         |
 | `columns` | —             | Declarations of the remaining columns, in order (§4).                        |
 
+A key with a default that is present but empty or unusable is a structural error, and the default applies (§6). An empty `columns:` declares no columns, and is not an error.
+
 `sep` is checked on its own first, and `comment` is then checked against the resulting `sep`. If the comment marker in use contains a `sep` that the file set, `sep` is invalid and falls back to `|`, even when the file also set `comment`. Blaming `comment` would not always settle the conflict, because its default `//` can conflict too. `comment` is then checked against `|`, and falls back to `//` if it contains it. So `sep: /` is invalid with or without `comment: //`, and `comment: a|b` is invalid with the default `sep`.
 
 ### 2.3 Profiles
@@ -97,7 +99,7 @@ columns: est:duration unit=h hpd=8 | owner:text | done:bool default=false | note
 
 | Option      | Applies to | Meaning                                                        |
 | ----------- | ---------- | -------------------------------------------------------------- |
-| `required`  | any        | Cell must not be null. The lead column is always required.     |
+| `required`  | any        | Cell must not be null; a default doesn't satisfy it. The lead column is always required. |
 | `unique`    | any        | No two rows share a non-null value.                            |
 | `default=V` | any        | Value assumed when null, written in the column's value syntax. |
 | `unit=U`    | `number`   | Informational unit label. No conversion implied.               |
@@ -105,7 +107,11 @@ columns: est:duration unit=h hpd=8 | owner:text | done:bool default=false | note
 | `hpd=N`     | `duration` | Hours per day; permits converting between `d` and `h`.         |
 | `dpw=N`     | `duration` | Days per week; permits converting between `w` and `d`.         |
 
-Unrecognised options are ignored and retained.
+Unrecognised options are ignored and retained. The options in this table are errors when misused, and each is structural (§6):
+
+- A known option on a type it doesn't apply to, such as `hpd=` on a `number` column, is ignored.
+- A flag given a value, such as `required=yes`, or a value option given none, such as a bare `default`, is ignored.
+- A repeated option is an error, and the last one is used.
 
 ## 5. Types
 
@@ -124,8 +130,8 @@ Unrecognised options are ignored and retained.
 **Duration.**
 
 ```
-duration = [ "+" / "-" ] term *( [ WSP ] term )
-term     = number [ WSP ] unit
+duration = [ "+" / "-" ] term *( *WSP term )
+term     = number *WSP unit
 number   = 1*DIGIT [ "." 1*DIGIT ]
 unit     = "m" / "h" / "d" / "w"
 ```
@@ -136,7 +142,16 @@ With `unit=U`, a value that is a single signed number is that many `U`.
 
 A duration is a bag of unit terms, not a normalised quantity. Minutes and hours convert at 60. Tools MUST NOT convert between `d` and `h` without `hpd`, or between `w` and `d` without `dpw`. A leading sign is preserved as part of the value.
 
-Types beginning `x-` are extension types, read as `text`. Any other unknown type is a validation error (§6).
+**Equality.** Two values of a column are equal when:
+
+- numbers are numerically equal, so `1` and `1.0` are equal;
+- dates and datetimes are the same instant, so `2026-09-01T10:00:00Z` and `2026-09-01T11:00:00+01:00` are equal;
+- text, enum and bool values are the same sequence of code points;
+- durations are the same bag of terms, so `1d 4h` and `4h 1d` are equal, but `1h` and `60m` are not.
+
+A value that doesn't match its column compares as its text. `unique` (§4) uses this definition.
+
+A type is written `name` or `name[...]`, with `name` matching the column-name grammar. Types beginning `x-` are extension types, read as `text`. Any other name in that form that isn't defined here is an **unknown** type, a validation error. Anything else is a **malformed** type, a structural error: a type not in that form, brackets on a type that doesn't take them, such as `number[3]`, and `enum` without them (§6).
 
 ## 6. Errors
 
@@ -149,6 +164,8 @@ Types beginning `x-` are extension types, read as `text`. Any other unknown type
 Every non-blank, non-comment body line produces a row, whatever its errors. Recovery is defined so that all parsers produce the same rows.
 
 Recovery comes first. The recovered row is then checked against every rule, and each rule it breaks is reported, so one mistake can produce several errors. For example, `| 2d` begins with the delimiter, and its null lead then breaks `required`. A rule stated in two places is one rule, and is reported once.
+
+A key with a default (§2.2) that is present but empty or unusable is a structural error, and the default applies. The rows below for `format`, `sep` and `comment` are instances of this rule.
 
 An error that involves several lines is reported on every line involved when the condition is symmetric, such as two rows sharing a `unique` value. When the condition is ordered, such as a key set a second time, it is reported on the later line.
 
@@ -165,9 +182,12 @@ An error that involves several lines is reported on every line involved when the
 | Profile sets a forbidden key (§2.3)                                                          | Structural | Key ignored.                                                               |
 | Errors in the profile's frontmatter                                                          | Structural | One error in total. Profile used as recovered.                             |
 | Column name not matching the grammar, or already used, or an empty declaration               | Structural | Column kept in position, but cannot be set by name.                        |
-| Malformed type, such as a bad `enum[...]`                                                    | Structural | Column read as `text`.                                                     |
+| Key with a default set to an empty or unusable value, such as `table:` or `lead:`            | Structural | Default used.                                                              |
+| Malformed type (§5), such as a bad `enum[...]` or `number[3]`                                | Structural | Column read as `text`.                                                     |
 | Unknown type                                                                                 | Validation | Column read as `text`.                                                     |
 | Invalid option value, such as `unit=x`, `hpd=0`, or a `default` that does not match the type | Structural | Option ignored.                                                            |
+| Known option on a type it doesn't apply to, a flag with a value, or a value option without one | Structural | Option ignored.                                                          |
+| Option repeated in one declaration                                                           | Structural | Last one used.                                                             |
 
 **Rows**
 

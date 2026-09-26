@@ -74,13 +74,15 @@ The specs define classes, not codes (DESIGN §4). These codes are the library's;
 | `unsupported-format`         | structural | base §6                                                       |
 | `invalid-sep`                | structural | base §6                                                       |
 | `invalid-comment`            | structural | base §6                                                       |
+| `empty-value`                | structural | base §2.2, §6: a key with a default set to an empty value     |
 | `unresolvable-profile`       | structural | base §6                                                       |
 | `forbidden-profile-key`      | structural | base §2.3, §6                                                 |
 | `profile-has-errors`         | structural | base §2.3, §6                                                 |
 | `invalid-column-name`        | structural | base §6                                                       |
 | `duplicate-column-name`      | structural | base §6                                                       |
 | `malformed-type`             | structural | base §6                                                       |
-| `invalid-option-value`       | structural | base §6; ext §4.3 lead `ref` options                           |
+| `invalid-option-value`       | structural | base §4, §6; ext §4.3 lead `ref` options                       |
+| `duplicate-option`           | structural | base §4, §6: an option repeated in one declaration            |
 | `row-begins-with-delimiter`  | structural | base §6                                                       |
 | `tab-in-indent`              | structural | base §6                                                       |
 | `heading-line`               | structural | base §6, §9                                                   |

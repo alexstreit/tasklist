@@ -1,0 +1,7 @@
+---
+columns: d:duration unit=h unique
+---
+a | +1d
+b | 1d
+c | 4
+d | 4h

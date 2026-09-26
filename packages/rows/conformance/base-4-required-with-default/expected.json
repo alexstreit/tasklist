@@ -1,7 +1,6 @@
 {
-  "spec": ["base §4 required, default"],
+  "spec": ["base §4: a default does not satisfy required"],
   "stage": "types",
-  "disputed": true,
   "failed": false,
   "errors": [{ "class": "validation", "code": "required", "line": 4 }],
   "rows": [

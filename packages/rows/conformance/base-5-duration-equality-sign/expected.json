@@ -1,0 +1,16 @@
+{
+  "spec": ["base §5 equality: durations as bags", "base §5: a leading sign is preserved as part of the value"],
+  "stage": "types",
+  "disputed": true,
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "not-unique", "line": 6 },
+    { "class": "validation", "code": "not-unique", "line": 7 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "d": "+1d" } },
+    { "line": 5, "lead": "b", "values": { "d": "1d" } },
+    { "line": 6, "lead": "c", "values": { "d": "4" } },
+    { "line": 7, "lead": "d", "values": { "d": "4h" } }
+  ]
+}
