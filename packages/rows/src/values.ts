@@ -9,7 +9,7 @@ const SIMPLE = new Set(['text', 'number', 'bool', 'date', 'datetime', 'duration'
 const TYPE = /^([A-Za-z_][A-Za-z0-9_-]*)(?:\[([^\]]*)\])?$/;
 
 export type ParsedType =
-  | { ok: true; type: string; kind: TypeKind; enumValues?: string[] }
+  | { ok: true; type: string; kind: TypeKind; enumValues?: string[]; ignored?: ('empty' | 'repeated')[] }
   | { ok: false; problem: 'malformed' | 'unknown' };
 
 /** Reads a declared type. Malformed and unknown types are read as `text` by the caller (base §6). */
@@ -24,9 +24,17 @@ export function parseType(declared: string, extensions: boolean): ParsedType {
   }
   if (name === 'enum') {
     if (param === undefined) return { ok: false, problem: 'malformed' };
-    const values = param.split(',').map((v) => v.replace(/^[ \t]+|[ \t]+$/g, ''));
-    if (values.some((v) => v === '')) return { ok: false, problem: 'malformed' };
-    return { ok: true, type: `enum[${values.join(',')}]`, kind: 'enum', enumValues: values };
+    // base §5: enum[] is malformed; empty and repeated values are ignored, each with an error.
+    const values: string[] = [];
+    const ignored: ('empty' | 'repeated')[] = [];
+    for (const v of param.split(',').map((v) => v.replace(/^[ \t]+|[ \t]+$/g, ''))) {
+      if (v === '') ignored.push('empty');
+      else if (values.includes(v)) ignored.push('repeated');
+      else values.push(v);
+    }
+    // With no values left, as in enum[] or enum[,], the type is malformed (Q39).
+    if (values.length === 0) return { ok: false, problem: 'malformed' };
+    return { ok: true, type: `enum[${values.join(',')}]`, kind: 'enum', enumValues: values, ignored };
   }
   if (SIMPLE.has(name)) return param === undefined ? { ok: true, type: name, kind: name as TypeKind } : { ok: false, problem: 'malformed' };
   return { ok: false, problem: 'unknown' };
@@ -116,7 +124,7 @@ export const positiveNumber = (s: string | null): number | null => (s !== null &
  * A key such that two cells of a column are equal (base §5) exactly when their keys are equal.
  * A value that doesn't match its column compares as its text.
  */
-export function equalityKey(cell: { text: string | null; value: Value | null }): string | null {
+export function equalityKey(cell: { text: string | null; value: Value | null }, column: Pick<Column, 'hpd' | 'dpw'>): string | null {
   if (cell.text === null) return null;
   const v = cell.value;
   if (v === null) return `text:${cell.text}`;
@@ -125,8 +133,15 @@ export function equalityKey(cell: { text: string | null; value: Value | null }):
       return `number:${v.value}`;
     case 'datetime':
       return `instant:${instant(v.text)}`;
-    case 'duration':
-      return `duration:${v.sign ?? ''}${(['m', 'h', 'd', 'w'] as const).map((u) => (v.terms[u] === undefined ? '' : `${u}${v.terms[u]}`)).join(' ')}`;
+    case 'duration': {
+      // Minutes where the column permits the conversion; otherwise the bag of terms. The sign counts.
+      const converted = durationToMinutes({ ...v, sign: null }, column);
+      const magnitude =
+        'minutes' in converted
+          ? `${converted.minutes}m`
+          : (['m', 'h', 'd', 'w'] as const).map((u) => (v.terms[u] === undefined ? '' : `${u}${v.terms[u]}`)).join(' ');
+      return `duration:${v.sign ?? ''}${'minutes' in converted ? 'minutes' : 'bag'}:${magnitude}`;
+    }
     case 'ref':
       return `text:${cell.text}`; // the extensions stage defines reference equality
     default:

@@ -6,25 +6,13 @@ Where a question says a rule has "no class", the class matters because strict mo
 
 ---
 
-Q37 and Q38 came up while settling Q34 and Q35. The parser implements each **Used** reading.
+## Q39. Leftovers from Q37 and Q38: leap seconds, and enums with only empty values
 
-## Q37. Duration equality: the sign, and bare numbers
+**Cases:** `base-5-enum-all-empty` (+ `--strict`).
+**Spec:** base §5 (equality: datetimes "as instants"; Enum: "`enum[]` is a malformed type", and empty values are ignored).
 
-**Cases:** `base-5-duration-equality-sign`.
-**Spec:** base §5 (equality: "durations are the same bag of terms"; "A leading sign is preserved as part of the value"; with `unit=U`, a bare number "is that many `U`").
-
-- A sign. **Used:** it is part of the value, so `+1d` and `1d` are different. The alternative is that equality looks only at the bag, so they are equal.
-- A bare number with `unit=`. **Used:** `4` in a `unit=h` column is the bag `{ h: 4 }`, so it equals `4h`. The alternative is that how the value was written counts, so they differ.
-- A leap second in a datetime. **Used:** `23:59:60Z` is the same instant as the following `00:00:00Z`, as POSIX time counts it. No case yet.
-
-## Q38. Enum values: empty, repeated, and case
-
-**Cases:** `base-5-enum-value-edges` (+ `--strict`).
-**Spec:** base §5 (Enum: "The values are separated by commas and trimmed. A value MUST NOT contain `,` or `]`"); Q35's rule that `enum` without brackets is malformed.
-
-- An empty value, as in `enum[]` or `enum[x,,y]`. **Used:** a malformed type. The alternative is that the empty value is simply not a value, so `enum[x,,y]` is `enum[x,y]` and `enum[]` accepts nothing.
-- A repeated value, as in `enum[x,x]`. **Used:** allowed and harmless. The alternative is a malformed type.
-- Case. **Used:** values match by code point, as §5 equality says for enums, so `X` isn't a value of `enum[x,x]`. This follows from Q34 and is listed here only to confirm it.
+- A leap second. **Used:** `23:59:60Z` is the same instant as the following `00:00:00Z`, as POSIX time counts it. No case.
+- `enum[,]` or `enum[ ]`, where every value is empty. **Used:** malformed, the same as `enum[]`, because nothing is left once the empty values are ignored. The alternative is a structural error per empty value, as Q38 says, leaving an enum that accepts no value.
 
 ---
 
@@ -245,3 +233,15 @@ Q37 and Q38 came up while settling Q34 and Q35. The parser implements each **Use
 **Decision:** a known option on a type it doesn't apply to is structural, and ignored. So is a flag given a value, or a value option given none. A repeated option is structural, and the last one is used; it has the new `duplicate-option` code. The others use `invalid-option-value`.
 **Spec changed:** base §4 (after the options table); base §6 (two new rows).
 **Cases:** `base-4-option-edges` (+ `--strict`) now expects five errors: `unit=` and `hpd=` on a `text` column, `required=yes`, a bare `default`, and a repeated `hpd`.
+
+### Q37. Duration equality: the sign, and bare numbers
+
+**Decision:** two durations are equal when they convert to the same number of minutes, using only the conversions their column permits (`m` and `h` always, `d` and `h` with `hpd`, `w` and `d` with `dpw`). Otherwise they compare as bags of terms. The sign counts. A bare number with `unit=` is its terms, so it converts like any other value. `unique` uses this now, and `order` will use the same function. The leap-second bullet wasn't covered, and is now part of Q39.
+**Spec changed:** base §5 (the Equality paragraph).
+**Cases:** `base-5-duration-equality-sign` is no longer disputed. `base-5-value-equality` now expects `60m` and `1h` to be duplicates. `base-5-duration-equality` is new: with `hpd=8`, `1d 4h` equals `12h`, two `1w` values are equal as bags, `5d` equals neither, `-1h` equals `-60m`, and `+1h` differs from `1h`.
+
+### Q38. Enum values: empty, repeated, and case
+
+**Decision:** `enum[]` is malformed. Empty and repeated values are each structural, and the value is ignored; they use the new `invalid-enum-value` code. Values are case-sensitive, and there is no rule about values that differ only by case. An enum whose values are all empty wasn't covered, and is now part of Q39.
+**Spec changed:** base §5 (the Enum paragraph); base §6 (the malformed-type row, and a new row).
+**Cases:** `base-5-enum-value-edges` (+ `--strict`) now expects `enum[x,,y]` to read as `enum[x,y]` and `enum[x,x]` as `enum[x]`, each with an error.

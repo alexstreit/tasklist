@@ -40,7 +40,7 @@ function collectKeys(entries: FrontmatterEntry[], errors: RowsError[]): Map<stri
   return keys;
 }
 
-type Report = (code: 'malformed-type' | 'unknown-type' | 'invalid-option-value' | 'duplicate-option', message: string) => void;
+type Report = (code: 'malformed-type' | 'unknown-type' | 'invalid-option-value' | 'duplicate-option' | 'invalid-enum-value', message: string) => void;
 
 // The base options (§4): whether each is a flag, and the column kinds it applies to (null = any).
 const OPTIONS: Record<string, { flag: boolean; kinds: string[] | null }> = {
@@ -59,6 +59,7 @@ function readTypeAndOptions(column: Column, declared: string, extensions: boolea
     column.type = type.type;
     column.kind = type.kind;
     if (type.enumValues) column.enumValues = type.enumValues;
+    for (const problem of type.ignored ?? []) report('invalid-enum-value', `An ${problem} enum value in ${declared}; ignored.`);
   } else if (type.problem === 'malformed') {
     report('malformed-type', `Malformed type ${declared}; the column is read as text.`);
   } else {

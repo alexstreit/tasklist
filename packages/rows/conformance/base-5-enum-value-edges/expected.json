@@ -1,18 +1,18 @@
 {
-  "spec": ["base §5 enum values"],
+  "spec": ["base §5 enum: enum[] is malformed; empty and repeated values are ignored; values are case-sensitive", "base §6 frontmatter"],
   "stage": "types",
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "structural", "code": "malformed-type", "line": 2 },
-    { "class": "structural", "code": "malformed-type", "line": 2 },
+    { "class": "structural", "code": "invalid-enum-value", "line": 2 },
+    { "class": "structural", "code": "invalid-enum-value", "line": 2 },
     { "class": "validation", "code": "invalid-value", "line": 4 }
   ],
   "columns": [
     { "name": "name", "type": "text" },
     { "name": "c", "type": "text" },
-    { "name": "d", "type": "text" },
-    { "name": "e", "type": "enum[x,x]" }
+    { "name": "d", "type": "enum[x,y]" },
+    { "name": "e", "type": "enum[x]" }
   ],
   "rows": [
     { "line": 4, "lead": "R", "values": { "e": "X" } },

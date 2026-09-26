@@ -1,0 +1,24 @@
+{
+  "spec": ["base §5 equality: durations compare in minutes where their column permits, otherwise as bags; the sign counts"],
+  "stage": "types",
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "not-unique", "line": 4 },
+    { "class": "validation", "code": "not-unique", "line": 5 },
+    { "class": "validation", "code": "not-unique", "line": 6 },
+    { "class": "validation", "code": "not-unique", "line": 7 },
+    { "class": "validation", "code": "not-unique", "line": 9 },
+    { "class": "validation", "code": "not-unique", "line": 10 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "d": "1d 4h" } },
+    { "line": 5, "lead": "b", "values": { "d": "12h" } },
+    { "line": 6, "lead": "c", "values": { "d": "1w" } },
+    { "line": 7, "lead": "d", "values": { "d": "1w" } },
+    { "line": 8, "lead": "e", "values": { "d": "5d" } },
+    { "line": 9, "lead": "f", "values": { "d": "-1h" } },
+    { "line": 10, "lead": "g", "values": { "d": "-60m" } },
+    { "line": 11, "lead": "h", "values": { "d": "+1h" } },
+    { "line": 12, "lead": "i", "values": { "d": "1h" } }
+  ]
+}

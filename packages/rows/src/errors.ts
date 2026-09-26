@@ -23,6 +23,7 @@ export const ERROR_CODES = {
   'malformed-type': 'structural',
   'invalid-option-value': 'structural',
   'duplicate-option': 'structural',
+  'invalid-enum-value': 'structural',
   'row-begins-with-delimiter': 'structural',
   'tab-in-indent': 'structural',
   'heading-line': 'structural',

@@ -1,0 +1,4 @@
+---
+columns: a:enum[,] | b:enum[ ]
+---
+R | x | y

@@ -83,6 +83,7 @@ The specs define classes, not codes (DESIGN §4). These codes are the library's;
 | `malformed-type`             | structural | base §6                                                       |
 | `invalid-option-value`       | structural | base §4, §6; ext §4.3 lead `ref` options                       |
 | `duplicate-option`           | structural | base §4, §6: an option repeated in one declaration            |
+| `invalid-enum-value`         | structural | base §5, §6: an empty or repeated `enum` value                |
 | `row-begins-with-delimiter`  | structural | base §6                                                       |
 | `tab-in-indent`              | structural | base §6                                                       |
 | `heading-line`               | structural | base §6, §9                                                   |

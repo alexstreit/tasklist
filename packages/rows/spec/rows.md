@@ -1,6 +1,6 @@
 # rows — File Format
 
-**Version 0.7 (draft)**
+**Version 0.8 (draft)**
 
 A `.rows` file is a plain-text table: an optional frontmatter block describing the columns, then one delimited row per line. The format is self-contained. Some keys and forms are reserved for extensions (§9).
 
@@ -125,7 +125,7 @@ Unrecognised options are ignored and retained. The options in this table are err
 | `duration`      | see below                 |
 | `enum[a,b,...]` | one of the listed values  |
 
-**Enum.** The values are separated by commas and trimmed. A value MUST NOT contain `,` or `]`. The brackets protect their contents (§4), so `enum[low, high]` is valid in any file, including one whose `sep` is `,`.
+**Enum.** The values are separated by commas and trimmed. A value MUST NOT contain `,` or `]`. `enum[]` is a malformed type. An empty value, as in `enum[x,,y]`, and a repeated value, as in `enum[x,x]`, are each a structural error, and the value is ignored. Values are case-sensitive, and values that differ only by case are distinct. The brackets protect their contents (§4), so `enum[low, high]` is valid in any file, including one whose `sep` is `,`.
 
 **Duration.**
 
@@ -147,7 +147,7 @@ A duration is a bag of unit terms, not a normalised quantity. Minutes and hours 
 - numbers are numerically equal, so `1` and `1.0` are equal;
 - dates and datetimes are the same instant, so `2026-09-01T10:00:00Z` and `2026-09-01T11:00:00+01:00` are equal;
 - text, enum and bool values are the same sequence of code points;
-- durations are the same bag of terms, so `1d 4h` and `4h 1d` are equal, but `1h` and `60m` are not.
+- durations convert to the same number of minutes, using only the conversions their column permits (`m` and `h` always, `d` and `h` with `hpd`, `w` and `d` with `dpw`), so `1h` and `60m` are equal. Durations that can't both be converted compare as bags of terms, so `1d 4h` and `4h 1d` are equal without `hpd`. Either way the sign counts: `+1h` and `1h` differ.
 
 A value that doesn't match its column compares as its text. `unique` (§4) uses this definition.
 
@@ -183,7 +183,8 @@ An error that involves several lines is reported on every line involved when the
 | Errors in the profile's frontmatter                                                          | Structural | One error in total. Profile used as recovered.                             |
 | Column name not matching the grammar, or already used, or an empty declaration               | Structural | Column kept in position, but cannot be set by name.                        |
 | Key with a default set to an empty or unusable value, such as `table:` or `lead:`            | Structural | Default used.                                                              |
-| Malformed type (§5), such as a bad `enum[...]` or `number[3]`                                | Structural | Column read as `text`.                                                     |
+| Malformed type (§5), such as a bad `enum[...]`, `enum[]` or `number[3]`                      | Structural | Column read as `text`.                                                     |
+| Empty or repeated `enum` value                                                               | Structural | Value ignored.                                                             |
 | Unknown type                                                                                 | Validation | Column read as `text`.                                                     |
 | Invalid option value, such as `unit=x`, `hpd=0`, or a `default` that does not match the type | Structural | Option ignored.                                                            |
 | Known option on a type it doesn't apply to, a flag with a value, or a value option without one | Structural | Option ignored.                                                          |

@@ -1,7 +1,6 @@
 {
-  "spec": ["base §5 equality: durations as bags", "base §5: a leading sign is preserved as part of the value"],
+  "spec": ["base §5 equality: the sign counts; a bare number with unit= converts like its unit"],
   "stage": "types",
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "validation", "code": "not-unique", "line": 6 },

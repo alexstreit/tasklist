@@ -59,7 +59,7 @@ function uniqueness(schema: Schema, rows: Row[]): RowsError[] {
     const byValue = new Map<string, Row[]>();
     for (const row of rows) {
       const cell = row.cells[column.index];
-      const key = cell && equalityKey(cell);
+      const key = cell && equalityKey(cell, column);
       if (key === null || key === undefined) continue;
       byValue.set(key, [...(byValue.get(key) ?? []), row]);
     }
