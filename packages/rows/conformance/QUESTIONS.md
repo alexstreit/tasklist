@@ -6,74 +6,65 @@ Where a question says a rule has "no class", the class matters because strict mo
 
 ---
 
-Q24–Q30 came up while implementing the base stage (Task 17). The parser implements each **Used** reading, so settling one differently means changing the parser as well as the case.
+## Q31. An empty `lead:` value
 
-## Q24. Delimiter lines and whitespace
+**Cases:** `base-4-empty-lead-declaration` (+ `--strict`).
+**Spec:** base §2.2 (`lead`, default `name:text`); base §4.
 
-**Cases:** `base-1-delimiter-whitespace` (+ `--strict`).
-**Spec:** base §1 ("If the first line is `---`, the frontmatter runs to the next `---` line"); base §2.1 (frontmatter lines are trimmed, from Q2).
+Q26 settled empty declarations between delimiters in `columns`, but not an empty `lead:` value.
 
-Since Q2, lines inside the frontmatter are trimmed, but §1 says nothing about the delimiter lines themselves.
+- **A (used).** The same as an empty declaration: a structural error, and the lead is an unnamed `text` column. The file still has a lead, but no name can refer to it.
+- **B.** An empty value is the same as leaving `lead` unset, so the lead is `name:text` and there is no error.
+- **C.** Invalid, so `name:text` is used, with a structural error.
 
-- **A (used).** A delimiter is exactly `---`. An indented `  ---` inside the block is a malformed line, not the closing one, and a first line of `--- ` (trailing space) doesn't open frontmatter, so the file is all body.
-- **B.** Delimiter lines are trimmed too, so `  ---` closes the block and `--- ` opens one.
+Q32–Q36 came up while implementing the types stage (Task 18). The parser implements each **Used** reading.
 
-## Q25. Quoted option values in `columns`
+## Q32. How much whitespace a duration allows
 
-**Cases:** `base-4-quoted-option-value`.
-**Spec:** base §4 ("Quote values containing whitespace"; declarations separated by the delimiter).
+**Cases:** `base-5-duration-whitespace`.
+**Spec:** base §5 (`term = number [ WSP ] unit`, `duration = [ "+" / "-" ] term *( [ WSP ] term )`); base §1 (whitespace).
 
-A quoted option value protects its whitespace, but the spec doesn't say whether it also protects the delimiter, or which escapes apply.
+In ABNF, `[ WSP ]` is at most one space or tab. The examples all use single spaces.
 
-- **A (used).** Quotes protect both the delimiter and whitespace, as brackets do, and `\"` and `\\` are unescaped, as in frontmatter values (§2.1). `default="a | b"` is one option.
-- **B.** Quotes protect only whitespace. `default="a | b"` is split at the delimiter, leaving a declaration `b"`.
+- **A (used).** As written: at most one space or tab between a number and its unit, and between terms. `1d  4h` and `2  d` are invalid; `1d\t4h` is valid.
+- **B.** Any run of whitespace (`*WSP`), since a cell's interior whitespace is otherwise preserved without meaning, and a doubled space is an easy typo to make and hard to see.
 
-## Q26. Empty declarations
+## Q33. Does a default satisfy `required`?
 
-**Cases:** `base-4-empty-declarations` (+ `--strict`).
-**Spec:** base §4.
+**Cases:** `base-4-required-with-default`.
+**Spec:** base §4 (`required`: "Cell must not be null"; `default=V`: "Value assumed when null").
 
-- A trailing delimiter in `columns`, as in `a | b |`. **Used:** ignored, as a trailing delimiter is in a row (§3).
-- An empty declaration between delimiters, as in `a | | b`. **Used:** a column whose name is empty, so an invalid column name: a structural error, and the column is kept in position.
-- An empty `lead:` value. **Used:** the same, a lead column with an invalid empty name. No case yet.
+- **A (used).** No. `required` is about what the row writes, so a null cell is an error even when the column has a default.
+- **B.** Yes. The cell's value is the default, so it isn't null, and `required` together with `default` means "fill it in, or it's this".
 
-The alternatives are to skip empty declarations, which shifts every positional cell after them, or to treat them as malformed lines.
+## Q34. What `unique` compares
 
-## Q27. How many errors for several unnamed cells after a named one
+**Cases:** `base-4-unique-compares-text`.
+**Spec:** base §4 (`unique`: "No two rows share a non-null value").
 
-**Cases:** `base-6-row-unnamed-after-named-several` (+ `--strict`).
-**Spec:** base §3 ("Once a named cell appears, every later cell in the row MUST be named"); base §6.
+- **A (used).** The decoded text. `1`, `1.0` and `01` are three values, and two invalid values with the same text are a duplicate.
+- **B.** The typed value, so `1` and `1.0` are the same number. That leaves open whether invalid values count, and whether durations such as `1h` and `60m` are equal.
 
-- **A (used).** One per row, as for too many cells (Q10), since the rule is about the row.
-- **B.** One per unnamed cell.
+## Q35. Where a malformed type ends and an unknown one begins
 
-The other cell rules are one error per cell, as used: each undeclared name and each column set a second time.
+**Cases:** `base-5-type-declaration-edges` (+ `--strict`).
+**Spec:** base §5 (types; `x-` types; unknown types); base §6 ("Malformed type, such as a bad `enum[...]`" is structural; "Unknown type" is validation).
 
-## Q28. A profile file with no frontmatter, or an unclosed one
+**Used:** a type must be a name, optionally followed by one `[...]`. A type that isn't in that form is malformed. So is a known type with the wrong parameters: `a:` (an empty type), `b:enum` (no values), `c:enum[]` and `d:enum[x,,y]` (an empty value), and `f:number[3]` (a parameter on a type that takes none). A well-formed name the spec doesn't define is unknown: `g:foo[bar]`, and `h:Number`, because type names are case-sensitive.
 
-**Cases:** `base-2.3-profile-without-frontmatter`, `base-2.3-profile-unclosed` (+ `--strict`).
-**Spec:** base §2.3 ("Only the profile file's frontmatter is used"; "If the profile's frontmatter has any errors…").
+Also used, and not stated: a repeated enum value, as in `e:enum[x,x]`, is allowed. Enum values match case-sensitively, so `X` isn't a value of `enum[x,x]`.
 
-- A profile whose text doesn't start with `---`. **Used:** it supplies no keys, and it isn't an error: it has no frontmatter, so it has no errors in it.
-- A profile whose frontmatter is never closed. **Used:** `profile-has-errors`, and it supplies no keys, because an unclosed block is not frontmatter (§6).
+The alternative is that anything that isn't a known type is simply unknown (validation), and only a bad `enum[...]` is malformed (structural). That changes whether strict mode fails for `number[3]` or `a:`.
 
-Either could instead be unresolvable-profile, since such a file is arguably not a profile.
+## Q36. Options that don't apply, flags with values, and repeats
 
-## Q29. What counts as whitespace
+**Cases:** `base-4-option-edges` (+ `--strict`).
+**Spec:** base §4 (the options table; "Unrecognised options are ignored and retained"); base §6 ("Invalid option value … Option ignored").
 
-**Cases:** `base-3-whitespace-is-space-and-tab`.
-**Spec:** base §2.1, §2.2 (`sep` not whitespace), §3 (blank lines, trimming, indent). Only the duration grammar (§5) says `WSP`.
-
-- **A (used).** Whitespace is space and tab, as `WSP` means in RFC 5234. A no-break space is content: it is kept at the end of a cell, a line holding only one is a row, and `sep` may be one.
-- **B.** Unicode whitespace, as most languages' `trim` does. Parsers then disagree on exotic characters unless the spec lists them.
-
-## Q30. Trailing whitespace in an unterminated quoted cell
-
-**Cases:** `base-6-row-unterminated-quote-trailing-space` (+ `--strict`).
-**Spec:** base §6 ("Unterminated quoted cell … Cell runs to end of line"); base §3 (inside quotes, whitespace is preserved).
-
-- **A (used).** Kept. The cell is still a quoted cell, and quoted whitespace is preserved: `"open   ` gives `open   `.
-- **B.** Trimmed, since the missing quote suggests the whitespace was never meant to be kept.
+- An option for another type, such as `unit=` or `hpd=` on a `text` column. **Used:** ignored and retained, with no error, like an unrecognised option. The alternative is an invalid option value.
+- A flag with a value, such as `required=yes`. **Used:** an invalid option value, so the flag is ignored and the column isn't required.
+- `default` with no value. **Used:** an invalid option value.
+- A repeated option, such as `hpd=8 hpd=6`. **Used:** the last one is used, with no error, as a repeated key's last value is used in frontmatter. Unlike a repeated key, it isn't reported. The alternative is to report it the way a key set twice is.
 
 ---
 
@@ -216,3 +207,45 @@ Either could instead be unresolvable-profile, since such a file is arguably not 
 **Decision:** on the `markers:` line. The recovery ignores the marker entry, so the error belongs where the ignored entry is written.
 **Spec changed:** ext §5, §10.
 **Cases:** `ext-5-marker-column-not-bool` (+ `--strict`).
+
+### Q24. Delimiter lines and whitespace
+
+**Decision:** a delimiter line may have trailing whitespace. A line with leading whitespace is not a delimiter; inside the frontmatter it is a malformed line.
+**Spec changed:** base §1.
+**Cases:** `base-1-delimiter-whitespace` (+ `--strict`), whose delimiters now carry trailing spaces and a tab.
+
+### Q25. Quoted option values in `columns`
+
+**Decision:** quotes protect both the delimiter and whitespace, and `\"` and `\\` are unescaped inside them, as in frontmatter values.
+**Spec changed:** base §4.
+**Cases:** `base-4-quoted-option-value`.
+
+### Q26. Empty declarations
+
+**Decision:** a trailing `|` in `columns` is ignored. An empty declaration between delimiters is a structural error, and the column keeps its position as an unnamed `text` column. It uses the `invalid-column-name` code, since an empty name doesn't match the grammar. An empty `lead:` value wasn't covered, and is Q31.
+**Spec changed:** base §4; base §6 (the column-name row).
+**Cases:** `base-4-empty-declarations` (+ `--strict`).
+
+### Q27. How many errors for several unnamed cells after a named one
+
+**Decision:** one per row.
+**Spec changed:** base §6 (the unnamed-after-named row).
+**Cases:** `base-6-row-unnamed-after-named-several` (+ `--strict`).
+
+### Q28. A profile file with no frontmatter, or an unclosed one
+
+**Decision:** both are `profile-has-errors`, and the profile supplies nothing.
+**Spec changed:** base §2.3.
+**Cases:** `base-2.3-profile-unclosed` (+ `--strict`). `base-2.3-profile-without-frontmatter` now expects the error, and so has gained a `--strict` variant.
+
+### Q29. What counts as whitespace
+
+**Decision:** space and tab only, defined once for the whole specification.
+**Spec changed:** base §1.
+**Cases:** `base-3-whitespace-is-space-and-tab`.
+
+### Q30. Trailing whitespace in an unterminated quoted cell
+
+**Decision:** trimmed. `"open   ` gives `open`, and the value span ends before the whitespace.
+**Spec changed:** base §6 (the unterminated-quote row).
+**Cases:** `base-6-row-unterminated-quote-trailing-space` (+ `--strict`).

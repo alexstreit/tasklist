@@ -119,6 +119,12 @@ describe('parseRows properties', () => {
     }
   });
 
+  it('puts the lead in cells[0] (DESIGN §4)', () => {
+    for (const { text, options } of inputs) {
+      for (const row of parseRows(text, options).rows) expect(row.cells[0]).toBe(row.lead);
+    }
+  });
+
   it('strict mode never throws, and fails exactly on syntax and structural errors', () => {
     for (const { text, options } of inputs) {
       const doc = parseRows(text, { ...options, mode: 'strict' });

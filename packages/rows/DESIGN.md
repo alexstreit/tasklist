@@ -89,7 +89,7 @@ interface Row {
   markers: { name: string; char: string; from: number; to: number }[];
   lead: Cell; // value span excludes markers and anchors
   anchors: { id: string; from: number; to: number }[];
-  cells: (Cell | null)[]; // by column index; null = not set by the row
+  cells: (Cell | null)[]; // by column index, so cells[0] is the lead; null = not set by the row
   overflow: Cell[];
   id: string | null;
   aliases: string[];

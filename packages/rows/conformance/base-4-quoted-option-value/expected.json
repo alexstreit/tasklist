@@ -1,7 +1,6 @@
 {
   "spec": ["base §4: quote option values containing whitespace"],
   "stage": "base",
-  "disputed": true,
   "failed": false,
   "errors": [],
   "columns": [

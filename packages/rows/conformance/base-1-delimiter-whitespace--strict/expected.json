@@ -1,7 +1,6 @@
 {
   "spec": ["base §1", "base §6 modes"],
   "stage": "base",
-  "disputed": true,
   "failed": true,
   "errors": [{ "class": "syntax", "code": "malformed-frontmatter-line", "line": 3 }]
 }

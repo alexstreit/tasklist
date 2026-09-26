@@ -1,7 +1,6 @@
 {
   "spec": ["base §4", "base §6 modes"],
   "stage": "base",
-  "disputed": true,
   "failed": true,
   "errors": [{ "class": "structural", "code": "invalid-column-name", "line": 2 }]
 }

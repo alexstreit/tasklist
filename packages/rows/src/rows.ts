@@ -4,6 +4,7 @@ import { rowsError } from './errors';
 import type { PhysicalLine } from './text';
 import { scanRow, type ScannedCell } from './tokenize';
 import type { Cell, Column, Row, RowsError, Schema } from './types';
+import { readValue } from './values';
 
 function toCell(s: ScannedCell, base: number, column: Column | null): Cell {
   return {
@@ -15,8 +16,7 @@ function toCell(s: ScannedCell, base: number, column: Column | null): Cell {
     name: s.name && { text: s.name.text, from: base + s.name.from, to: base + s.name.to },
     quoted: s.quoted,
     text: s.text,
-    // Only text is typed in the base stage; the types stage reads the rest.
-    value: s.text !== null && column?.type === 'text' ? { type: 'text', text: s.text } : null,
+    value: s.text !== null && column ? readValue(s.text, column) : null,
   };
 }
 
@@ -72,6 +72,20 @@ export function buildRow(line: PhysicalLine, schema: Schema): Row {
       if (!tooMany) at('too-many-cells', `More cells than the ${columns.length} columns; the extras are kept as overflow.`);
       tooMany = true;
       overflow.push(toCell(s, base, null));
+    }
+  }
+
+  // Validation (base §4, §5): every cell against its column, then required columns.
+  for (const cell of cells) {
+    if (cell && cell.text !== null && cell.value === null && cell.column!.kind !== 'ref') {
+      errors.push(rowsError('invalid-value', line.line, `${JSON.stringify(cell.text)} is not a valid ${cell.column!.type}; the text is kept.`, cell.valueFrom, cell.valueTo));
+    }
+  }
+  for (const column of columns) {
+    const cell = cells[column.index];
+    if (column.required && (!cell || cell.text === null)) {
+      const span = cell ? [cell.from, cell.to] : [line.from, line.to];
+      errors.push(rowsError('required', line.line, `${column.name || 'This column'} is required.`, span[0], span[1]));
     }
   }
 

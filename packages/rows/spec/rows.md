@@ -10,7 +10,8 @@ The key words MUST, MUST NOT, SHOULD, and MAY follow RFC 2119.
 
 - UTF-8. A leading BOM is stripped on read and never written.
 - Lines end in LF or CRLF; writers emit LF.
-- If the first line is `---`, the **frontmatter** runs to the next `---` line, and both delimiter lines are consumed.
+- **Whitespace**, throughout this specification, means space (U+0020) and tab (U+0009), and nothing else.
+- If the first line is `---`, the **frontmatter** runs to the next `---` line, and both delimiter lines are consumed. A delimiter line may have trailing whitespace, but a line with leading whitespace is not a delimiter.
 - Everything after is the **body**. Each body line is blank, a comment, or a row.
 
 ## 2. Frontmatter
@@ -49,6 +50,7 @@ A profile supplies values for keys the file leaves unset.
 - If the value contains `/` or ends in `.rows`, it is a path, relative to the file, to a rows file whose frontmatter supplies the defaults. Otherwise it is a name defined by the tool.
 - A profile MAY set any key except `format`, `table`, `profile`, `sep`, `comment`, and `include`. Setting one is a structural error, reported on the file's `profile:` line, and the key is ignored. Unknown and `x-` keys are supplied like any other.
 - If the profile's frontmatter has any errors, the file has one structural error on its `profile:` line, naming the profile. The profile is still used, as recovered by §6.
+- A profile file with no frontmatter, or with one that is never closed, is the same error, and the profile supplies nothing.
 - Only the profile file's frontmatter is used; its body is ignored.
 - Keys set in the file take precedence.
 - A file meant for exchange SHOULD give its profile as a path, or have its profile's keys written out.
@@ -78,7 +80,7 @@ A row MUST NOT have more unnamed cells than declared columns (lead plus `columns
 
 ## 4. Column declarations
 
-`lead` declares the lead column; `columns` declares the rest, separated by the delimiter. A delimiter inside `[...]` does not separate declarations. A `[` without a matching `]` protects nothing, so one typo can't swallow the declarations after it. Each declaration is:
+`lead` declares the lead column; `columns` declares the rest, separated by the delimiter. A delimiter inside `[...]` or inside a quoted option value does not separate declarations. A trailing delimiter followed only by whitespace is ignored. An empty declaration between two delimiters is a structural error, and the column keeps its position as an unnamed `text` column. A `[` without a matching `]` protects nothing, so one typo can't swallow the declarations after it. Each declaration is:
 
 ```
 name[:type][ option]...
@@ -86,7 +88,7 @@ name[:type][ option]...
 
 - `name` matches `[A-Za-z_][A-Za-z0-9_-]*`, is case-sensitive, and is unique within the file.
 - `type` defaults to `text`.
-- Options are bare flags or `key=value`, separated by whitespace. Whitespace inside `[...]` does not separate them. Quote values containing whitespace.
+- Options are bare flags or `key=value`, separated by whitespace. Whitespace inside `[...]` does not separate them. Quote values containing whitespace or the delimiter; inside the quotes, `\"` and `\\` are unescaped, as in frontmatter values (§2.1).
 
 ```
 lead: task:text
@@ -162,7 +164,7 @@ An error that involves several lines is reported on every line involved when the
 | Unresolvable profile                                                                         | Structural | File read without it.                                                      |
 | Profile sets a forbidden key (§2.3)                                                          | Structural | Key ignored.                                                               |
 | Errors in the profile's frontmatter                                                          | Structural | One error in total. Profile used as recovered.                             |
-| Column name not matching the grammar, or already used                                        | Structural | Column kept in position, but cannot be set by name.                        |
+| Column name not matching the grammar, or already used, or an empty declaration               | Structural | Column kept in position, but cannot be set by name.                        |
 | Malformed type, such as a bad `enum[...]`                                                    | Structural | Column read as `text`.                                                     |
 | Unknown type                                                                                 | Validation | Column read as `text`.                                                     |
 | Invalid option value, such as `unit=x`, `hpd=0`, or a `default` that does not match the type | Structural | Option ignored.                                                            |
@@ -171,14 +173,14 @@ An error that involves several lines is reported on every line involved when the
 
 | Error                                                     | Class      | Recovery                                                                   |
 | --------------------------------------------------------- | ---------- | -------------------------------------------------------------------------- |
-| Unterminated quoted cell                                  | Syntax     | Cell runs to end of line.                                                  |
+| Unterminated quoted cell                                  | Syntax     | Cell runs to end of line, less trailing whitespace.                        |
 | Unknown escape                                            | Syntax     | Kept literally.                                                            |
 | Text after closing quote                                  | Syntax     | Appended to the value as written, before trailing whitespace is trimmed.   |
 | Row begins with delimiter                                 | Structural | Lead is null.                                                              |
 | Tab in indent                                             | Structural | Each tab counts as one space.                                              |
 | Heading line (§9)                                         | Structural | Read as a row.                                                             |
 | Named cell whose name is undeclared or is the lead column | Structural | Read as an unnamed cell whose value is the whole raw text, e.g. `ratio=2`. |
-| Unnamed cell after a named cell                           | Structural | Kept as overflow.                                                          |
+| Unnamed cell after a named cell                           | Structural | Kept as overflow. One error per row.                                       |
 | Column set twice in a row                                 | Structural | First value kept; later ones kept as overflow.                             |
 | More unnamed cells than columns                           | Structural | Extras kept as overflow. One error per row.                                |
 | Value does not match its column                           | Validation | Raw text kept.                                                             |

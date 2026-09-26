@@ -1,0 +1,5 @@
+---
+columns: a: | b:enum | c:enum[] | d:enum[x,,y] | e:enum[x,x] | f:number[3] | g:foo[bar] | h:Number
+---
+R | e=X
+S | e=x

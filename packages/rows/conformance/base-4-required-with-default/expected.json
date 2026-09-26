@@ -1,0 +1,11 @@
+{
+  "spec": ["base §4 required, default"],
+  "stage": "types",
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "required", "line": 4 }],
+  "rows": [
+    { "line": 4, "lead": "A" },
+    { "line": 5, "lead": "B", "values": { "n": "3" } }
+  ]
+}

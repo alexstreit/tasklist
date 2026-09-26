@@ -1,7 +1,6 @@
 {
-  "spec": ["base §1: the frontmatter runs to the next --- line", "base §2.1: frontmatter lines are trimmed"],
+  "spec": ["base §1: a delimiter line may have trailing whitespace, but not leading whitespace"],
   "stage": "base",
-  "disputed": true,
   "failed": false,
   "errors": [{ "class": "syntax", "code": "malformed-frontmatter-line", "line": 3 }],
   "table": "t",

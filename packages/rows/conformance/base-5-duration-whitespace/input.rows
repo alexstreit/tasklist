@@ -1,0 +1,7 @@
+---
+columns: d:duration
+---
+a | 1d  4h
+b | 2  d
+c | 1d	4h
+d | 2	d

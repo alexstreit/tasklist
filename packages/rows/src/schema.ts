@@ -4,6 +4,7 @@ import { rowsError } from './errors';
 import { readFrontmatter } from './frontmatter';
 import { isWs, NAME, normalise, splitLines } from './text';
 import type { Column, Frontmatter, FrontmatterEntry, ParseOptions, RowsError, Schema } from './types';
+import { parseType, positiveNumber, readValue } from './values';
 
 const DEFAULT_SEP = '|';
 const DEFAULT_COMMENT = '//';
@@ -39,6 +40,50 @@ function collectKeys(entries: FrontmatterEntry[], errors: RowsError[]): Map<stri
   return keys;
 }
 
+type Report = (code: 'malformed-type' | 'unknown-type' | 'invalid-option-value', message: string) => void;
+
+/** base §4 options and §5 types, with their recovery rows in base §6. */
+function readTypeAndOptions(column: Column, declared: string, extensions: boolean, report: Report): void {
+  const type = parseType(declared, extensions);
+  if (type.ok) {
+    column.type = type.type;
+    column.kind = type.kind;
+    if (type.enumValues) column.enumValues = type.enumValues;
+  } else if (type.problem === 'malformed') {
+    report('malformed-type', `Malformed type ${declared}; the column is read as text.`);
+  } else {
+    report('unknown-type', `Unknown type ${declared}; the column is read as text.`);
+  }
+
+  const invalid = (option: string, why: string) => report('invalid-option-value', `Invalid option ${option}: ${why}; ignored.`);
+  let defaultText: string | null = null;
+  // A repeated option: the last one is used.
+  for (const { key, value } of column.options) {
+    const option = value === null ? key : `${key}=${value}`;
+    if (key === 'required' || key === 'unique') {
+      if (value !== null) invalid(option, `${key} is a flag`);
+      else column[key] = true;
+    } else if (key === 'default') {
+      if (value === null) invalid(option, 'it needs a value');
+      else defaultText = value;
+    } else if (key === 'unit' && (column.kind === 'number' || column.kind === 'duration')) {
+      if (value === null) invalid(option, 'it needs a value');
+      else if (column.kind === 'duration' && !['m', 'h', 'd', 'w'].includes(value)) invalid(option, 'a duration unit is m, h, d or w');
+      else column.unit = value;
+    } else if ((key === 'hpd' || key === 'dpw') && column.kind === 'duration') {
+      const n = positiveNumber(value);
+      if (n === null) invalid(option, 'it must be a positive number');
+      else column[key] = n;
+    }
+    // Anything else, including an option for another type, is ignored and retained (base §4).
+  }
+  if (defaultText !== null) {
+    const value = readValue(defaultText, column);
+    if (value === null) invalid(`default=${defaultText}`, `it doesn't match the type ${column.type}`);
+    else column.default = value;
+  }
+}
+
 export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, errors: RowsError[]): Schema {
   const fileKeys = collectKeys(fm?.entries ?? [], errors);
   const keys = new Map<string, Key>();
@@ -64,7 +109,8 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
           keys.set(key, { value: entry.value, source: { profile: true } });
         }
       }
-      profileHasErrors = profileErrors.length > 0;
+      // A profile with no frontmatter, or an unclosed one, supplies nothing and is an error (base §2.3).
+      profileHasErrors = profileErrors.length > 0 || block.frontmatter === null;
     }
   }
   for (const [key, entry] of fileKeys) keys.set(key, { value: entry.value, source: { entry } });
@@ -117,8 +163,12 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
     const column: Column = {
       index: columns.length,
       name: d.name,
-      type: d.type,
+      type: 'text',
+      kind: 'text',
       options: d.options,
+      required: columns.length === 0, // the lead column is always required (base §4)
+      unique: false,
+      default: null,
       settable: columns.length > 0,
       implicit: false,
     };
@@ -129,7 +179,7 @@ export function resolveSchema(fm: Frontmatter | null, options: ParseOptions, err
       column.from = span.from;
       column.to = span.to;
     }
-    if (options.extensions === false && /^ref(\[.*\])?$/.test(column.type)) column.type = 'text'; // base §9
+    if (key) readTypeAndOptions(column, d.type, options.extensions !== false, (code, message) => report(key, code, message, span));
     if (!NAME.test(d.name)) {
       column.settable = false;
       if (key) report(key, 'invalid-column-name', `Column name "${d.name}" is not valid; the column cannot be set by name.`, span);

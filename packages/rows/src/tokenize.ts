@@ -79,35 +79,46 @@ export function scanRow(text: string, sep: string): ScannedRow {
       return { from, to: valueTo, valueFrom, valueTo, name, quoted: false, text: value === '' ? null : value, escapes: [], end };
     }
 
-    let out = '';
-    const escapes: Span[] = [];
-    let k = at + 1;
-    let closed = -1;
-    while (k < text.length) {
-      const c = text[k];
-      if (c === '"') {
-        closed = k;
-        break;
-      }
-      if (c === '\\' && k + 1 < text.length) {
-        const e = text[k + 1];
-        if (e in ESCAPES) {
-          out += ESCAPES[e];
-          escapes.push({ from: k, to: k + 2 });
-        } else {
-          out += c + e;
-          errors.push({ code: 'unknown-escape', message: `Unknown escape \\${e}; kept literally.`, from: k, to: k + 2 });
+    // Decodes from the opening quote up to `limit`, stopping at a closing quote.
+    const decodeQuoted = (limit: number) => {
+      let out = '';
+      const escapes: Span[] = [];
+      const found: ScanError[] = [];
+      let k = at + 1;
+      while (k < limit) {
+        const c = text[k];
+        if (c === '"') return { out, escapes, found, closed: k };
+        if (c === '\\' && k + 1 < limit) {
+          const e = text[k + 1];
+          if (e in ESCAPES) {
+            out += ESCAPES[e];
+            escapes.push({ from: k, to: k + 2 });
+          } else {
+            out += c + e;
+            found.push({ code: 'unknown-escape', message: `Unknown escape \\${e}; kept literally.`, from: k, to: k + 2 });
+          }
+          k += 2;
+          continue;
         }
-        k += 2;
-        continue;
+        out += c;
+        k++;
       }
-      out += c;
-      k++;
+      return { out, escapes, found, closed: -1 };
+    };
+
+    let quoted = decodeQuoted(text.length);
+    if (quoted.closed === -1) {
+      // The cell runs to the end of the line, less trailing whitespace (base §6).
+      const end = Math.max(at + 1, trimEndIndex(text, at + 1));
+      quoted = decodeQuoted(end);
+      errors.push(...quoted.found);
+      errors.push({ code: 'unterminated-quote', message: 'Unterminated quoted cell; it runs to the end of the line.', from: at, to: end });
+      return { from, to: end, valueFrom, valueTo: end, name, quoted: true, text: quoted.out, escapes: quoted.escapes, end: text.length };
     }
-    if (closed === -1) {
-      errors.push({ code: 'unterminated-quote', message: 'Unterminated quoted cell; it runs to the end of the line.', from: at, to: text.length });
-      return { from, to: text.length, valueFrom, valueTo: text.length, name, quoted: true, text: out, escapes, end: text.length };
-    }
+    errors.push(...quoted.found);
+    let out = quoted.out;
+    const escapes = quoted.escapes;
+    const closed = quoted.closed;
 
     const afterQuote = closed + 1;
     const next = text.indexOf(sep, afterQuote);
@@ -158,9 +169,12 @@ export interface FrontmatterLine {
 
 const ENTRY = /^([A-Za-z_][A-Za-z0-9_-]*)[ \t]*:/;
 
-/** A line between the frontmatter delimiters (base §2.1). Lines are trimmed; `---` closes. */
+/** A frontmatter delimiter: `---`, with trailing whitespace allowed and none leading (base §1). */
+export const isDelimiterLine = (text: string): boolean => /^---[ \t]*$/.test(text);
+
+/** A line between the frontmatter delimiters (base §2.1). Lines are trimmed; a delimiter closes. */
 export function classifyFrontmatterLine(text: string): FrontmatterLine {
-  if (text === '---') return { kind: 'fm-close' };
+  if (isDelimiterLine(text)) return { kind: 'fm-close' };
   const start = trimStartIndex(text);
   const end = trimEndIndex(text);
   if (start === end) return { kind: 'fm-blank' };
@@ -216,7 +230,7 @@ export interface LineTokens {
  */
 export function tokenizeLine(text: string, ctx: LineContext): LineTokens {
   const state = ctx.state ?? 'body';
-  if (state === 'start' && text === '---') {
+  if (state === 'start' && isDelimiterLine(text)) {
     return { kind: 'fm-open', tokens: [{ type: 'fm-delimiter', from: 0, to: 3 }], next: 'frontmatter' };
   }
   if (state === 'frontmatter') {

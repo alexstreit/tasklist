@@ -57,6 +57,13 @@ describe('tokenizeLine', () => {
     ]);
   });
 
+  it('allows trailing whitespace on a delimiter line, but not leading (base §1)', () => {
+    expect(tokenizeLine('---  ', { ...ctx, state: 'start' }).kind).toBe('fm-open');
+    expect(tokenizeLine('---\t', { ...ctx, state: 'frontmatter' }).kind).toBe('fm-close');
+    expect(tokenizeLine('  ---', { ...ctx, state: 'frontmatter' }).kind).toBe('fm-malformed');
+    expect(tokenizeLine(' ---', { ...ctx, state: 'start' }).kind).toBe('row');
+  });
+
   it('reads a first line that is not --- as body', () => {
     expect(tokenizeLine('A | b', { ...ctx, state: 'start' })).toMatchObject({ kind: 'row', next: 'body' });
   });

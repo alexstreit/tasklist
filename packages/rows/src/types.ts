@@ -1,5 +1,6 @@
 // Public types (DESIGN §4). Every offset is into RowsDocument.text, the normalised text.
 import type { ErrorClass, ErrorCode } from './errors';
+import type { TypeKind } from './values';
 
 export interface ParseOptions {
   mode?: 'tolerant' | 'strict'; // default tolerant
@@ -68,8 +69,16 @@ export interface ColumnOption {
 export interface Column {
   index: number; // 0 is the lead
   name: string;
-  type: string; // as read; `text` when not given
-  options: ColumnOption[];
+  type: string; // as read, after recovery: `text` for malformed, unknown and x- types; enum values trimmed
+  kind: TypeKind;
+  enumValues?: string[];
+  options: ColumnOption[]; // every option as written, recognised or not
+  required: boolean; // always true for the lead
+  unique: boolean;
+  default: Value | null; // from a valid `default=`
+  unit?: string;
+  hpd?: number;
+  dpw?: number;
   settable: boolean; // can be set by a named cell
   implicit: boolean;
   from?: number; // the declaration, when it is written unquoted in this file

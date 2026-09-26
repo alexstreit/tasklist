@@ -1,9 +1,8 @@
 {
-  "spec": ["base §2.3: only the profile file's frontmatter is used"],
+  "spec": ["base §2.3: a profile file with no frontmatter supplies nothing, and is an error"],
   "stage": "base",
-  "disputed": true,
   "failed": false,
-  "errors": [],
+  "errors": [{ "class": "structural", "code": "profile-has-errors", "line": 2 }],
   "columns": [{ "name": "name", "type": "text" }],
   "rows": [{ "line": 4, "lead": "A" }]
 }

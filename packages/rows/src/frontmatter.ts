@@ -1,7 +1,7 @@
 // The frontmatter block (base §1, §2.1) and its recovery rows in base §6.
 import { rowsError } from './errors';
 import type { PhysicalLine } from './text';
-import { classifyFrontmatterLine } from './tokenize';
+import { classifyFrontmatterLine, isDelimiterLine } from './tokenize';
 import type { Frontmatter, FrontmatterEntry, LineKind, RowsError } from './types';
 
 export interface FrontmatterBlock {
@@ -16,8 +16,8 @@ export function unquoteValue(raw: string): { value: string; quoted: boolean } {
 }
 
 export function readFrontmatter(lines: PhysicalLine[], errors: RowsError[]): FrontmatterBlock {
-  if (lines.length === 0 || lines[0].text !== '---') return { frontmatter: null, kinds: [] };
-  const close = lines.findIndex((l, i) => i > 0 && l.text === '---');
+  if (lines.length === 0 || !isDelimiterLine(lines[0].text)) return { frontmatter: null, kinds: [] };
+  const close = lines.findIndex((l, i) => i > 0 && isDelimiterLine(l.text));
   if (close === -1) {
     errors.push(rowsError('unclosed-frontmatter', 1, 'No closing ---; the file has no frontmatter.', lines[0].from, lines[0].to));
     // The opening line is ignored and every later line is body (base §6).

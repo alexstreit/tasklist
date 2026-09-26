@@ -1,0 +1,12 @@
+{
+  "spec": ["base §2.2 lead", "base §4"],
+  "stage": "base",
+  "disputed": true,
+  "failed": false,
+  "errors": [{ "class": "structural", "code": "invalid-column-name", "line": 2 }],
+  "columns": [
+    { "name": "", "type": "text" },
+    { "name": "a", "type": "text" }
+  ],
+  "rows": [{ "line": 5, "lead": "X", "values": { "a": "1" } }]
+}

@@ -440,10 +440,16 @@ Each property test was checked by planting a bug (an off-by-one in value spans, 
 
 **Acceptance criteria**
 
-- [ ] All base conformance cases pass.
-- [ ] Duration table: `4h`, `4 h`, `1d 4h`, `2 d 4 h`, `+2d 4h`, `1.5d 4h`, `-30m` valid; `4 2d`, `2d 4`, `1d1d`, `2dh`, `d 2`, `4x` invalid; `4` valid only with `unit=`.
-- [ ] `durationToMinutes` converts m↔h always, d↔h only with `hpd`, w↔d only with `dpw`, and otherwise reports which option is missing.
-- [ ] A `default=` that doesn't match its type is a structural error and the option is ignored.
+- [x] All base conformance cases pass. — `ENABLED_STAGES` is now base and types. The 87 extensions cases, and their strict variants, are the only ones skipped.
+- [x] Duration table: `4h`, `4 h`, `1d 4h`, `2 d 4 h`, `+2d 4h`, `1.5d 4h`, `-30m` valid; `4 2d`, `2d 4`, `1d1d`, `2dh`, `d 2`, `4x` invalid; `4` valid only with `unit=`. — `tests/values.test.ts`, and the `base-5-duration*` cases.
+- [x] `durationToMinutes` converts m↔h always, d↔h only with `hpd`, w↔d only with `dpw`, and otherwise reports which option is missing. — `w` needs both `dpw` and `hpd`; `needs-dpw` is reported first. A term counts when it is present, even as `0w`.
+- [x] A `default=` that doesn't match its type is a structural error and the option is ignored.
+
+Real calendar dates (Q12) apply: `2026-02-30` is invalid, `2028-02-29` valid. `datetime` follows RFC 3339 §5.6, including lower-case `t` and `z` and a seconds value of 60. `order` comparisons are left to Task 19.
+
+**Open spec questions:** Q32–Q36 in `packages/rows/conformance/QUESTIONS.md`, raised by implementing types: how much whitespace a duration allows, whether a default satisfies `required`, what `unique` compares, where a malformed type ends and an unknown one begins, and options that don't apply, flags with values, and repeated options. Each has a disputed types case, and the parser implements the used reading. Q31, the empty `lead:` value left over from Q26, is also open.
+
+**Decisions taken (DESIGN-level):** `Column` gains `kind`, `enumValues`, `required`, `unique`, `default` (a `Value`), `unit`, `hpd` and `dpw`. `type` is the type after recovery, with enum values trimmed, so `enum[ low , high ]` reads as `enum[low,high]`. `ref` columns keep `kind: 'ref'` with a null value until Task 19. Declaration errors that come from a profile still collapse into `profile-has-errors` (base §2.3), so an unknown type in a profile fails strict mode.
 
 ---
 
@@ -515,6 +521,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - Grid cell edits through the rows edit API (spec §4b.2); `src/grid/edits.ts` shrinks to calls into it. Error outlines in the grid.
 - Open accepts `.plan` and `.rows`; Save As defaults to `.plan`; new documents start with `profile: plan` (spec §6).
 - `toggleComment` takes its marker from the document.
+- The highlighter takes the frontmatter extent from the latest parsed document when one exists.
 
 **Acceptance criteria**
 

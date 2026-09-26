@@ -1,0 +1,5 @@
+---
+columns: n:number required default=0
+---
+A
+B | 3

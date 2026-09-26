@@ -1,7 +1,6 @@
 {
   "spec": ["base §3: blank lines, trimming"],
   "stage": "base",
-  "disputed": true,
   "failed": false,
   "errors": [],
   "rows": [
