@@ -6,25 +6,7 @@ Where a question says a rule has "no class", the class matters because strict mo
 
 ---
 
-Q40 and Q41 came up while implementing the extensions stage (Task 19). The parser implements each **Used** reading.
-
-## Q40. What "alphanumeric" means for a marker character
-
-**Cases:** `ext-5-marker-non-ascii` (+ `--strict`).
-**Spec:** ext §5 ("`CHAR` is one character that is not alphanumeric, …"); base §1 (whitespace is space and tab only, from Q29).
-
-- **A (used).** Unicode letters and digits, so `é` and `٣` can't be markers, and `§` can. A lead such as `éclair` is never mistaken for a marker and a title.
-- **B.** ASCII `A–Z`, `a–z` and `0–9`, matching the ASCII column-name and ID grammars, and Q29's narrow definition of whitespace. Then `é` could be a marker, and a row `éclair` in that file would read as a marker and `clair`.
-
-## Q41. Can a qualifier's type be `ref`?
-
-**Cases:** `ext-4.3-qualifier-ref-type` (+ `--strict`).
-**Spec:** ext §4.3 (`qualifier=NAME:TYPE`: "validated as `TYPE`"); ext §4.4 (the join table declares `NAME:TYPE`).
-
-A `ref` qualifier would be a reference carried on a reference. It would need its own target table, and would itself be a locator after a locator.
-
-- **A (used).** No. `qualifier=who:ref` is an invalid option value, so the column takes no qualifier.
-- **B.** Yes, targeting the current table, and resolved like any other reference.
+None open.
 
 ---
 
@@ -264,11 +246,11 @@ A `ref` qualifier would be a reference carried on a reference. It would need its
 **Spec changed:** base §5 (the Equality and Enum paragraphs).
 **Cases:** `base-5-enum-all-empty` (+ `--strict`) is no longer disputed. `base-5-datetime-leap-second` is new.
 
-### A1. Empty extension keys (settled by analogy with Q31)
+### A1. Empty extension keys (settled by analogy with Q31, then adjusted)
 
-**Decision:** an empty `key:` or `order:` is a structural error (`empty-value`), and its default applies (`id`, `position`). An empty `nest:`, `markers:` or `include:` declares nothing and isn't an error, as an empty `columns:` isn't.
+**Decision:** an empty `order:` is a structural error (`empty-value`), and its default, `position`, applies. An empty `key:` is also `empty-value`, but `key` is treated as unset, so it doesn't make identity apply. That adjusted the first analogy, under which it took the default `id` and did. An empty `nest:`, `markers:` or `include:` declares nothing and isn't an error, as an empty `columns:` isn't.
 **Spec changed:** ext intro.
-**Cases:** `ext-1-empty-keys` (+ `--strict`).
+**Cases:** `ext-1-empty-keys` (+ `--strict`), whose `id=a` is now an undeclared cell name.
 
 ### A2. A repeated marker name or character (settled by analogy with Q38)
 
@@ -287,3 +269,15 @@ A `ref` qualifier would be a reference carried on a reference. It would need its
 **Decision:** two values that don't match their column compare as their text, as they do for equality. A valid value and an invalid one are skipped, like a pair of durations that can't be converted.
 **Spec changed:** ext §7.
 **Cases:** `ext-7-order-invalid-values`.
+
+### Q40. What "alphanumeric" means for a marker character
+
+**Decision:** Unicode letters and digits (`\p{L}`, `\p{N}`), and a marker character is exactly one code point. Both are stated in the spec.
+**Spec changed:** ext §5.
+**Cases:** `ext-5-marker-non-ascii` (+ `--strict`).
+
+### Q41. Can a qualifier's type be `ref`?
+
+**Decision:** no. A `ref` qualifier type is a structural error, and the option is ignored. The spec notes that it is reserved.
+**Spec changed:** ext §4.3.
+**Cases:** `ext-4.3-qualifier-ref-type` (+ `--strict`).

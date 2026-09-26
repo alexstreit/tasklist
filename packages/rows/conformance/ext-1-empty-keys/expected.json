@@ -1,17 +1,16 @@
 {
-  "spec": ["ext intro: empty key: and order: take their defaults; empty nest:, markers: and include: declare nothing (by analogy with Q31)"],
+  "spec": ["ext intro: an empty key: is treated as unset, so identity doesn't apply; an empty order: takes its default; empty nest:, markers: and include: declare nothing"],
   "stage": "extensions",
   "failed": false,
   "errors": [
     { "class": "structural", "code": "empty-value", "line": 2 },
-    { "class": "structural", "code": "empty-value", "line": 3 }
+    { "class": "structural", "code": "empty-value", "line": 3 },
+    { "class": "structural", "code": "invalid-cell-name", "line": 8 },
+    { "class": "structural", "code": "too-many-cells", "line": 8 }
   ],
-  "columns": [
-    { "name": "name", "type": "text" },
-    { "name": "id", "type": "text", "implicit": true }
-  ],
+  "columns": [{ "name": "name", "type": "text" }],
   "rows": [
-    { "line": 8, "lead": "A", "values": { "id": "a" }, "id": "a" },
+    { "line": 8, "lead": "A", "overflow": ["id=a"] },
     { "line": 9, "indent": 2, "lead": "B" }
   ]
 }

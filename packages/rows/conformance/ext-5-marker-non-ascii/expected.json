@@ -1,7 +1,6 @@
 {
-  "spec": ["ext §5: CHAR is not alphanumeric"],
+  "spec": ["ext §5: CHAR is one code point that is not a Unicode letter or digit"],
   "stage": "extensions",
-  "disputed": true,
   "failed": false,
   "errors": [
     { "class": "structural", "code": "invalid-marker", "line": 2 },

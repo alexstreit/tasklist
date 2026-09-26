@@ -471,14 +471,14 @@ Real calendar dates (Q12) apply: `2026-02-30` is invalid, `2028-02-29` valid. `d
 **How it's built:** markers and anchors are part of the lead cell, so `scanRow` reads them, and `tokenizeLine` gains `marker` and `anchor` tokens. Its context takes the document's markers, and `extensions: false` for a base-only parse. Whether identity applies depends on whether any lead has an anchor, so `parseRows` scans every row before it adds the implicit columns. `src/extensions.ts` then handles marker conflicts, IDs, references, nesting and order. Ordering uses `compareValues` in `values.ts`, next to `equalityKey`, so `order` and `unique` share one definition of values.
 
 **Settled by analogy** (Resolved in `QUESTIONS.md`, each with spec text and cases):
-- A1: empty `key:`/`order:` take their defaults, and empty `nest:`/`markers:`/`include:` declare nothing (Q31).
+- A1: an empty `order:` takes its default, an empty `key:` is treated as unset, and empty `nest:`/`markers:`/`include:` declare nothing (Q31; adjusted after review so that an empty `key:` doesn't make identity apply).
 - A2: a repeated marker name or character is an invalid entry (Q38).
 - A3: `many` and `qualifier` misused as the base options are, and a qualifier written `NAME[:TYPE]` like a declaration (Q36, base §4).
 - A4: invalid values under `order` compare as text with each other, and are skipped against valid ones (Q34).
 
-The extensions spec is bumped to 0.5. The references to base 0.8, which I missed when bumping base, are fixed in DESIGN, the plan spec and the conformance README.
+The extensions spec is at 0.6, after the analogies and the Q40/Q41 settlement. The references to base 0.8, which I missed when bumping base, are fixed in DESIGN, the plan spec and the conformance README.
 
-**Open spec questions:** Q40 (whether "alphanumeric" for marker characters means Unicode or ASCII) and Q41 (whether a qualifier can be a `ref`), each with a disputed case.
+**Spec questions:** Q40 (a marker character is one code point, not a Unicode letter or digit) and Q41 (a `ref` qualifier type is reserved) were raised and settled. None are open.
 
 **Decisions taken (DESIGN-level):** `Schema` gains `identity`, `key`, `nest` (`{ column, valid }`), `markers`, `order` and `includes`. `Column` gains `refTable`, `refCurrent`, `refKnown`, `many` and `qualifier`. A reference's value exists whenever its syntax is valid, with `target: null` when it doesn't resolve. A cell with several references and no `many` has no value. Errors on references use the cell's span.
 

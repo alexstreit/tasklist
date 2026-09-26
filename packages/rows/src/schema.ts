@@ -107,7 +107,7 @@ function readTypeAndOptions(column: Column, declared: string, extensions: boolea
       const typeText = colon === -1 ? 'text' : value!.slice(colon + 1);
       const type = parseType(typeText, true);
       if (!NAME.test(name)) invalid(option, `the qualifier name "${name}" is not valid`);
-      else if (type.ok && type.kind === 'ref') invalid(option, 'a qualifier cannot be a ref'); // Q41
+      else if (type.ok && type.kind === 'ref') invalid(option, 'a ref qualifier type is reserved'); // ext §4.3
       else if (type.ok) {
         for (const problem of type.ignored ?? []) report('invalid-enum-value', `An ${problem} enum value in ${typeText}; ignored.`);
         column.qualifier = { name, column: typedColumn(name, type.type, type.kind, type.enumValues) };
@@ -372,9 +372,11 @@ function readExtensionKeys(
     }
   }
 
-  // key (ext §3.1); an empty key or order is an error and its default applies, as for base keys (base §6).
-  const keyKey = keys.get('key');
-  if (keyKey?.value === '') report(keyKey, 'empty-value', 'key is empty; id is used.');
+  // key (ext §3.1): an empty key is an error, and key is treated as unset (ext intro).
+  const keyEntry = keys.get('key');
+  if (keyEntry?.value === '') report(keyEntry, 'empty-value', 'key is empty; it is treated as unset.');
+  const keyKey = keyEntry?.value ? keyEntry : undefined;
+  // An empty order is an error, and its default applies, as for base keys (base §6).
   const orderKey = keys.get('order');
   if (orderKey?.value === '') report(orderKey, 'empty-value', 'order is empty; position is used.');
   const nestKey = keys.get('nest');

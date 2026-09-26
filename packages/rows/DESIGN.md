@@ -1,6 +1,6 @@
 # rows — Library Design
 
-Lives at `packages/rows/DESIGN.md`. Implements rows base 0.8 and rows extensions 0.5 (which binds Text Anchors 0.2). The specs sit beside it in `packages/rows/spec/`.
+Lives at `packages/rows/DESIGN.md`. Implements rows base 0.8 and rows extensions 0.6 (which binds Text Anchors 0.2). The specs sit beside it in `packages/rows/spec/`.
 
 ## 1. Scope
 

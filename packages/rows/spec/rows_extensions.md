@@ -1,10 +1,10 @@
 # rows — Extensions
 
-**Version 0.5 (draft)**
+**Version 0.6 (draft)**
 
 This document defines identity, references, includes, markers, nesting, and row order for rows files. It uses the keys and forms reserved by the base format (base §9), and binds the Text Anchors specification to rows. Error classes, recovery, and modes are as in base §6. §10 lists every error this document defines.
 
-The base rule for keys with a default (base §6) applies to the keys here. An empty `key:` or `order:` is a structural error, and its default (`id`, `position`) applies. An empty `nest:`, `markers:` or `include:` declares nothing, and is not an error.
+The base rule for keys with a default (base §6) applies to the keys here. An empty `order:` is a structural error, and its default, `position`, applies. An empty `key:` is a structural error, and `key` is treated as unset, so it doesn't make identity apply (§3.1). An empty `nest:`, `markers:` or `include:` declares nothing, and is not an error.
 
 A file that uses these extensions MUST be read by a parser that implements them. A base-only parser will tokenise it, but in strict mode may reject it, for example because `id=auth` names a column only an extension declares.
 
@@ -94,7 +94,7 @@ locator   = [ TABLE ] "#" ID
 | `many`                | The cell may hold several references, separated by commas.                                                 |
 | `qualifier=NAME:TYPE` | Each reference may carry a qualifier: the text after whitespace up to the next comma, validated as `TYPE`. |
 
-A qualifier on a column without `qualifier`, or several references in a column without `many`, is a validation error. A lead `ref` column MUST NOT use either option; an option that breaks this is a structural error, and is ignored. The options otherwise follow base §4: on a column that isn't a `ref`, `many` given a value, or `qualifier` given none, each is a structural error, and the option is ignored. A qualifier is written like a declaration, `NAME[:TYPE]`, with the type defaulting to `text`; a malformed or unknown type is reported as it would be for a column, and read as `text`. Where `sep` is `,`, a cell with several references is quoted.
+A qualifier on a column without `qualifier`, or several references in a column without `many`, is a validation error. A lead `ref` column MUST NOT use either option; an option that breaks this is a structural error, and is ignored. The options otherwise follow base §4: on a column that isn't a `ref`, `many` given a value, or `qualifier` given none, each is a structural error, and the option is ignored. A qualifier is written like a declaration, `NAME[:TYPE]`, with the type defaulting to `text`; a malformed or unknown type is reported as it would be for a column, and read as `text`. A `ref` qualifier type is reserved: it is a structural error, and the option is ignored. Where `sep` is `,`, a cell with several references is quoted.
 
 ```
 columns: owner:ref[people] | deps:ref many qualifier=lag:duration
@@ -126,7 +126,7 @@ It has one row per reference, in source row and cell order. `NAME:TYPE` is prese
 markers: done=~ blocked=!
 ```
 
-- Entries are `NAME=CHAR`, separated by whitespace. `CHAR` is one character that is not alphanumeric, whitespace, `"`, `#`, `{`, `\`, `=`, the delimiter, or the first character of the comment marker. An entry that breaks this is a structural error, and is ignored. So is a repeated name or character: as with a repeated `enum` value (base §5), the later entry is ignored.
+- Entries are `NAME=CHAR`, separated by whitespace. `CHAR` is exactly one Unicode code point that is not alphanumeric (a letter or digit in any script: `\p{L}` or `\p{N}`), whitespace, `"`, `#`, `{`, `\`, `=`, the delimiter, or the first character of the comment marker. An entry that breaks this is a structural error, and is ignored. So is a repeated name or character: as with a repeated `enum` value (base §5), the later entry is ignored.
 - Markers are recognised at the start of the lead value, after the indent, in any order. They are removed from the lead value, together with any whitespace that follows them. The rest of the lead cell is read as usual and may be quoted.
 - A marker repeated in one row is a structural error. The repeat, and everything after it, is part of the lead value.
 - A marker sets its column to `true`. If the column is not declared, it is implicitly `NAME:bool default=false`. A declared marker column that is not `bool` is a structural error, reported on the `markers` line. Its marker entry is ignored, and the column is read as declared.
