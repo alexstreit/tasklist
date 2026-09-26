@@ -1,6 +1,6 @@
 # Plan File — Specification
 
-**Depends on:** rows 0.8, rows extensions 0.6, Text Anchors 0.2.
+**Depends on:** rows 0.9, rows extensions 0.6, Text Anchors 0.2.
 
 A text-driven project estimating tool. The plan is a plain text file; the app is one or more editors over that file plus one or more read-only renderers and exporters of it.
 
@@ -15,7 +15,7 @@ A text-driven project estimating tool. The plan is a plain text file; the app is
 
 ## 2. File format
 
-A plan file is a **rows** file (base 0.8 and extensions 0.6, in `packages/rows/spec/`) read in tolerant mode with the **plan profile**. This section covers only what the plan adds. Everything else, including tokenising, quoting, named cells, errors and recovery, comes from the rows specs and the `rows` library.
+A plan file is a **rows** file (base 0.9 and extensions 0.6, in `packages/rows/spec/`) read in tolerant mode with the **plan profile**. This section covers only what the plan adds. Everything else, including tokenising, quoting, named cells, errors and recovery, comes from the rows specs and the `rows` library.
 
 ### 2.1 The plan profile
 

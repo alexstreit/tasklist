@@ -270,6 +270,12 @@ None open.
 **Spec changed:** ext §7.
 **Cases:** `ext-7-order-invalid-values`.
 
+### A5. Whitespace after a duration's sign (settled by analogy with Q32)
+
+**Decision:** whitespace may follow a duration's sign, as it may come between a number and its unit and between terms: `[ ( "+" / "-" ) *WSP ] term …`. The `number` type is unchanged.
+**Spec changed:** base §5 (the duration grammar and an example); base is now 0.9.
+**Cases:** `base-5-duration-sign-whitespace`; in `base-5-duration`, `+ 2d` is now valid (row `x8` renamed `v11`).
+
 ### Q40. What "alphanumeric" means for a marker character
 
 **Decision:** Unicode letters and digits (`\p{L}`, `\p{N}`), and a marker character is exactly one code point. Both are stated in the spec.

@@ -1,0 +1,6 @@
+---
+columns: d:duration
+---
+a | + 2 d 4 h
+b | - 30m
+c | +	1h

@@ -1,6 +1,6 @@
 # rows — File Format
 
-**Version 0.8 (draft)**
+**Version 0.9 (draft)**
 
 A `.rows` file is a plain-text table: an optional frontmatter block describing the columns, then one delimited row per line. The format is self-contained. Some keys and forms are reserved for extensions (§9).
 
@@ -130,7 +130,7 @@ Unrecognised options are ignored and retained. The options in this table are err
 **Duration.**
 
 ```
-duration = [ "+" / "-" ] term *( *WSP term )
+duration = [ ( "+" / "-" ) *WSP ] term *( *WSP term )
 term     = number *WSP unit
 number   = 1*DIGIT [ "." 1*DIGIT ]
 unit     = "m" / "h" / "d" / "w"
@@ -138,7 +138,7 @@ unit     = "m" / "h" / "d" / "w"
 
 With `unit=U`, a value that is a single signed number is that many `U`.
 
-`m` is minutes, `h` hours, `d` days, `w` weeks. Each unit appears at most once. Examples: `4h`, `1d 4h`, `2.5d`, `-30m`.
+`m` is minutes, `h` hours, `d` days, `w` weeks. Each unit appears at most once. Examples: `4h`, `1d 4h`, `2.5d`, `-30m`, `+ 2d`.
 
 A duration is a bag of unit terms, not a normalised quantity. Minutes and hours convert at 60. Tools MUST NOT convert between `d` and `h` without `hpd`, or between `w` and `d` without `dpw`. A leading sign is preserved as part of the value.
 

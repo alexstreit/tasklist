@@ -21,6 +21,7 @@ describe('reading summable values (§2.6)', () => {
     ['1w 2d 4h', 60, 'override'],
     ['+2d 4h', 20, 'additive'],
     ['2 d 4 h', 20, 'override'],
+    ['+ 2 d 4 h', 20, 'additive'],
     ['90m', 1.5, 'override'],
   ])('reads %s as %ih', (value, hours, mode) => {
     expect(read(value)).toEqual({ hours, mode, diagnostics: [] });

@@ -9,8 +9,7 @@
     { "class": "validation", "code": "invalid-value", "line": 17 },
     { "class": "validation", "code": "invalid-value", "line": 18 },
     { "class": "validation", "code": "invalid-value", "line": 19 },
-    { "class": "validation", "code": "invalid-value", "line": 20 },
-    { "class": "validation", "code": "invalid-value", "line": 21 }
+    { "class": "validation", "code": "invalid-value", "line": 20 }
   ],
   "rows": [
     { "line": 4, "lead": "v1", "values": { "d": "4h" } },
@@ -30,6 +29,6 @@
     { "line": 18, "lead": "x5", "values": { "d": "d 2" } },
     { "line": 19, "lead": "x6", "values": { "d": "4x" } },
     { "line": 20, "lead": "x7", "values": { "d": "4" } },
-    { "line": 21, "lead": "x8", "values": { "d": "+ 2d" } }
+    { "line": 21, "lead": "v11", "values": { "d": "+ 2d" } }
   ]
 }

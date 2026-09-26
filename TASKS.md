@@ -2,7 +2,7 @@
 
 Work these in order. Each task is one Claude Code session. A task is done only when every acceptance criterion is met and the human has reviewed.
 
-**Status:** Tasks 1–15 complete. Task 16 written, pending human review. Next: Task 17 (rows: frontmatter, schema and tokenizer).
+**Status:** Tasks 1–21 complete. Next: Task 22.
 
 ---
 
@@ -165,7 +165,7 @@ Core only. Extend the `duration` parser so a value may contain several unit term
 - [x] The §2.10 example output is unchanged.
 - [x] No changes outside `src/core/` and tests.
 
-**Superseded by Task 21:** the duration grammar is now rows base §5 and this parser is deleted. Invalid values are the rows validation error `invalid-value`, without the separate bare-number message, and `+ 2 d 4 h` (whitespace after the sign) is no longer valid.
+**Superseded by Task 21:** the duration grammar is now rows base §5 and this parser is deleted. Invalid values are the rows validation error `invalid-value`, without the separate bare-number message. `+ 2 d 4 h` (whitespace after the sign) is still valid: rows base 0.9 allows it (A5).
 
 ---
 
@@ -363,7 +363,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Core change:** `Model` gained `lines` — every line of the file as `parse` classified it (spec §3.2). The grid shows comment, blank and front matter lines, and the alternative was re-implementing §2.2 line classification outside core. Renderers ignore it.
 
-**Decisions taken:** a non-item row is a WBS cell plus one cell spanning the rest, holding the raw line text including its indentation; editing it is a whole-line replacement (`setLine`), which is what makes a comment turn into an item and back. Front matter is one collapsed, non-navigable row — it is read-only, so it has no cells the keyboard can land on, and any diagnostic inside the block shows there. The trailing blank line that a file ending in a newline always has is a row like any other, which is what the text editor shows too. (Since Task 21, `Model.lines` comes from rows, which has no line for the empty text after a final newline, so the grid shows no row for it.)
+**Decisions taken:** a non-item row is a WBS cell plus one cell spanning the rest, holding the raw line text including its indentation; editing it is a whole-line replacement (`setLine`), which is what makes a comment turn into an item and back. Front matter is one collapsed, non-navigable row — it is read-only, so it has no cells the keyboard can land on, and any diagnostic inside the block shows there. The trailing blank line that a file ending in a newline always has is a row like any other, which is what the text editor shows too. (Removed deliberately in Task 21: `Model.lines` comes from rows, which has no line for the empty text after a final newline, so the grid no longer shows a row for it.)
 
 **Fixed on the way:** cells set `className` after `addCell` had added the diagnostic class, so warnings on the WBS and raw cells were invisible (the `title` was there, the outline was not). `addCell` now takes the class name. Toolbar enablement was re-splitting the whole document three times per focus move; it now uses the row's own indent and line number, which are the same conditions the operations apply (the disabled-state tests cover the equivalence). Arrow-key cost went from 8.6 ms to 1.3 ms on 500 lines in jsdom.
 
@@ -565,7 +565,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
   - Unclosed frontmatter: one `error`, and the rows stay visible. The old test asserted that every line was front matter.
   - Added: `<!--` with its fix, the legacy file, fix options, and negative values.
 - `tests/core/columns.test.ts`: rewritten, since `parseColumns` is deleted. It covers the same cases through `analyze().columns`. An unknown type is rows' `unknown-type` warning, and duplicate names are an error. Added: non-summable types, the plan profile and `defaultProfile` by file name, done by name, and the example matching the conformance case.
-- `tests/core/duration.test.ts`: the `parseDuration`/`parseNumber` tests went with the parser. The grammar is rows' and covered by the conformance suite. They are replaced by tests that read values as hours through `analyze`. `+ 2 d 4 h` is dropped, since rows doesn't allow whitespace after the sign. The `formatDuration` tests are unchanged.
+- `tests/core/duration.test.ts`: the `parseDuration`/`parseNumber` tests went with the parser. The grammar is rows' and covered by the conformance suite. They are replaced by tests that read values as hours through `analyze`. `+ 2 d 4 h` was dropped at first, since rows didn't allow whitespace after the sign. It is back since base 0.9 (A5). The `formatDuration` tests are unchanged.
 - `tests/editor/diagnostics.test.ts`: in the §2.9 table, `#`, overflow, duplicate column and unclosed frontmatter are now `error`. The unclosed one underlines `---`. An unknown key is `info` and underlines the key. Added: HTML comment and unconvertible duration.
 - `tests/editor/language.test.ts`: line 2 of the example is now `profile: plan`.
 - `tests/grid/grid.test.ts`:
