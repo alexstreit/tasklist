@@ -28,7 +28,7 @@ export function parsePlan(text: string, filename?: string): { doc: RowsDocument;
 
 export function analyze(text: string, filename?: string): Model {
   const { doc, tabs } = parsePlan(text, filename);
-  const tree = readPlan(doc);
+  const tree = readPlan(doc, (edited) => parsePlan(edited, filename).doc);
   tree.diagnostics.push(...tabs);
   return compute(tree, tree.columns);
 }

@@ -1,16 +1,14 @@
-// The messy fixtures (tests/fixtures/messy*.plan, answer key in messy-KEY.md):
-// what the app reports on each line and which fixes it offers, then that every
-// fix resolves what it is offered for without adding an error. Where the app
-// differs from the key, the test asserts the app and says so.
+// The messy fixtures (tests/fixtures/messy*.plan): what the app reports on each
+// line, which fixes it offers, and what those fixes write. These tests are the
+// reference for the fixtures; the fix invariant is in fix-invariant.test.ts.
 
 import { describe, expect, it } from 'vitest';
 import { applyEdits } from 'rows';
 import { analyze } from '../../src/core';
-import type { Diagnostic, Model } from '../../src/core';
+import type { Model } from '../../src/core';
 import messyRaw from '../fixtures/messy.plan?raw';
 import settingsRaw from '../fixtures/messy-settings.plan?raw';
 import unclosedRaw from '../fixtures/messy-unclosed.plan?raw';
-import repairCases from '../fixtures/repair-cases.plan?raw';
 
 /** As the app loads a file: tabs become 4 spaces before the text reaches the buffer (spec §2.2). */
 const load = (raw: string) => raw.replace(/\t/g, '    ');
@@ -33,13 +31,12 @@ describe('messy.plan', () => {
   const model = analyze(FILES['messy.plan'], 'messy.plan');
   const lines = byLine(model);
 
-  it('reports each line as the key predicts, with the differences noted', () => {
+  it('reports each line, with its fixes', () => {
     expect(lines).toEqual(sorted({
       4: ['unknown-key'], // x-team on line 3 reports nothing
       7: ['bad-indent: Indent 0 (auto)', `unconvertible-duration: ${CONVERT}`],
       8: [`unconvertible-duration: ${CONVERT}`],
-      // The key says lines 8 and 10 for {#login}; it is on lines 9 and 10. Both rows report it,
-      // and only the later one has the fix.
+      // {#login} twice: both rows report it, and only the later one has the fix.
       9: ['duplicate-id'],
       10: [`invalid-value: ${CONVERT}`, 'duplicate-id: Rename the later one (confirm)'],
       11: ['invalid-value'],
@@ -47,15 +44,16 @@ describe('messy.plan', () => {
       14: ['unterminated-quote: Rewrite the cell (auto)', 'bad-indent: Rewrite the indent (auto)'],
       15: ['repeated-marker: Remove extra marker (click)'],
       16: ['id-case-conflict'],
-      // Differs from the key: `priority=high` is read as the notes value, as the key says, but rows
-      // also reports it (a structural error), and rejoining quotes it, which clears the error.
+      // `priority=high` names no column, so it is read as the notes value, with a structural
+      // error; rejoining quotes it, which clears the error.
       17: [
         'invalid-cell-name: Rejoin into notes (click), Delete extra values (confirm)',
         'id-case-conflict: Rename the later one (confirm)',
         `unconvertible-duration: ${CONVERT}`,
       ],
       18: ['column-set-twice: Keep owner=sam (confirm), Keep owner=priya (confirm)', `unconvertible-duration: ${CONVERT}`],
-      19: ['unnamed-after-named: Rejoin into notes (click), Delete extra values (confirm)'],
+      // No notes cell to rejoin into.
+      19: ['unnamed-after-named: Delete extra values (confirm)'],
       20: ['text-after-quote: Rewrite the cell (auto)'],
       21: ['invalid-value'],
       22: [`unconvertible-duration: ${CONVERT}`], // the tab was converted on load: no error left
@@ -63,10 +61,9 @@ describe('messy.plan', () => {
       26: ['unknown-escape: Rewrite the cell (auto)', `unconvertible-duration: ${CONVERT}`],
       27: ['negative-value'],
       28: ['parent-mismatch: Use indentation (click)', `unconvertible-duration: ${CONVERT}`],
-      // Differs from the key: an indented row's parent comes from its indentation, so `parent=#perms`
-      // is a mismatch, not a cycle. The fix is the same.
+      // An indented row's parent comes from its indentation, so `parent=#perms` is a mismatch, not a cycle.
       29: ['parent-mismatch: Use indentation (click)', `unconvertible-duration: ${CONVERT}`],
-      // Beyond the key: a row without a title also breaks `required` on the title.
+      // A row without a title also breaks `required` on the title.
       30: ['row-begins-with-delimiter', 'required', `unconvertible-duration: ${CONVERT}`],
       31: ['html-comment: Make it a comment (confirm)'],
       32: ['invalid-value'],
@@ -74,7 +71,7 @@ describe('messy.plan', () => {
     }));
   });
 
-  it('reads the tree the key describes', () => {
+  it('reads the tree through the bad indents', () => {
     const titles = (nodes: Model['roots'], depth = 0): string[] => nodes.flatMap((n) => [`${'  '.repeat(depth)}${n.title}`, ...titles(n.children, depth + 1)]);
     const tree = titles(model.roots);
     // Consent screen at indent 12 is one level down; Token refresh at 8 is recovered as OAuth's child.
@@ -115,22 +112,30 @@ describe('messy-settings.plan', () => {
 
   it('reports each declaration error, with the settings fixes', () => {
     expect(byLine(model)).toEqual(sorted({
-      // Differs from the key: `done:text` breaks the profile's `done` marker, and rows reports an
-      // error in a profile as the profile having errors, on the profile line. There is no error on
-      // `done:text`, and removing `profile: plan` doesn't help, since a .plan file uses the plan
-      // profile anyway.
-      2: ['profile-has-errors: Remove this setting (confirm)'],
       3: ['invalid-sep: Remove this setting (confirm)'],
       4: [
         'duplicate-column-name: Rename column… (confirm)',
-        // Beyond the spec's table, as the key suggests: an unknown type is removed like a malformed one.
-        'unknown-type: Remove this option (confirm)',
+        // An unknown type offers the near miss first, then removing the type, which leaves the
+        // text column it is read as.
+        'unknown-type: Change type to date (click), Remove the type (click)',
+        // The fix removes the malformed type, leaving a text column, as it is read now.
         'malformed-type: Remove this option (confirm)',
         'invalid-option-value: Remove this option (confirm)',
+        // Q42: the profile's `done` marker conflicts with the file's `done:text`, so the error is on
+        // that declaration, not profile-has-errors on line 2, and the fix makes it a checkbox column.
+        'marker-column-not-bool: Make done a checkbox column (confirm)',
       ],
       6: ['override-differs'],
     }));
     expect(model.roots[0].children[0].title).toBe('~Write copy'); // the marker is ignored
+  });
+
+  it('points the done error at the declaration, and the checkbox fix makes ~ a done marker again', () => {
+    const d = model.diagnostics.find((x) => x.code === 'marker-column-not-bool')!;
+    expect(model.doc.text.slice(d.span!.from, d.span!.to)).toBe('done:text');
+    const after = analyze(applyEdits(model.doc.text, d.fixes![0].edits), 'messy-settings.plan');
+    expect(after.doc.text.split('\n')[3]).toMatch(/\| done:bool$/);
+    expect(after.roots[0].children[0]).toMatchObject({ title: 'Write copy', done: true });
   });
 
   it('puts dave in the second owner column, which the padding exception writes', () => {
@@ -139,6 +144,7 @@ describe('messy-settings.plan', () => {
       ['~Write copy', 'alice', ''],
       ['Design', 'carol', ''],
       ['Build', '', 'dave'],
+      ['Review', '', ''],
     ]);
   });
 
@@ -156,7 +162,7 @@ describe('messy-unclosed.plan', () => {
   it('has no frontmatter: the settings lines are rows, and the file is still read as a plan', () => {
     expect(byLine(model)).toEqual({ 1: ['unclosed-frontmatter: Close settings (confirm)'], 3: ['invalid-value'], 5: ['override-differs'] });
     expect(model.roots.map((n) => n.title)).toEqual(['profile: plan', 'columns: est:duration unit=h hpd=8 dpw=5', 'Website relaunch']);
-    // Differs from the key: ~Domain renewal is already done, because a .plan file uses the plan profile.
+    // ~Domain renewal is done before the fix too, because a .plan file uses the plan profile.
     expect(model.roots[2].children[2]).toMatchObject({ title: 'Domain renewal', done: true });
   });
 
@@ -167,28 +173,5 @@ describe('messy-unclosed.plan', () => {
     expect(after.doc.text.split('\n').slice(0, 5)).toEqual(['---', 'profile: plan', 'columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text', '---', '']);
     expect(after.roots.map((n) => n.title)).toEqual(['Website relaunch']);
     expect(after.roots[0].children[2]).toMatchObject({ title: 'Domain renewal', done: true });
-  });
-});
-
-describe('every fix on the fixtures (spec §4b.6)', () => {
-  const count = (model: Model) => {
-    const out = new Map<string, number>();
-    for (const d of model.diagnostics) out.set(d.code, (out.get(d.code) ?? 0) + 1);
-    return out;
-  };
-  const cases = Object.entries({ ...FILES, 'repair-cases.plan': repairCases }).flatMap(([name, text]) =>
-    analyze(text, name).diagnostics.flatMap((d: Diagnostic) => (d.fixes ?? []).map((fix) => [`${name}:${d.line} ${d.code} → ${fix.label}`, name, text, d, fix] as const)),
-  );
-
-  it.each(cases)('%s', (_, name, text, d, fix) => {
-    const before = analyze(text, name);
-    const after = analyze(applyEdits(text, fix.edits), name);
-    const [was, now] = [count(before), count(after)];
-    if (fix.tier === 'confirm') expect(fix.preview).toBeTruthy();
-    // Known gap: the profile's errors come from `done:text`, which this setting doesn't touch.
-    if (d.code === 'profile-has-errors') return expect(now.get(d.code)).toBe(was.get(d.code));
-    expect(now.get(d.code) ?? 0).toBeLessThan(was.get(d.code)!);
-    // No error or warning of any other kind is added.
-    for (const [code, n] of now) if (code !== 'override-differs') expect(n, code).toBeLessThanOrEqual(was.get(code) ?? 0);
   });
 });

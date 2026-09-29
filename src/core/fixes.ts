@@ -20,6 +20,16 @@ export function preview(text: string, edits: TextEdit[]): string {
   return [...mark('- ', before), ...mark('+ ', after)].join('\n');
 }
 
+/** Where a position in the text ends up after the edits; a position inside a replaced span goes to its start. */
+export function mapPos(pos: number, edits: TextEdit[]): number {
+  let out = pos;
+  for (const e of edits) {
+    if (e.to <= pos) out += e.insert.length - (e.to - e.from);
+    else if (e.from < pos) out -= pos - e.from;
+  }
+  return out;
+}
+
 /** A confirm fix: its preview is made from its edits. */
 export function confirm(text: string, label: string, edits: TextEdit[], extra: Partial<Fix> = {}): Fix {
   return { label, tier: 'confirm', edits, preview: preview(text, edits), ...extra };
@@ -38,8 +48,8 @@ function removeCell(text: string, cell: Cell): TextEdit {
 /**
  * The overflow fixes (spec §4b.6.6): the extra values are the overflow cells, other than a column's
  * repeat, and any cell whose name is no column's. "Rejoin into NOTES", when the last declared column
- * is text: its value becomes the original text from its cell (or from the first extra value, written
- * by name) to the end of the line, provided nothing but extra values comes after that. "Delete extra values".
+ * is text and the row has a cell in it: its value becomes the original text from that cell to the end
+ * of the line, provided nothing but extra values comes after it. "Delete extra values".
  */
 function overflowFixes(doc: RowsDocument, row: Row): Fix[] {
   const { text, schema } = doc;
@@ -53,16 +63,13 @@ function overflowFixes(doc: RowsDocument, row: Row): Fix[] {
 
   const declared = schema.columns.filter((c) => c.index > 0 && !c.implicit);
   const notes = declared[declared.length - 1];
-  const notesCell = notes && notes.kind === 'text' ? row.cells[notes.index] : undefined;
-  const start = notesCell ?? (notes?.kind === 'text' && notes.settable ? extras[0] : undefined);
+  const start = notes && notes.kind === 'text' ? row.cells[notes.index] : null;
   if (start && cells.every((c) => c.from < start.from || c === start || extras.includes(c))) {
     let end = row.to;
     while (isWs(text[end - 1])) end--;
     if (text[end - 1] === schema.sep) end--; // a trailing delimiter is not part of the text
     while (isWs(text[end - 1])) end--;
-    const from = start === notesCell ? start.valueFrom : start.from;
-    const value = formatValue(doc, notes, text.slice(from, end));
-    const edits = [{ from, to: end, insert: start === notesCell ? value : `${notes.name}=${value}` }];
+    const edits = [{ from: start.valueFrom, to: end, insert: formatValue(doc, notes, text.slice(start.valueFrom, end)) }];
     fixes.push({ label: `Rejoin into ${notes.name}`, tier: 'click', edits });
   }
 

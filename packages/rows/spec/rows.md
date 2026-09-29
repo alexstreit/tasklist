@@ -1,6 +1,6 @@
 # rows — File Format
 
-**Version 0.9 (draft)**
+**Version 0.10 (draft)**
 
 A `.rows` file is a plain-text table: an optional frontmatter block describing the columns, then one delimited row per line. The format is self-contained. Some keys and forms are reserved for extensions (§9).
 
@@ -51,7 +51,8 @@ A profile supplies values for keys the file leaves unset.
 
 - If the value contains `/` or ends in `.rows`, it is a path, relative to the file, to a rows file whose frontmatter supplies the defaults. Otherwise it is a name defined by the tool.
 - A profile MAY set any key except `format`, `table`, `profile`, `sep`, `comment`, and `include`. Setting one is a structural error, reported on the file's `profile:` line, and the key is ignored. Unknown and `x-` keys are supplied like any other.
-- If the profile's frontmatter has any errors, the file has one structural error on its `profile:` line, naming the profile. The profile is still used, as recovered by §6.
+- If the profile's frontmatter has any errors, the file has one structural error on its `profile:` line, naming the profile. The profile is still used, as recovered by §6. This covers only errors the profile's frontmatter has taken alone.
+- A conflict between a key the profile supplies and the file's own keys or declarations is not an error in the profile. It is reported on the file's own declaration, or on the file's key when the conflict has no single declaration, with the class and recovery it would have if the file had set both. For example, a profile's `columns` repeating the name of the file's `lead` is a duplicate column name on the file's `lead` declaration.
 - A profile file with no frontmatter, or with one that is never closed, is the same error, and the profile supplies nothing.
 - Only the profile file's frontmatter is used; its body is ignored.
 - Keys set in the file take precedence.
@@ -180,7 +181,7 @@ An error that involves several lines is reported on every line involved when the
 | Invalid `sep` or `comment`                                                                   | Structural | Default used.                                                              |
 | Unresolvable profile                                                                         | Structural | File read without it.                                                      |
 | Profile sets a forbidden key (§2.3)                                                          | Structural | Key ignored.                                                               |
-| Errors in the profile's frontmatter                                                          | Structural | One error in total. Profile used as recovered.                             |
+| Errors in the profile's frontmatter, taken alone                                             | Structural | One error in total. Profile used as recovered. A conflict with the file's own keys is reported on those (§2.3). |
 | Column name not matching the grammar, or already used, or an empty declaration               | Structural | Column kept in position, but cannot be set by name.                        |
 | Key with a default set to an empty or unusable value, such as `table:` or `lead:`            | Structural | Default used.                                                              |
 | Malformed type (§5), such as a bad `enum[...]`, `enum[]` or `number[3]`                      | Structural | Column read as `text`.                                                     |

@@ -1,6 +1,6 @@
 # rows — Extensions
 
-**Version 0.6 (draft)**
+**Version 0.7 (draft)**
 
 This document defines identity, references, includes, markers, nesting, and row order for rows files. It uses the keys and forms reserved by the base format (base §9), and binds the Text Anchors specification to rows. Error classes, recovery, and modes are as in base §6. §10 lists every error this document defines.
 
@@ -129,7 +129,7 @@ markers: done=~ blocked=!
 - Entries are `NAME=CHAR`, separated by whitespace. `CHAR` is exactly one Unicode code point that is not alphanumeric (a letter or digit in any script: `\p{L}` or `\p{N}`), whitespace, `"`, `#`, `{`, `\`, `=`, the delimiter, or the first character of the comment marker. An entry that breaks this is a structural error, and is ignored. So is a repeated name or character: as with a repeated `enum` value (base §5), the later entry is ignored.
 - Markers are recognised at the start of the lead value, after the indent, in any order. They are removed from the lead value, together with any whitespace that follows them. The rest of the lead cell is read as usual and may be quoted.
 - A marker repeated in one row is a structural error. The repeat, and everything after it, is part of the lead value.
-- A marker sets its column to `true`. If the column is not declared, it is implicitly `NAME:bool default=false`. A declared marker column that is not `bool` is a structural error, reported on the `markers` line. Its marker entry is ignored, and the column is read as declared.
+- A marker sets its column to `true`. If the column is not declared, it is implicitly `NAME:bool default=false`. A declared marker column that is not `bool` is a structural error, reported on the `markers` line. When the markers come from a profile and the column is declared in the file, it is reported on the file's declaration of the column instead (base §2.3). Its marker entry is ignored, and the column is read as declared. Likewise, a profile's marker character that the file's `sep` or `comment` uses is reported on that key.
 - A row with a marker and an explicit `false` in the same column is a validation error.
 - A lead value beginning with a declared marker character that is not meant as a marker is quoted.
 
@@ -149,7 +149,7 @@ markers: done=~ blocked=!
 
 `nest` names the column that holds each row's parent. When `nest` is set, indentation is meaningful. When it is absent, indentation has no meaning.
 
-If not declared, the column is implicitly `NEST:ref`. It MUST be a `ref` to the current table, without options. Otherwise it is a structural error: nesting from indentation still applies, and the column is read as declared and not compared with indentation.
+If not declared, the column is implicitly `NEST:ref`. It MUST be a `ref` to the current table, without options. Otherwise it is a structural error, on the `nest` line, or on the file's declaration of the column when `nest` comes from a profile (base §2.3): nesting from indentation still applies, and the column is read as declared and not compared with indentation.
 
 ### 6.2 Rules
 
@@ -191,7 +191,7 @@ If an indented row also has a value in the parent column, the two MUST agree; ot
 - Under `COLUMN`, a row out of order is a validation error, and writers MUST keep rows sorted.
 - Each row is compared with the previous row whose value is not null. When `nest` is set, only siblings are compared: rows with the same parent, or top-level rows. A row that sorts before the one it is compared with is out of order.
 - Null values are skipped. Numbers compare numerically, dates and datetimes chronologically, and text by Unicode code point. Durations compare in minutes where the column can convert both values (base §5); a pair that can't be converted is skipped. Enum values compare in declaration order, and bools with `false` before `true`. As for equality (base §5), two values that don't match their column compare as their text; a valid value and an invalid one, like durations that can't be converted, are skipped. References compare by their locator text, by code point, and never by their targets' positions, so a row's order doesn't depend on whether a reference resolves or on the order of another table.
-- An `order` naming no column is a structural error on the `order` line, and is read as `position`.
+- An `order` naming no column is a structural error on the `order` line, and is read as `position`. When `order` comes from a profile that declares the column itself, the file's `columns` or `lead` replaced it, and the error is on that key (base §2.3).
 - Canonical form is the file as written; order needs no rewriting.
 
 ## 8. Conformance
@@ -291,11 +291,11 @@ Every error this document defines. Recovery follows base §6: recovery comes fir
 | Lead `ref` column with `many` or `qualifier` (§4.3)                    | Structural | Option ignored.                                                                                      |
 | Invalid marker entry (§5)                                              | Structural | Entry ignored. One error per entry.                                                                  |
 | Marker repeated in one row (§5)                                        | Structural | The repeat, and everything after it, is part of the lead value.                                      |
-| Declared marker column that is not `bool` (§5)                         | Structural | Reported on the `markers` line. Marker entry ignored. Column read as declared.                       |
+| Declared marker column that is not `bool` (§5)                         | Structural | Reported on the `markers` line, or on the file's declaration when the markers come from a profile. Marker entry ignored. Column read as declared. |
 | Marker and an explicit `false` in the same column (§5)                 | Validation | Both kept.                                                                                           |
-| Nest column not a `ref` to the current table, or with options (§6.1)   | Structural | Reported on the `nest` line. Indentation still nests; the column is read as declared.                |
+| Nest column not a `ref` to the current table, or with options (§6.1)   | Structural | Reported on the `nest` line, or on the file's declaration when `nest` comes from a profile. Indentation still nests; the column is read as declared. |
 | Indent breaking the rules of §6.2                                      | Structural | Attached to the nearest preceding row with a smaller indent, or top-level. Opens its own level.      |
 | Indentation and parent column disagree (§6.2)                          | Validation | The parent from indentation is used.                                                                 |
 | Parent chain forming a cycle (§6.2)                                    | Validation | Reported on every row in the cycle. Those rows have no parent.                                       |
-| `order` naming no column (§7)                                          | Structural | Reported on the `order` line. Read as `position`.                                                    |
+| `order` naming no column (§7)                                          | Structural | Reported on the `order` line, or on the file's `columns` or `lead` when they replaced the profile's column. Read as `position`. |
 | Row out of order (§7)                                                  | Validation | Row kept where it is.                                                                                |

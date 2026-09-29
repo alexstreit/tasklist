@@ -1,0 +1,15 @@
+{
+  "spec": [
+    "base §2.3, ext §6.1: a profile's nest column that the file declares as not a ref, reported on the file's declaration (Q42)",
+    "base §6 modes"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-nest-column",
+      "line": 3
+    }
+  ]
+}

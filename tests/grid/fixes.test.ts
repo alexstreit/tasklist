@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The cell, settings and identity fixes in the grid (spec §4b.6.6): the
 // settings banner, the badges, and the previews of confirm fixes. Run on the
-// messy fixtures, which the key in tests/fixtures/messy-KEY.md describes.
+// messy fixtures (tests/core/messy.test.ts says what each line reports).
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryBuffer } from '../../src/buffer';
@@ -72,6 +72,20 @@ describe('cell fixes', () => {
     expect(lineOf(18)).toBe('    Pagination                | 1w      | owner=sam | owner=priya');
     host.querySelector<HTMLButtonElement>('.problems .fix-preview button')!.click();
     expect(lineOf(18)).toBe('    Pagination                | 1w      | owner=priya');
+  });
+});
+
+describe('the padding exception (DESIGN §6)', () => {
+  it("pads with empty cells up to the duplicate owner column on a row with only a title", () => {
+    open(settings, 'messy-settings.plan');
+    // Review is line 10: est and the first owner are empty, and the second owner can't be named.
+    const SECOND_OWNER = 4; // grid column: est, owner, then the second owner
+    const input = () => host.querySelector<HTMLInputElement>('tbody input.cell-input')!;
+    cell(10, SECOND_OWNER).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    input().value = 'erin';
+    input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(lineOf(10)).toBe('    Review |  |  | erin');
+    expect(cell(10, SECOND_OWNER).textContent).toBe('erin');
   });
 });
 
@@ -177,12 +191,10 @@ describe('every fixture case can be fixed without leaving the grid', () => {
     fixAll();
     const left = analyze(buffer.text(), name).diagnostics.map((d) => `${d.line} ${d.code}`);
     // What remains has no fix in the spec: values to edit in their cell, a title to type, an
-    // unknown key, and an override that differs from its children once they convert. In
-    // messy-settings.plan, "Remove this setting" removed `profile: plan`, but a .plan file uses the
-    // plan profile anyway, and the profile error comes from `done:text` (see tests/core/messy.test.ts).
+    // unknown key, and an override that differs from its children once they convert.
     const expected: Record<string, string[]> = {
       'messy.plan': ['4 unknown-key', '8 override-differs', '11 invalid-value', '21 invalid-value', '27 negative-value', '30 row-begins-with-delimiter', '30 required', '32 invalid-value'],
-      'messy-settings.plan': ['1 profile-has-errors', '4 override-differs'],
+      'messy-settings.plan': ['5 override-differs'],
       'messy-unclosed.plan': ['6 override-differs'],
     };
     expect(left.sort()).toEqual(expected[name].sort());

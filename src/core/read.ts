@@ -1,9 +1,9 @@
 // readPlan: a rows document read as a plan. Spec §2.3–2.6 and §3.1. Items
 // carry the rows spans through unchanged; summable cells are read as hours.
 
-import { durationToMinutes } from 'rows';
+import { applyEdits, durationToMinutes } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, Row, RowsDocument, RowsError } from 'rows';
-import { identityFixes, preview, rowFixes } from './fixes';
+import { identityFixes, mapPos, preview, rowFixes } from './fixes';
 import { settingsFixes } from './settings';
 import type { Column, Diagnostic, Field, Fix, ItemNode, Node, Tree } from './types';
 
@@ -19,9 +19,14 @@ function fromRowsError(e: RowsError): Diagnostic {
   return d;
 }
 
-/** Adds the options a duration column is missing, when its declaration is in this file. */
+/**
+ * Adds the options a duration column is missing, when its declaration is in this file. Not when one
+ * of them is written but invalid: adding it again would repeat it, and "Remove this option" comes first.
+ */
 function conversionFix(column: RowsColumn): Fix[] | undefined {
   if (column.to === undefined) return undefined;
+  const parsed = { unit: column.unit, hpd: column.hpd, dpw: column.dpw };
+  if (Object.keys(CONVERSION).some((key) => column.options.some((o) => o.key === key) && parsed[key as keyof typeof parsed] === undefined)) return undefined;
   const missing = Object.entries(CONVERSION)
     .filter(([key]) => !column.options.some((o) => o.key === key))
     .map(([key, value]) => `${key}=${value}`);
@@ -29,7 +34,30 @@ function conversionFix(column: RowsColumn): Fix[] | undefined {
   return [{ label: `Add ${missing.join(' ')}`, tier: 'click', edits: [{ from: column.to, to: column.to, insert: ` ${missing.join(' ')}` }] }];
 }
 
-export function readPlan(doc: RowsDocument): Tree {
+/**
+ * A fix resolves its diagnostic when, in the text it writes, no diagnostic with the same code is
+ * where that one went (its span's start, or its line), and no syntax or structural error is added.
+ */
+function resolves(before: RowsDocument, d: Diagnostic, fix: Fix, after: Tree): boolean {
+  const lineStart = before.lines[d.line - 1]?.from ?? 0;
+  const at = mapPos(d.span?.from ?? lineStart, fix.edits);
+  const line = after.text.slice(0, at).split('\n').length;
+  if (after.diagnostics.some((x) => x.code === d.code && (d.span ? x.span?.from === at : !x.span && x.line === line))) return false;
+  const count = (doc: RowsDocument) => {
+    const out = new Map<string, number>();
+    for (const e of doc.errors) if (e.class !== 'validation') out.set(e.code, (out.get(e.code) ?? 0) + 1);
+    return out;
+  };
+  const [was, now] = [count(before), count(after.doc)];
+  return [...now].every(([code, n]) => n <= (was.get(code) ?? 0));
+}
+
+/**
+ * `reparse` reads edited text the way this document was read. With it, each settings fix is offered
+ * only when it resolves its diagnostic (spec §4b.6.1): what one does depends on the whole file, such
+ * as which profile applies once a `profile:` line is gone.
+ */
+export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocument): Tree {
   const { schema, text } = doc;
   const diagnostics: Diagnostic[] = [];
   const byError = new Map<RowsError, Diagnostic>();
@@ -50,6 +78,8 @@ export function readPlan(doc: RowsDocument): Tree {
     });
   }
 
+  // Fixes to the settings, which readPlan checks before offering (see `reparse`).
+  const settings = new Set<Fix>();
   const declared = schema.columns.filter((c) => c.index > 0 && !c.implicit);
   const columns: Column[] = declared.map((c) => ({ name: c.name, type: c.kind }));
   const doneColumn = schema.columns.find((c) => c.name === 'done' && c.kind === 'bool');
@@ -74,7 +104,10 @@ export function readPlan(doc: RowsDocument): Tree {
         const error = row.errors.find((e) => e.code === 'invalid-value' && e.from === cell.valueFrom);
         const d = error && byError.get(error);
         const fixes = conversionFix(column);
-        if (d && fixes) d.fixes = fixes;
+        if (d && fixes) {
+          d.fixes = fixes;
+          fixes.forEach((f) => settings.add(f));
+        }
       }
       return;
     }
@@ -87,7 +120,9 @@ export function readPlan(doc: RowsDocument): Tree {
       if ('minutes' in converted) field.amount = converted.minutes / 60;
       else {
         const needs = converted.error === 'needs-dpw' ? 'dpw' : 'hpd';
-        warn('unconvertible-duration', `"${field.text}" needs ${needs} on column ${column.name} to convert to hours; treated as empty`, conversionFix(column));
+        const fixes = conversionFix(column);
+        fixes?.forEach((f) => settings.add(f));
+        warn('unconvertible-duration', `"${field.text}" needs ${needs} on column ${column.name} to convert to hours; treated as empty`, fixes);
       }
     }
   };
@@ -136,7 +171,7 @@ export function readPlan(doc: RowsDocument): Tree {
   const diagnosticOf = (e: RowsError) => byError.get(e)!;
   for (const row of doc.rows) rowFixes(doc, row, diagnosticOf);
   identityFixes(doc, diagnosticOf);
-  settingsFixes(doc, diagnosticOf);
+  settingsFixes(doc, diagnosticOf, settings);
 
   const items = new Map<Row, ItemNode>();
   const nodes: Node[] = doc.lines.map((line): Node => {
@@ -159,6 +194,20 @@ export function readPlan(doc: RowsDocument): Tree {
       number(item.children, `${item.outlineNumber}.`);
     });
   number(roots, '');
+
+  if (reparse && settings.size > 0) {
+    const after = new Map<string, Tree>(); // one read per distinct fix, which many diagnostics may share
+    for (const d of diagnostics) {
+      if (!d.fixes) continue;
+      d.fixes = d.fixes.filter((fix) => {
+        if (!settings.has(fix)) return true;
+        const key = JSON.stringify(fix.edits);
+        if (!after.has(key)) after.set(key, readPlan(reparse(applyEdits(text, fix.edits))));
+        return resolves(doc, d, fix, after.get(key)!);
+      });
+      if (d.fixes.length === 0) delete d.fixes;
+    }
+  }
 
   return { text, doc, columns, nodes, items: roots, diagnostics };
 }

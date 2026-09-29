@@ -1,17 +1,38 @@
 // The settings fixes (spec §4b.6.6): errors in the frontmatter, or in its absence, that change how
-// the whole file reads. Every one is `confirm`, since it rewrites settings. Each is added to the
-// diagnostic of the rows error it resolves. The conversion fix, which only adds to the settings, is
-// in read.ts.
+// the whole file reads. They are `confirm`, since they rewrite settings, except the fixes for an
+// unknown type, which leave the values read as they are or as the type the user evidently meant.
+// Each is added to the diagnostic of the rows error it resolves. The conversion fix, which only
+// adds to the settings, is in read.ts.
 
 import { tokenizeLine } from 'rows';
 import type { RowsDocument, RowsError, TextEdit } from 'rows';
 import { confirm } from './fixes';
-import type { Diagnostic } from './types';
+import type { Diagnostic, Fix } from './types';
 
 const REMOVE_SETTING = new Set(['invalid-sep', 'invalid-comment', 'unsupported-format', 'unresolvable-profile', 'forbidden-profile-key', 'profile-has-errors']);
-const REMOVE_OPTION = new Set(['malformed-type', 'unknown-type', 'invalid-option-value', 'duplicate-option']);
+const REMOVE_OPTION = new Set(['malformed-type', 'invalid-option-value', 'duplicate-option']);
 const RENAME = new Set(['duplicate-column-name', 'invalid-column-name']);
 const NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+/** Types an unknown one may be a typo of. `enum` needs its values, so it is never suggested. */
+const TYPES = ['text', 'number', 'bool', 'date', 'datetime', 'duration', 'ref'];
+
+/** Levenshtein distance. */
+function distance(a: string, b: string): number {
+  let row = [...Array(b.length + 1).keys()];
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+}
+
+/** The `:TYPE` of a declaration written in this file, as a span; empty at the end of the name when it has none. */
+function typeSpan(text: string, from: number, to: number): { from: number; to: number } {
+  const head = /^\S*/.exec(text.slice(from, to))![0];
+  const colon = head.indexOf(':');
+  return colon === -1 ? { from: from + head.length, to: from + head.length } : { from: from + colon, to: from + head.length };
+}
 
 /** "Close settings": `---` after the last line from line 2 on that reads as a `key: value` entry. */
 function closeFix(doc: RowsDocument) {
@@ -36,9 +57,13 @@ function freeName(doc: RowsDocument, name: string): string {
   return `${base}${n}`;
 }
 
-export function settingsFixes(doc: RowsDocument, diagnosticOf: (e: RowsError) => Diagnostic): void {
+/** Each fix is also added to `made`, since what a settings fix does depends on the whole file, and readPlan checks it. */
+export function settingsFixes(doc: RowsDocument, diagnosticOf: (e: RowsError) => Diagnostic, made: Set<Fix>): void {
   const { text } = doc;
-  const add = (e: RowsError, fix: ReturnType<typeof confirm>) => (diagnosticOf(e).fixes ??= []).push(fix);
+  const add = (e: RowsError, fix: Fix) => {
+    made.add(fix);
+    (diagnosticOf(e).fixes ??= []).push(fix);
+  };
   for (const e of doc.errors) {
     if (e.code === 'unclosed-frontmatter') {
       add(e, closeFix(doc));
@@ -54,6 +79,21 @@ export function settingsFixes(doc: RowsDocument, diagnosticOf: (e: RowsError) =>
       let from = e.from;
       if (text[from] !== ':') while (from > entry.valueFrom && (text[from - 1] === ' ' || text[from - 1] === '\t')) from--;
       add(e, confirm(text, 'Remove this option', [{ from, to: e.to, insert: '' }]));
+    } else if (e.code === 'unknown-type') {
+      // "Change type to date" for a near miss, then "Remove the type", which leaves the text column it is read as.
+      const typed = text.slice(e.from + 1, e.to);
+      const near = TYPES.map((t) => ({ t, d: distance(typed.toLowerCase(), t) })).filter((x) => x.d <= 2).sort((a, b) => a.d - b.d)[0];
+      if (near) add(e, { label: `Change type to ${near.t}`, tier: 'click', edits: [{ from: e.from + 1, to: e.to, insert: near.t }] });
+      add(e, { label: 'Remove the type', tier: 'click', edits: [{ from: e.from, to: e.to, insert: '' }] });
+    } else if (e.code === 'marker-column-not-bool') {
+      // A marker's column declared in this file with another type: "Make done a checkbox column".
+      const markers = doc.schema.keys.markers ?? '';
+      const column = doc.schema.columns.find(
+        (c) => c.from !== undefined && c.kind !== 'bool' && !c.implicit && markers.split(/[ \t]+/).some((m) => m.startsWith(`${c.name}=`)) && (c.from === e.from || entry.key === 'markers'),
+      );
+      if (!column) continue;
+      const span = typeSpan(text, column.from!, column.to!);
+      add(e, confirm(text, `Make ${column.name} a checkbox column`, [{ ...span, insert: ':bool' }]));
     } else if (RENAME.has(e.code)) {
       const column = doc.schema.columns.find((c) => c.from === e.from);
       if (!column) continue;

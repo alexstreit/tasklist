@@ -1,0 +1,15 @@
+{
+  "spec": [
+    "base §2.3, ext §5: the same conflict inside the profile alone is profile-has-errors (Q42)",
+    "base §6 modes"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "profile-has-errors",
+      "line": 2
+    }
+  ]
+}

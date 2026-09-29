@@ -725,22 +725,22 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - Text editor: a `confirm` lint action opens a panel with the preview, warning and input instead of applying.
 
 **Decisions taken** (spec §4.4, §4b.6.2, §4b.6.5 and §4b.6.6 updated):
-- "Rejoin into NOTES" starts at the notes cell, or, when notes isn't set, at the first extra value and writes `notes=…`. It is offered only when nothing but notes and extra values follows, so it never absorbs another column's value. A trailing delimiter isn't part of the text.
+- "Rejoin into NOTES" starts at the notes cell. It is offered only when nothing but extra values follows, so it never absorbs another column's value. A trailing delimiter isn't part of the text. (Changed after review: no longer offered without a notes cell.)
 - A cell named after an undeclared column (`priority=high`) counts as an extra value where rows put it, so rejoining a notes value quotes it.
 - The two "Keep this value" buttons are labelled with their values.
-- An unknown type (`due:dat`) gets "Remove this option" like a malformed one, removing the `:TYPE` so the column reads as text, as it already does. The spec's table listed only malformed types; the key asked for a fix.
+- An unknown type (`due:dat`) gets "Remove this option" like a malformed one, removing the `:TYPE` so the column reads as text, as it already does. The spec's table listed only malformed types; the key asked for a fix. (Changed after review: "Change type to date" and "Remove the type", both click.)
 - A repeated option: "Remove this option" removes the one rows flags, the later, so the earlier value applies afterwards. The preview shows it.
 - The `<!--` fix is labelled "Make it a comment", as spec §4b.6.6 says (it was "Change to a // comment").
 - An enum commits on Enter, Tab or leaving it, not on each change, so arrowing through the choices doesn't write every one.
 
-**Where the app differs from `messy-KEY.md`** (asserted in `tests/core/messy.test.ts`, which says so at each line):
-- `{#login}` is on lines 9 and 10, not 8 and 10.
-- Line 17, `priority=high`: read as the notes value, as the key says, but rows also reports `invalid-cell-name` (error). "Rejoin into notes" quotes it and clears it.
-- Line 29, `parent=#perms`: `parent-mismatch`, not `parent-cycle`. An indented row's parent comes from its indentation, so the cycle never forms. The fix is the same.
-- Line 30 also has a `required` warning (no title).
-- `messy-settings.plan`, `done:text`: the marker is ignored as the key says, but rows reports it as `profile-has-errors` on `profile: plan` (base §2.3: errors from a profile's keys collapse into one). There is no diagnostic on `done:text`, and the offered "Remove this setting" removes `profile: plan`, which doesn't help: a `.plan` file uses the plan profile anyway. This case can't be fixed from the grid.
-- `messy-settings.plan`, `Design`: the second `owner` is Design's next positional slot, so editing it there appends positionally rather than using the padding exception. Padding happens only on a row that stops short of the column before it, such as a row with just a title; the fixture has none.
-- `messy-unclosed.plan`: `~Domain renewal` is done before the fix too, since the file name applies the plan profile.
+**The messy fixtures:** `tests/core/messy.test.ts` is their reference: what each line reports and which fixes it offers. The answer key they came with was compared line by line in review and then deleted.
+
+**Changed after review:**
+- Q42 (rows): a conflict between a profile's key and the file's own declarations is reported on the file's declaration, not as `profile-has-errors`, which is only for errors in the profile's frontmatter taken alone. Base 0.10 §2.3 and §6, extensions 0.7 §5, §6.1, §7 and §10; six new conformance cases, each with a strict variant, all failing before the change. It covers a marker or nest column the file declares with the wrong type, a profile's marker character that the file's `sep` or `comment` uses, a profile's `order` naming a column the file's `columns` or `lead` replaced, and a profile column repeating the name of the file's `lead`. The plan offers "Make done a checkbox column" (`done:text` → `done:bool`, confirm) for the marker case.
+- The fix invariant (spec §4b.6.1): every fix removes the diagnostic it is offered on and adds no syntax or structural error. `tests/core/fix-invariant.test.ts` checks every fix on every fixture and on every conformance input, read as a plan and as a plain rows file. It found two problems. The conversion fix was offered when `unit`, `hpd` or `dpw` was written but invalid, where it repeated the option or didn't help; it isn't offered then. "Remove this setting" on an unresolvable `profile:` in a plan document let the plan profile apply, which could conflict with the file's keys. Since what a settings fix does depends on the whole file, `readPlan` now checks each settings fix by reading the edited text, and offers it only when it holds; `analyze` passes the reader. That also covers removing `profile: plan` from a `.plan` file.
+- Unknown types: "Change type to X" when a known type other than `enum` is within edit distance 2, then "Remove the type"; both click.
+- `messy-settings.plan` gained `    Review`, a row with only a title; editing its second `owner` pads to `    Review |  |  | erin` (`tests/grid/fixes.test.ts`).
+- "Rejoin into NOTES" is offered only when the row has a cell in NOTES; the path that rejoined from the first extra value and wrote `notes=…` is gone (spec §4b.6.6).
 
 **Rewritten tests:**
 - `packages/rows/tests/edit.test.ts`: the `moveRow` examples and property, for the subtree swap.

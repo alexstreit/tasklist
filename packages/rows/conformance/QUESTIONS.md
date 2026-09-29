@@ -287,3 +287,9 @@ None open.
 **Decision:** no. A `ref` qualifier type is a structural error, and the option is ignored. The spec notes that it is reserved.
 **Spec changed:** ext §4.3.
 **Cases:** `ext-4.3-qualifier-ref-type` (+ `--strict`).
+
+### Q42. A conflict between a profile's key and the file's own declarations
+
+**Decision:** it is reported on the file's own declaration, not as `profile-has-errors`, which is only for errors in the profile's frontmatter taken alone. The class and recovery are the ones the conflict would have if the file had set both keys. The error goes on the declaration of the column when there is one (a marker or nest column the file declares with the wrong type, a profile column repeating the name of the file's `lead`), and otherwise on the file's key: its `sep` or `comment` when a profile's marker character clashes with it, and its `columns` or `lead` when they replaced a column the profile's `order` names. Q23 still holds when the file sets `markers:` itself.
+**Spec changed:** base §2.3, §6 (base 0.10); ext §5, §6.1, §7, §10 (extensions 0.7).
+**Cases:** `ext-5-marker-column-not-bool-from-profile`, `ext-5-marker-clashes-with-file-comment`, `ext-6.1-nest-column-not-ref-from-profile`, `ext-7-order-unknown-column-from-profile`, `base-2.3-profile-column-repeats-file-lead`, and `ext-5-marker-column-not-bool-in-profile` for the same conflict inside the profile alone, each with its `--strict` variant.

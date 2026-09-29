@@ -1,0 +1,33 @@
+{
+  "spec": [
+    "base §2.3, base §6: a profile's column repeating the name of the file's lead, reported on the file's declaration (Q42)"
+  ],
+  "stage": "base",
+  "failed": false,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "duplicate-column-name",
+      "line": 3
+    }
+  ],
+  "columns": [
+    {
+      "name": "est",
+      "type": "text"
+    },
+    {
+      "name": "est",
+      "type": "text"
+    }
+  ],
+  "rows": [
+    {
+      "line": 5,
+      "lead": "A",
+      "values": {
+        "est@1": "x"
+      }
+    }
+  ]
+}

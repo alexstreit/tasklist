@@ -158,6 +158,8 @@ export function resolveSchema(
 ): Schema {
   const fileKeys = collectKeys(fm?.entries ?? [], errors);
   const keys = new Map<string, Key>();
+  // The profile's own values, before the file's keys take precedence.
+  const profileKeys = new Map<string, string>();
 
   // ---- profile (base §2.3) ----
   const profileEntry = fileKeys.get('profile');
@@ -178,6 +180,7 @@ export function resolveSchema(
           errors.push(rowsError('forbidden-profile-key', profileLine, `Profile ${profileName} sets ${key}, which a profile may not set; ignored.`, ...profileSpan));
         } else {
           keys.set(key, { value: entry.value, source: { profile: true } });
+          profileKeys.set(key, entry.value);
         }
       }
       // A profile with no frontmatter, or an unclosed one, supplies nothing and is an error (base §2.3).
@@ -259,7 +262,13 @@ export function resolveSchema(
       if (key) report(key, 'invalid-column-name', `Column name "${d.name}" is not valid; the column cannot be set by name.`, span);
     } else if (columns.some((c) => c.name === d.name)) {
       column.settable = false;
-      if (key) report(key, 'duplicate-column-name', `Column name ${d.name} is already used; this column cannot be set by name.`, span);
+      // A profile's column repeating one the file declares is a conflict of the two, not an error in
+      // the profile: it goes on the file's declaration (base §2.3).
+      const earlier = columns.find((c) => c.name === d.name)!;
+      const earlierKey = declaredBy.get(earlier);
+      if (key && 'profile' in key.source && earlierKey && 'entry' in earlierKey.source) {
+        report(earlierKey, 'duplicate-column-name', `Column name ${d.name} is also used by a column from the profile, which cannot be set by name.`, columnSpan(earlier));
+      } else if (key) report(key, 'duplicate-column-name', `Column name ${d.name} is already used; this column cannot be set by name.`, span);
     }
     columns.push(column);
     if (key) declaredBy.set(column, key);
@@ -300,7 +309,7 @@ export function resolveSchema(
     order: 'position',
     includes: [],
   };
-  if (options.extensions !== false) readExtensionKeys(schema, keys, declaredBy, report, anyAnchors);
+  if (options.extensions !== false) readExtensionKeys(schema, keys, profileKeys, declaredBy, report, anyAnchors);
 
   if (profileHasErrors) {
     errors.push(rowsError('profile-has-errors', profileLine, `Profile ${profileName} has errors in its frontmatter.`, ...profileSpan));
@@ -309,6 +318,15 @@ export function resolveSchema(
 }
 
 type KeyReport = (key: Key, code: Parameters<typeof rowsError>[0], message: string, span?: { from: number; to: number }) => void;
+
+/** A column's declaration, when it is written unquoted in this file. */
+const columnSpan = (c: Column) => (c.from !== undefined && c.to !== undefined ? { from: c.from, to: c.to } : undefined);
+
+/** The file's key that declares a column, or null when the profile or a default does. */
+const fileKey = (declaredBy: Map<Column, Key>, column: Column | undefined): Key | null => {
+  const key = column && declaredBy.get(column);
+  return key && 'entry' in key.source ? key : null;
+};
 
 /** A piece of a key's value, as a span in the file when the value is written unquoted there. */
 function spanOf(key: Key, piece: Piece): { from: number; to: number } | undefined {
@@ -320,6 +338,7 @@ function spanOf(key: Key, piece: Piece): { from: number; to: number } | undefine
 function readExtensionKeys(
   schema: Schema,
   keys: Map<string, Key>,
+  profileKeys: Map<string, string>,
   declaredBy: Map<Column, Key>,
   report: KeyReport,
   anyAnchors: (sep: string, comment: string, ext: ExtensionContext) => boolean,
@@ -361,6 +380,8 @@ function readExtensionKeys(
   const markersKey = keys.get('markers');
   const pending: { name: string; char: string; column: Column | undefined }[] = [];
   if (markersKey) {
+    // A character the file's delimiter or comment marker already uses.
+    const clashes = (char: string) => char === sep || char === comment[0];
     for (const entry of markersKey.value.split(/[ \t]+/).filter((e) => e !== '')) {
       const m = /^([A-Za-z_][A-Za-z0-9_-]*)=(.*)$/.exec(entry);
       const char = m?.[2] ?? '';
@@ -370,16 +391,21 @@ function readExtensionKeys(
         /[\p{L}\p{N}]/u.test(char) ||
         isWs(char) ||
         '"#{\\='.includes(char) ||
-        char === sep ||
-        char === comment[0] ||
         pending.some((p) => p.name === m[1] || p.char === char);
-      if (bad) {
-        report(markersKey, 'invalid-marker', `Invalid marker entry ${entry}; ignored.`);
+      if (bad || clashes(char)) {
+        // A profile's marker that is valid alone but clashes with the file's sep or comment is the
+        // file's conflict, reported on that key (base §2.3).
+        const setBy = (key: 'sep' | 'comment', inUse: string) => (keys.get(key)?.value === inUse ? keys.get(key) : undefined);
+        const clash = char === sep ? setBy('sep', sep) : setBy('comment', comment);
+        const blame = !bad && 'profile' in markersKey.source && clash && 'entry' in clash.source ? clash : markersKey;
+        report(blame, 'invalid-marker', `Invalid marker entry ${entry}; ignored.`);
         continue;
       }
       const declared = byName(m[1]);
       if (declared && declared.kind !== 'bool') {
-        report(markersKey, 'marker-column-not-bool', `Marker column ${m[1]} is not bool; the marker is ignored.`);
+        // With the markers from a profile, the conflict is on the file's declaration of the column.
+        const blame = 'profile' in markersKey.source ? fileKey(declaredBy, declared) : null;
+        report(blame ?? markersKey, 'marker-column-not-bool', `Marker column ${m[1]} is not bool; the marker is ignored.`, blame ? columnSpan(declared) : undefined);
         continue;
       }
       pending.push({ name: m[1], char, column: declared });
@@ -412,7 +438,10 @@ function readExtensionKeys(
   if (nestName) {
     const column = byName(nestName) ?? implicit(nestName, nestKey, 'ref', 'ref', { refTable: table, refCurrent: true, refKnown: true });
     const valid = column.kind === 'ref' && column.refCurrent === true && column.options.length === 0;
-    if (!valid) report(nestKey!, 'invalid-nest-column', `Nest column ${nestName} must be a ref to this table, without options; indentation still nests.`);
+    if (!valid) {
+      const blame = 'profile' in nestKey!.source ? fileKey(declaredBy, column) : null;
+      report(blame ?? nestKey!, 'invalid-nest-column', `Nest column ${nestName} must be a ref to this table, without options; indentation still nests.`, blame ? columnSpan(column) : undefined);
+    }
     schema.nest = { column, valid };
   }
   for (const p of pending) {
@@ -428,7 +457,14 @@ function readExtensionKeys(
       const descending = v.startsWith('-');
       const column = byName(descending ? v.slice(1) : v);
       if (column) schema.order = { column, descending };
-      else report(orderKey, 'unknown-order-column', `order names no column ${v}; read as position.`);
+      else {
+        // With order from a profile that declares the column itself, the file's lead or columns replaced it.
+        const name = descending ? v.slice(1) : v;
+        const own = (key: 'lead' | 'columns') =>
+          profileKeys.has(key) && splitDeclarations(profileKeys.get(key)!, sep).some((p) => parseDeclaration(p.text).name === name);
+        const replaced = 'profile' in orderKey.source ? (['lead', 'columns'] as const).find((k) => own(k) && 'entry' in (keys.get(k)?.source ?? {})) : undefined;
+        report(replaced ? keys.get(replaced)! : orderKey, 'unknown-order-column', `order names no column ${v}; read as position.`);
+      }
     }
   }
 }

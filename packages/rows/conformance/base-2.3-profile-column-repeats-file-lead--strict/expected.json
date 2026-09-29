@@ -1,0 +1,15 @@
+{
+  "spec": [
+    "base §2.3, base §6: a profile's column repeating the name of the file's lead, reported on the file's declaration (Q42)",
+    "base §6 modes"
+  ],
+  "stage": "base",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "duplicate-column-name",
+      "line": 3
+    }
+  ]
+}

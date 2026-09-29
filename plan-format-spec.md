@@ -1,6 +1,6 @@
 # Plan File — Specification
 
-**Depends on:** rows 0.9, rows extensions 0.6, Text Anchors 0.2.
+**Depends on:** rows 0.10, rows extensions 0.7, Text Anchors 0.2.
 
 A text-driven project estimating tool. The plan is a plain text file; the app is one or more editors over that file plus one or more read-only renderers and exporters of it.
 
@@ -15,7 +15,7 @@ A text-driven project estimating tool. The plan is a plain text file; the app is
 
 ## 2. File format
 
-A plan file is a **rows** file (base 0.9 and extensions 0.6, in `packages/rows/spec/`) read in tolerant mode with the **plan profile**. This section covers only what the plan adds. Everything else, including tokenising, quoting, named cells, errors and recovery, comes from the rows specs and the `rows` library.
+A plan file is a **rows** file (base 0.10 and extensions 0.7, in `packages/rows/spec/`) read in tolerant mode with the **plan profile**. This section covers only what the plan adds. Everything else, including tokenising, quoting, named cells, errors and recovery, comes from the rows specs and the `rows` library.
 
 ### 2.1 The plan profile
 
@@ -63,7 +63,7 @@ An item is done when its `done` marker (`~`) is present or `done=true` is set by
 
 The summable columns are `duration` and `number` columns. Every other type, including text, bool, date, datetime, enum and ref, is shown as written and never summed.
 
-- A duration converts to hours using its column's `hpd` and `dpw`, with minutes at 60. If a value has a term its column can't convert, such as `1d` without `hpd`, the value is treated as empty and gets a warning. The warning has a fix that adds `unit=h hpd=8 dpw=5` to the column declaration, leaving out any of those options the declaration already has. There is no fix when the declaration isn't in the file, as with a column from a path profile.
+- A duration converts to hours using its column's `hpd` and `dpw`, with minutes at 60. If a value has a term its column can't convert, such as `1d` without `hpd`, the value is treated as empty and gets a warning. The warning has a fix that adds `unit=h hpd=8 dpw=5` to the column declaration, leaving out any of those options the declaration already has. There is no fix when the declaration isn't in the file, as with a column from a path profile, or when one of those options is written but invalid (`unit=x`): adding it again would repeat it, and "Remove this option" comes first.
 - A bare number is valid only when the column has `unit=` (the profile sets `unit=h`). Without it, the value is a rows validation error, and the same fix applies.
 - A leading `+` makes the value **additive** (§2.7). A leading `-` isn't supported yet: the value is treated as empty, with a warning.
 - `number` columns follow the same sign rules.
@@ -406,6 +406,7 @@ A grid user must never be stuck. Every error is visible in the grid. Every error
 
 - **Nothing is repaired on read.** Opening a file, or receiving another editor's change, never writes to the buffer. Only a user's own action writes. This protects text users mid-edit, and stops clients from correcting each other (thrashing).
 - **Every fix is deterministic and idempotent.** The same text gives the same edits on every client, and applying a fix twice changes nothing the second time.
+- **Every fix resolves what it is offered for.** Applying it removes the diagnostic it is offered on and adds no syntax or structural error. A fix that would fail this is never offered. The row fixes hold by construction; a settings fix, whose effect depends on the whole file (which profile applies once a `profile:` line is gone, say), is checked by reading the edited text before it is offered.
 - **Every fix has a tier:**
 
 | Tier      | Applied                                               | Allowed only when                                                                               |
@@ -483,7 +484,7 @@ Normalisation applies only to what the user types, never to existing cells. Comm
 | Cell named after an undeclared column (`ratio=2`)                    | As overflow                                    | As overflow                                                                                                                                                                            | `click`, `confirm` |
 | Column set twice in a row                                            | Badge showing both values                      | "Keep this value", for each, labelled with the value (`Keep owner=sam`, `Keep owner=priya`)                                                                                            | `confirm`          |
 
-The extra values are the overflow cells other than a column's repeat, and any cell whose name is no column's (rows reads it as an unnamed cell, so it may land in a declared column). When NOTES isn't set, "Rejoin into NOTES" starts at the first extra value and writes the result by name (`notes="…"`). It is offered only when nothing but NOTES and extra values comes after where it starts, so it never swallows another column's value. A trailing delimiter is not part of the rejoined text. "Delete extra values" removes each extra overflow cell with its delimiter, and clears an extra value in a declared column as clearing that cell would.
+The extra values are the overflow cells other than a column's repeat, and any cell whose name is no column's (rows reads it as an unnamed cell, so it may land in a declared column). "Rejoin into NOTES" is offered only when the row has a cell in NOTES, and nothing but extra values comes after it, so it never swallows another column's value. A row without one offers "Delete extra values", or the user edits the cells. A trailing delimiter is not part of the rejoined text. "Delete extra values" removes each extra overflow cell with its delimiter, and clears an extra value in a declared column as clearing that cell would.
 | Invalid value (`4 hours`, bad date, unknown enum value)              | Cell warning                                   | Edit the cell; the typed editors prevent most of these (§4b.6.5)                                                                                                                       | —                  |
 
 **Titles**
@@ -495,14 +496,16 @@ The extra values are the overflow cells other than a column's repeat, and any ce
 | Repeated marker (`~~x`)                  | Done row titled `~x`   | "Remove extra marker"                        | `click`   |
 | Legacy `<!-- … -->` line                 | Item row               | "Make it a comment"; the row leaves the grid | `confirm` |
 
-**Settings.** Shown as a banner above the grid as well as in the problems list, because they affect every row. The banner lists every diagnostic in the front matter, the unclosed `---` included, and each settings fix that diagnostics on rows share (the conversion fix) once, with how many more diagnostics it resolves. A fix is offered only for a setting written in this file: an error that comes from a profile, or a default profile, has no line to change. An error inside a profile is reported by rows on the `profile:` line, so "Remove this setting" removes that line, which doesn't help when the file's name applies the plan profile anyway (§2.1).
+**Settings.** Shown as a banner above the grid as well as in the problems list, because they affect every row. The banner lists every diagnostic in the front matter, the unclosed `---` included, and each settings fix that diagnostics on rows share (the conversion fix) once, with how many more diagnostics it resolves. A fix is offered only for a setting written in this file: an error that comes from a profile, or a default profile, has no line to change. A conflict between a key the profile supplies and the file's own declarations is reported on the file's declaration (rows base §2.3), so its fix changes that declaration. "Remove this setting" on a `profile:` line is offered only when the file reads without errors that way; in a `.plan` file the plan profile applies once the line is gone (§2.1).
 
 | Case                                                                                      | Fix                                                                                    | Tier      |
 | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------- |
 | Unclosed `---`                                                                            | "Close settings": insert `---` after the last line that parses as a `key: value` entry | `confirm` |
 | Duration column without `hpd`, `dpw` or `unit`                                            | "Add unit=h hpd=8 dpw=5"                                                               | `click`   |
 | Duplicate or invalid column name                                                          | "Rename column…": the user types a name, starting from a free one (`owner2`); only the declaration changes | `confirm` |
-| Malformed or unknown type, invalid or repeated option, bad `sep`/`comment`, unsupported `format`, profile errors | "Remove this setting" (the whole `key: value` line) or "Remove this option" (the `:TYPE`, leaving a text column, or the option) | `confirm` |
+| Unknown type (`due:dat`)                                                                  | "Change type to date", when a known type other than `enum` is within edit distance 2 (the nearest); then "Remove the type", leaving the text column it is read as | `click`   |
+| A marker's column declared with another type (`done:text` while the profile's markers use `done`) | "Make done a checkbox column": the type becomes `bool`                                 | `confirm` |
+| Malformed type, invalid or repeated option, bad `sep`/`comment`, unsupported `format`, profile errors | "Remove this setting" (the whole `key: value` line) or "Remove this option" (the `:TYPE`, leaving a text column, or the option) | `confirm` |
 
 **Identity.** IDs are hidden in the grid, but concurrent edits and copy-paste create these.
 
