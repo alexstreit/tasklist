@@ -1,5 +1,5 @@
 // Resolved keys and columns (base §2.2, §2.3, §4) with their recovery rows in base §6.
-import { parseDeclaration, splitDeclarations, type Piece } from './declarations';
+import { parseDeclaration, splitDeclarations, type Declaration, type Piece } from './declarations';
 import { rowsError } from './errors';
 import { readFrontmatter } from './frontmatter';
 import { isWs, NAME, normalise, splitLines } from './text';
@@ -41,7 +41,12 @@ function collectKeys(entries: FrontmatterEntry[], errors: RowsError[]): Map<stri
   return keys;
 }
 
-type Report = (code: 'malformed-type' | 'unknown-type' | 'invalid-option-value' | 'duplicate-option' | 'invalid-enum-value', message: string) => void;
+/** `part` is where in the declaration the problem is, when it is the type or one option. */
+type Report = (
+  code: 'malformed-type' | 'unknown-type' | 'invalid-option-value' | 'duplicate-option' | 'invalid-enum-value',
+  message: string,
+  part?: { from: number; to: number },
+) => void;
 
 // The base options (§4): whether each is a flag, and the column kinds it applies to (null = any).
 const OPTIONS: Record<string, { flag: boolean; kinds: string[] | null }> = {
@@ -66,29 +71,33 @@ function typedColumn(name: string, type: string, kind: Column['kind'], enumValue
 }
 
 /** base §4 options and §5 types, with their recovery rows in base §6. */
-function readTypeAndOptions(column: Column, declared: string, extensions: boolean, report: Report): void {
+function readTypeAndOptions(column: Column, d: Declaration, extensions: boolean, report: Report): void {
+  const declared = d.type;
   const type = parseType(declared, extensions);
   if (type.ok) {
     column.type = type.type;
     column.kind = type.kind;
     if (type.enumValues) column.enumValues = type.enumValues;
-    for (const problem of type.ignored ?? []) report('invalid-enum-value', `An ${problem} enum value in ${declared}; ignored.`);
+    for (const problem of type.ignored ?? []) report('invalid-enum-value', `An ${problem} enum value in ${declared}; ignored.`, d.typeSpan);
   } else if (type.problem === 'malformed') {
-    report('malformed-type', `Malformed type ${declared}; the column is read as text.`);
+    report('malformed-type', `Malformed type ${declared}; the column is read as text.`, d.typeSpan);
   } else {
-    report('unknown-type', `Unknown type ${declared}; the column is read as text.`);
+    report('unknown-type', `Unknown type ${declared}; the column is read as text.`, d.typeSpan);
   }
 
-  const invalid = (option: string, why: string) => report('invalid-option-value', `Invalid option ${option}: ${why}; ignored.`);
+  let part: { from: number; to: number } | undefined;
+  const invalid = (option: string, why: string) => report('invalid-option-value', `Invalid option ${option}: ${why}; ignored.`, part);
   let defaultText: string | null = null;
+  let defaultPart: typeof part;
   const seen = new Set<string>();
   const knownOptions = extensions ? { ...OPTIONS, ...EXTENSION_OPTIONS } : OPTIONS;
-  for (const { key, value } of column.options) {
+  for (const [i, { key, value }] of column.options.entries()) {
     const known = knownOptions[key];
     if (!known) continue; // unrecognised: ignored and retained (base §4)
+    part = d.optionSpans[i];
     const option = value === null ? key : `${key}=${value}`;
     // A repeated option is an error, and the last one is used.
-    if (seen.has(key)) report('duplicate-option', `Option ${key} is repeated; the last one is used.`);
+    if (seen.has(key)) report('duplicate-option', `Option ${key} is repeated; the last one is used.`, part);
     seen.add(key);
     if (known.kinds && !known.kinds.includes(column.kind)) {
       invalid(option, `${key} doesn't apply to ${column.type}`);
@@ -109,16 +118,17 @@ function readTypeAndOptions(column: Column, declared: string, extensions: boolea
       if (!NAME.test(name)) invalid(option, `the qualifier name "${name}" is not valid`);
       else if (type.ok && type.kind === 'ref') invalid(option, 'a ref qualifier type is reserved'); // ext §4.3
       else if (type.ok) {
-        for (const problem of type.ignored ?? []) report('invalid-enum-value', `An ${problem} enum value in ${typeText}; ignored.`);
+        for (const problem of type.ignored ?? []) report('invalid-enum-value', `An ${problem} enum value in ${typeText}; ignored.`, part);
         column.qualifier = { name, column: typedColumn(name, type.type, type.kind, type.enumValues) };
       } else {
-        report(type.problem === 'malformed' ? 'malformed-type' : 'unknown-type', `${type.problem === 'malformed' ? 'Malformed' : 'Unknown'} qualifier type ${typeText}; read as text.`);
+        report(type.problem === 'malformed' ? 'malformed-type' : 'unknown-type', `${type.problem === 'malformed' ? 'Malformed' : 'Unknown'} qualifier type ${typeText}; read as text.`, part);
         column.qualifier = { name, column: typedColumn(name, 'text', 'text') };
       }
     } else if (key === 'required' || key === 'unique') {
       column[key] = true;
     } else if (key === 'default') {
       defaultText = value;
+      defaultPart = part;
     } else if (key === 'unit') {
       if (column.kind === 'duration' && !['m', 'h', 'd', 'w'].includes(value!)) invalid(option, 'a duration unit is m, h, d or w');
       else column.unit = value!;
@@ -129,6 +139,7 @@ function readTypeAndOptions(column: Column, declared: string, extensions: boolea
     }
   }
   if (defaultText !== null) {
+    part = defaultPart;
     const value = readValue(defaultText, column);
     if (value === null) invalid(`default=${defaultText}`, `it doesn't match the type ${column.type}`);
     else column.default = value;
@@ -240,7 +251,9 @@ export function resolveSchema(
       column.from = span.from;
       column.to = span.to;
     }
-    if (key) readTypeAndOptions(column, d.type, options.extensions !== false, (code, message) => report(key, code, message, span));
+    // Type and option errors point at the type or the option, when the declaration has a span.
+    const at = (part?: { from: number; to: number }) => (span && part ? { from: span.from + part.from, to: span.from + part.to } : span);
+    if (key) readTypeAndOptions(column, d, options.extensions !== false, (code, message, part) => report(key, code, message, at(part)));
     if (!NAME.test(d.name)) {
       column.settable = false;
       if (key) report(key, 'invalid-column-name', `Column name "${d.name}" is not valid; the column cannot be set by name.`, span);

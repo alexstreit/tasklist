@@ -300,7 +300,7 @@ describe('rows and structure', () => {
     expect(button('indent').disabled).toBe(true);
   });
 
-  it('moves a row by itself, and the selection goes with it', () => {
+  it('moves a row with its subtree past its sibling, and the selection goes with it', () => {
     open('Auth\n    Login | 4h\n    Reset\nAdmin\n');
     select(3);
     button('up').click();
@@ -310,15 +310,24 @@ describe('rows and structure', () => {
     button('down').click();
     expect(buffer.text()).toBe('Auth\n    Login | 4h\n    Reset\nAdmin\n');
     expect(row(3)!.classList.contains('selected')).toBe(true);
+    select(1);
+    button('down').click();
+    expect(buffer.text()).toBe('Admin\nAuth\n    Login | 4h\n    Reset\n');
+    expect(row(2)!.classList.contains('selected')).toBe(true);
+    expect(outline()).toEqual(['1', '2', '2.1', '2.2']);
   });
 
-  it('refuses to move a parent below its first child, which would leave the child at no level', () => {
+  it('enables move up and move down only when there is a sibling on that side', () => {
     const text = 'Auth\n    Login | 4h\nAdmin\n';
     open(text);
     select(1);
-    button('down').click();
+    expect([button('up').disabled, button('down').disabled]).toEqual([true, false]);
+    select(2);
+    expect([button('up').disabled, button('down').disabled]).toEqual([true, true]);
+    press(cell(2, WBS), 'ArrowDown', { altKey: true });
     expect(buffer.text()).toBe(text);
-    expect(cell(1, WBS).querySelector('.sheet-notice')!.textContent).toBe('Not changed: moving it would leave a row at an indent that fits no level');
+    select(3);
+    expect([button('up').disabled, button('down').disabled]).toEqual([false, true]);
   });
 
   it('disables move up on the first line and move down on the last', () => {
@@ -526,11 +535,11 @@ describe('keys', () => {
     expect(buffer.text()).toBe(plan);
   });
 
-  it('Alt+Up/Down move the row line', () => {
+  it('Alt+Up/Down move the row and its subtree', () => {
     open(plan);
     select(3);
     key('ArrowUp', { altKey: true });
-    expect(buffer.text()).toBe('Auth | 2d\nAdmin | 1d\n    Login | 4h\n');
+    expect(buffer.text()).toBe('Admin | 1d\nAuth | 2d\n    Login | 4h\n');
     key('ArrowDown', { altKey: true });
     expect(buffer.text()).toBe(plan);
   });
@@ -787,7 +796,7 @@ describe('named and quoted cells, markers and anchors', () => {
     expect(shown(cell(6, NOTES))).toBe('');
     const note = cell(6, NOTES).querySelector('.sheet-notice')!;
     expect(note.getAttribute('role')).toBe('status');
-    expect(note.textContent).toBe("Not changed: column my.notes can't be named, and padding up to it would follow a named cell");
+    expect(note.textContent).toBe('The "my.notes" column can\'t be filled in on this row until its name is fixed in the settings.');
     // The next edit clears it.
     edit(6, EST, '4h');
     expect(host.querySelector('.sheet-notice')).toBeNull();
@@ -803,7 +812,7 @@ describe('named and quoted cells, markers and anchors', () => {
     draft.value = 'X';
     press(draft, 'Enter');
     expect(buffer.text()).toBe(text);
-    expect(host.querySelector('tr.draft')!.textContent).toContain("Not changed: an indent of 4 doesn't fit the nesting here");
+    expect(host.querySelector('tr.draft')!.textContent).toContain("A task can't be added here without breaking the indentation of the tasks below it.");
     expect(draft.value).toBe('X');
     press(draft, 'Escape');
     expect(host.querySelector('tr.draft')).toBeNull();
@@ -822,6 +831,6 @@ describe('named and quoted cells, markers and anchors', () => {
     buffer.apply([{ from: 0, to: 0, insert: 'New\n' }], 'text-editor');
     edit(1, EST, '3d');
     expect(buffer.text()).toBe('New\nAuth | 2d\n');
-    expect(cell(1, EST).querySelector('.sheet-notice')!.textContent).toBe('Not changed: the grid is still reading the last change; try again');
+    expect(cell(1, EST).querySelector('.sheet-notice')!.textContent).toBe('Still catching up with the last change. Try again in a moment.');
   });
 });

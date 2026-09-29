@@ -68,17 +68,21 @@ export interface Declaration {
   name: string;
   type: string;
   options: ColumnOption[];
+  // Where the `:TYPE` and each option are in the declaration text; the type span is empty without one.
+  typeSpan: { from: number; to: number };
+  optionSpans: { from: number; to: number }[];
 }
 
 export function parseDeclaration(text: string): Declaration {
-  const words = splitOutside(text, isWs)
-    .map((p) => p.text)
-    .filter((w) => w !== '');
-  const [head = '', ...rest] = words;
+  const pieces = splitOutside(text, isWs).filter((p) => p.text !== '');
+  const [first, ...rest] = pieces;
+  const head = first?.text ?? '';
   const colon = head.indexOf(':');
   const name = colon === -1 ? head : head.slice(0, colon);
   const type = colon === -1 ? 'text' : head.slice(colon + 1);
-  const options = rest.map((w): ColumnOption => {
+  const headFrom = first?.from ?? 0;
+  const typeSpan = colon === -1 ? { from: headFrom + head.length, to: headFrom + head.length } : { from: headFrom + colon, to: headFrom + head.length };
+  const options = rest.map(({ text: w }): ColumnOption => {
     const eq = w.indexOf('=');
     if (eq === -1) return { key: w, value: null };
     let value = w.slice(eq + 1);
@@ -87,5 +91,5 @@ export function parseDeclaration(text: string): Declaration {
     }
     return { key: w.slice(0, eq), value };
   });
-  return { name, type, options };
+  return { name, type, options, typeSpan, optionSpans: rest.map(({ from, to }) => ({ from, to })) };
 }

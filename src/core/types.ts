@@ -20,6 +20,10 @@ export interface Fix {
   edits: TextEdit[];
   /** Required for `confirm`: the affected lines before (`- `) and after (`+ `). */
   preview?: string;
+  /** Shown with the preview: what the change may do beyond the lines it shows. */
+  warning?: string;
+  /** A fix that writes text the user types, in place of `span`: `edits` and `preview` are for the suggested `value`. */
+  input?: { span: Span; value: string };
 }
 
 export interface Diagnostic {

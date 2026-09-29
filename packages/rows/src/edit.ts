@@ -349,49 +349,67 @@ export function setLevel(doc: RowsDocument, row: Row, level: number): EditResult
 }
 
 /**
- * Swaps a row with the line above or below it (DESIGN §6). When that line is a row, the moved row's
- * indent snaps to the valid level nearest its own at the new position. Refuses when there is no body
- * line to swap with, or no indent leaves every row at a level.
+ * Moves a row with its subtree past its previous or next sibling's subtree (DESIGN §6). Siblings and
+ * subtrees are the indentation tree's; without nesting, every row is a sibling with no subtree. The
+ * lines between the two subtrees stay where they are. Each subtree takes the indent the other's first
+ * row had, its descendants shifted with it, so the tree and its errors are the same as before, with
+ * the two subtrees swapped. Refuses only when there is no such sibling, or when the new first line
+ * would read as a frontmatter delimiter.
  */
 export function moveRow(doc: RowsDocument, row: Row, dir: 'up' | 'down'): EditResult {
-  const other = doc.lines[row.line - 1 + (dir === 'up' ? -1 : 1)];
-  if (!other || other.kind.startsWith('fm-')) return { refused: `there is no line ${dir === 'up' ? 'above' : 'below'} to swap with` };
-  const otherText = doc.text.slice(other.from, other.to);
-  let indent = row.indent.width;
-
-  if (other.row && doc.schema.nest) {
-    const { rows } = doc;
-    const widths = rows.map((r) => r.indent.width);
-    const was = indentTree(widths).depth[rows.indexOf(row)];
-    const order = rows.slice();
-    const [k, j] = [rows.indexOf(row), rows.indexOf(other.row)];
-    [order[k], order[j]] = [order[j], order[k]];
-    const swapped = order.map((r) => r.indent.width);
-    const candidates = new Set([indent]);
-    for (let level = 0; ; level++) {
-      const w = indentFor(swapped, j, level, false);
-      if (w === null) break;
-      candidates.add(w);
+  const { rows, text } = doc;
+  const nest = doc.schema.nest !== null;
+  const widths = rows.map((r) => r.indent.width);
+  const depth = nest ? indentTree(widths).depth : widths.map(() => 0);
+  const i = rows.indexOf(row);
+  /** The index after the last row of k's subtree. */
+  const end = (k: number) => {
+    let e = k + 1;
+    while (e < rows.length && depth[e] > depth[k]) e++;
+    return e;
+  };
+  let sibling = -1;
+  if (dir === 'up') {
+    for (let k = i - 1; k >= 0 && depth[k] >= depth[i]; k--) {
+      if (depth[k] === depth[i]) {
+        sibling = k;
+        break;
+      }
     }
-    const scored = [...candidates].flatMap((w) => {
-      const next = swapped.map((x, m) => (m === j ? w : x));
-      if (badCount(next) > badCount(widths)) return [];
-      return [{ w, far: Math.abs(indentTree(next).depth[j] - was), shift: Math.abs(w - indent) }];
-    });
-    scored.sort((a, b) => a.far - b.far || a.shift - b.shift || a.w - b.w);
-    if (scored.length === 0) return { refused: 'moving it would leave a row at an indent that fits no level' };
-    indent = scored[0].w;
+  } else if (end(i) < rows.length && depth[end(i)] === depth[i]) {
+    sibling = end(i);
+  }
+  if (sibling === -1) return { refused: `there is no ${dir === 'up' ? 'previous' : 'next'} sibling to swap with` };
+
+  // First block A, the lines between, then block B; the result is B, the lines between, then A.
+  const [a, b] = dir === 'up' ? [sibling, i] : [i, sibling];
+  const line = (n: number) => doc.lines[n - 1];
+  const [aFrom, aTo] = [line(rows[a].line).from, line(rows[b - 1].line).to];
+  const [bFrom, bTo] = [line(rows[b].line).from, line(rows[end(b) - 1].line).to];
+  const between = text.slice(aTo + 1, bFrom); // each line with its newline
+  const shift = nest ? widths[b] - widths[a] : 0;
+  /** A block's text with each row's indent shifted by `by`. */
+  const shifted = (from: number, to: number, by: number) =>
+    rows
+      .filter((r) => r.from >= from && r.to <= to)
+      .reduceRight((t, r) => (by === 0 ? t : t.slice(0, r.indent.from - from) + ' '.repeat(r.indent.width + by) + t.slice(r.indent.to - from)), text.slice(from, to));
+  const moved = dir === 'up' ? b : a;
+  const by = dir === 'up' ? -shift : shift;
+  const first = rows[b];
+  if (rows[a].line === 1 && opensFrontmatter(doc, ' '.repeat(widths[a]) + text.slice(first.indent.to, first.to))) {
+    return { refused: 'the new first line would read as a frontmatter delimiter' };
   }
 
-  const indentTo = indent === row.indent.width ? row.from : row.indent.to;
-  const newIndent = indent === row.indent.width ? '' : ' '.repeat(indent);
-  const first = dir === 'up' ? newIndent + doc.text.slice(indentTo, row.to) : otherText;
-  if (Math.min(row.line, other.line) === 1 && opensFrontmatter(doc, first)) return { refused: 'the new first line would read as a frontmatter delimiter' };
-  // The row's own text stays in place, so positions in it map through the move.
-  if (dir === 'down') {
-    return { edits: [{ from: row.from, to: indentTo, insert: `${otherText}\n${newIndent}` }, { from: row.to, to: other.to, insert: '' }] };
+  // The moved subtree's text stays in place, so positions in it map through the move; its first
+  // row's indent edit joins the edit that meets it.
+  const head = rows[moved];
+  const newIndent = by === 0 ? '' : ' '.repeat(head.indent.width + by);
+  const headTo = by === 0 ? head.from : head.indent.to;
+  const inner = by === 0 ? [] : indentEdits(rows.slice(moved + 1, end(moved)), widths.slice(moved + 1, end(moved)).map((w) => w + by));
+  if (dir === 'up') {
+    return { edits: [{ from: aFrom, to: headTo, insert: newIndent }, ...inner, { from: bTo, to: bTo, insert: `\n${between}${shifted(aFrom, aTo, shift)}` }] };
   }
-  return { edits: [{ from: other.from, to: indentTo, insert: newIndent }, { from: row.to, to: row.to, insert: `\n${otherText}` }] };
+  return { edits: [{ from: head.from, to: headTo, insert: `${shifted(bFrom, bTo, -shift)}\n${between}${newIndent}` }, ...inner, { from: aTo, to: bTo, insert: '' }] };
 }
 
 /**

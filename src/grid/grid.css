@@ -43,3 +43,24 @@
 .problems .fix-preview { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
 .problems .fix-preview pre { flex-basis: 100%; margin: 2px 0; padding: 4px 6px; font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--hover); border-radius: 3px; white-space: pre-wrap; }
 .problems .sheet-notice { flex-basis: 100%; font-size: 12px; color: var(--fg); border-left: 2px solid var(--diag-error); padding-left: 6px; }
+.problems .fix-warning, .settings-banner .fix-warning { flex-basis: 100%; font-size: 12px; color: var(--fg); border-left: 2px solid var(--diag-warning); padding-left: 6px; }
+.problems .fix-input, .settings-banner .fix-input { font: inherit; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--accent-border); border-radius: 2px; padding: 0 4px; }
+/* Settings problems (spec §4b.6.6), above the grid because they affect every row. */
+.settings-banner { border-bottom: 1px solid var(--border-soft); border-left: 3px solid var(--diag-error); background: var(--near-row-bg); font-size: 13px; padding: 4px 8px; }
+.settings-banner[hidden] { display: none; }
+.settings-banner .banner-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 2px 0; }
+.settings-banner .severity { font-weight: 600; min-width: 4.5em; }
+.settings-banner .error .severity { color: var(--diag-error); }
+.settings-banner .warning .severity { color: var(--diag-warning); }
+.settings-banner .info .severity { color: var(--fg-muted); }
+.settings-banner .fix { font: inherit; font-size: 12px; border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 0 8px; cursor: pointer; }
+.settings-banner .fix-preview { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.settings-banner .fix-preview pre { flex-basis: 100%; margin: 2px 0; padding: 4px 6px; font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--hover); border-radius: 3px; white-space: pre-wrap; }
+.settings-banner .sheet-notice { flex-basis: 100%; font-size: 12px; color: var(--fg); border-left: 2px solid var(--diag-error); padding-left: 6px; }
+/* Extra values, or a column's two values, on the WBS cell. */
+.plan-sheet td.wbs .badge { display: inline-block; max-width: 12em; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; margin-right: 6px; padding: 0 5px; border-radius: 8px; font-size: 11px; color: var(--fg); background: var(--hover); border: 1px solid var(--diag-error); }
+.plan-sheet .date-editor { position: relative; display: flex; gap: 4px; align-items: center; }
+.plan-sheet .date-button { display: flex; align-items: center; padding: 2px 4px; color: var(--fg-muted); background: var(--button-bg); border: 1px solid var(--button-border); border-radius: 2px; cursor: pointer; }
+.plan-sheet .date-button:hover { color: var(--fg); }
+/* Rendered, so its picker can open and anchor here, but never seen. */
+.plan-sheet .date-picker { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }

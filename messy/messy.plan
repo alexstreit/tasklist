@@ -1,0 +1,33 @@
+---
+columns: est:duration | owner:text | notes:text
+x-team: platform
+colum-widths: 40 | 8 | 10 | 30
+---
+// Q4 platform plan. Alex and Sam edit in text, Priya uses the grid.
+  Kickoff and planning        | 1d      | alex
+Auth {#auth}                  | 2d      | priya
+    ~Login page {#login}      | 4h      | priya
+    Password reset {#login}   | 6       | priya | reuse email templates
+        Email templates       | 4 hours | sam
+    OAuth (Google)            | +1d     |       | call Bob | then Alice
+            Consent screen    | 2h
+        Token refresh         | 3h      | "sam
+    ~~Session timeout         | 2h      | alex
+API {#API}                    |         | sam
+    Rate limiting {#api}      | 1d      | sam   | priority=high
+    Pagination                | 1w      | owner=sam | owner=priya
+    Search                    | owner=sam | 2d
+    Error format              | 3h      | notes="agreed" with Dana
+    Versioning                | soon    | sam
+	Webhooks                  | 2d      | sam
+
+# Phase 2
+Admin                         |         | bob
+    User list                 | 1d 4h   | bob   | "export \q CSV"
+    Audit log                 | -3h     | bob
+    Roles                     | 2d      | bob   | parent=#auth
+    Permissions {#perms}      | 1d      | parent=#perms
+| 3d | dave | who wrote this?
+<!-- Billing: waiting on finance -->
+Reporting {#reports}          | 2d 2d   | dave
+    Dashboards                | 3d      | dave  | parent=#nowhere

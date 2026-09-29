@@ -410,28 +410,40 @@ describe('setLevel', () => {
 });
 
 describe('moveRow', () => {
-  it('moves a first child above its parent, snapping its indent, and gives a valid file', () => {
-    const doc = parseRows(`${NEST}Auth\n    Login | 4h\n`);
-    const after = edited(doc, moveRow(doc, doc.rows[1], 'up'));
-    expect(body(after.text)).toBe('Login | 4h\nAuth\n');
+  it('swaps a row and its subtree with the previous sibling and its subtree', () => {
+    const doc = parseRows(`${NEST}Auth\n    Login\n        Form\n    Reset\nAdmin\n    Users\n`);
+    const after = edited(doc, moveRow(doc, doc.rows[4], 'up'));
+    expect(body(after.text)).toBe('Admin\n    Users\nAuth\n    Login\n        Form\n    Reset\n');
     expect(after.doc.errors).toEqual([]);
+    expect(body(edited(doc, moveRow(doc, doc.rows[1], 'down')).text)).toBe('Auth\n    Reset\n    Login\n        Form\nAdmin\n    Users\n');
   });
 
-  it('keeps the level of a row where it still fits', () => {
-    const doc = parseRows(`${NEST}A\n    B\n    C\n`);
-    expect(body(edited(doc, moveRow(doc, doc.rows[2], 'up')).text)).toBe('A\n    C\n    B\n');
+  it('keeps the lines between the two subtrees where they are, and the ones inside with their subtree', () => {
+    const doc = parseRows(`${NEST}A\n    // in A\n    a\n\n// before B\nB\n`);
+    expect(body(edited(doc, moveRow(doc, doc.rows[2], 'up')).text)).toBe('B\n\n// before B\nA\n    // in A\n    a\n');
+    expect(body(edited(doc, moveRow(doc, doc.rows[0], 'down')).text)).toBe('B\n\n// before B\nA\n    // in A\n    a\n');
   });
 
-  it('swaps with a comment line without touching the indent', () => {
-    const doc = parseRows(`${NEST}A\n    // note\n    B\n`);
-    expect(body(edited(doc, moveRow(doc, doc.rows[1], 'up')).text)).toBe('A\n    B\n    // note\n');
-  });
-
-  it('refuses a move that would leave a row at an indent that fits no level, and a swap with the frontmatter', () => {
+  it('refuses without a sibling on that side: moving across levels is indent and outdent', () => {
     const doc = parseRows(`${NEST}Auth\n    Login\nAdmin\n`);
-    expect(moveRow(doc, doc.rows[0], 'down')).toEqual({ refused: 'moving it would leave a row at an indent that fits no level' });
-    expect(moveRow(doc, doc.rows[0], 'up')).toEqual({ refused: 'there is no line above to swap with' });
-    expect(moveRow(doc, doc.rows[2], 'down')).toEqual({ refused: 'there is no line below to swap with' });
+    expect(moveRow(doc, doc.rows[0], 'up')).toEqual({ refused: 'there is no previous sibling to swap with' });
+    expect(moveRow(doc, doc.rows[1], 'up')).toEqual({ refused: 'there is no previous sibling to swap with' });
+    expect(moveRow(doc, doc.rows[1], 'down')).toEqual({ refused: 'there is no next sibling to swap with' });
+    expect(moveRow(doc, doc.rows[2], 'down')).toEqual({ refused: 'there is no next sibling to swap with' });
+    expect(body(edited(doc, moveRow(doc, doc.rows[0], 'down')).text)).toBe('Admin\nAuth\n    Login\n');
+  });
+
+  it('swaps the first indents of siblings a recovery put at different indents, so the tree is unchanged', () => {
+    const doc = parseRows(`${NEST}A\n        B\n            b\n    C\n`);
+    const after = edited(doc, moveRow(doc, doc.rows[3], 'up'));
+    expect(body(after.text)).toBe('A\n        C\n    B\n        b\n');
+    expect(after.doc.errors.map((e) => e.code)).toEqual(['bad-indent']);
+    expect(after.doc.rows[0].children.map((r) => r.lead.text)).toEqual(['C', 'B']);
+  });
+
+  it('swaps neighbouring rows in a file without nesting, whatever their indent', () => {
+    const doc = parseRows('A\n  B\n');
+    expect(edited(doc, moveRow(doc, doc.rows[1], 'up')).text).toBe('  B\nA\n');
   });
 
   it('refuses to make a --- row the first line of a file without frontmatter', () => {
@@ -551,24 +563,43 @@ describe('the level-based edits and repairRow add no syntax or structural error 
     for (const { text, options } of files) {
       const doc = parseRows(text, options);
       if (doc.rows.length === 0) continue;
-      const row = pick(doc.rows);
+      const k = Math.floor(random() * doc.rows.length);
+      const row = doc.rows[k];
       const dir = pick(['up', 'down'] as const);
       const result = moveRow(doc, row, dir);
       const why = JSON.stringify({ text, line: row.line, dir });
+      // The rows of each subtree, by the indentation tree (every row is its own without nesting).
+      const depth = doc.schema.nest ? depths(doc) : doc.rows.map(() => 0);
+      const end = (r: number) => {
+        let e = r + 1;
+        while (e < doc.rows.length && depth[e] > depth[r]) e++;
+        return e;
+      };
+      let sibling: number | null = null;
+      for (let r = k - 1; dir === 'up' && r >= 0 && depth[r] >= depth[k]; r--) if (depth[r] === depth[k]) (sibling ??= r);
+      if (dir === 'down' && end(k) < doc.rows.length && depth[end(k)] === depth[k]) sibling = end(k);
       if ('refused' in result) {
-        expect(result.refused, why).toMatch(/no line (above|below) to swap with|fits no level|frontmatter delimiter/);
+        if (sibling === null) expect(result.refused, why).toMatch(/no (previous|next) sibling to swap with/);
+        else expect(result.refused, why).toMatch(/frontmatter delimiter/);
         continue;
       }
+      expect(sibling, why).not.toBeNull();
       moved++;
       const after = edited(doc, result, options);
       expect(addedErrors(doc, after.doc), why).toEqual([]);
-      const i = row.line - 1;
-      const j = dir === 'up' ? i - 1 : i + 1;
+      // The lines: the two subtrees swapped, the lines between them where they were.
+      const [a, b] = dir === 'up' ? [sibling!, k] : [k, sibling!];
+      const lineOf = (r: number) => doc.rows[r].line - 1;
+      const [aFrom, aTo, bFrom, bTo] = [lineOf(a), lineOf(b - 1) + 1, lineOf(b), lineOf(end(b) - 1) + 1];
       const want = flat(doc);
-      [want[i], want[j]] = [want[j], want[i]];
-      // An empty line moved to the end of a file without a final newline becomes that newline.
-      if (!doc.endsWithNewline && Math.max(i, j) === want.length - 1 && 'text' in want[want.length - 1] && want[want.length - 1].text === '') want.pop();
+      want.splice(aFrom, bTo - aFrom, ...want.slice(bFrom, bTo), ...want.slice(aTo, bFrom), ...want.slice(aFrom, aTo));
       expect(flat(after.doc), why).toEqual(want);
+      // The tree: each row keeps its parent, and the two subtrees swap places under theirs.
+      if (!doc.schema.nest) continue;
+      const order = [...doc.rows.keys()];
+      order.splice(a, end(b) - a, ...order.slice(b, end(b)), ...order.slice(a, b));
+      const before = parents(doc);
+      expect(parents(after.doc), why).toEqual(order.map((r) => (before[r] === null ? null : order.indexOf(before[r]!))));
     }
     expect(moved).toBeGreaterThanOrEqual(2000);
   });

@@ -49,6 +49,12 @@ describe('durationToMinutes', () => {
 });
 
 describe('column options (base §4)', () => {
+  it('reports a type or option error at the type or the option, and a name error at the declaration', () => {
+    const doc = parseRows('---\ncolumns: a:dat | b:enum[x | c:number hpd=8 unique | d:duration unit=h unit=m | e:number default=abc | a\n---\n');
+    const spans = doc.errors.map((e) => `${e.code} ${doc.text.slice(e.from, e.to)}`);
+    expect(spans).toEqual(['unknown-type :dat', 'malformed-type :enum[x', 'invalid-option-value hpd=8', 'duplicate-option unit=m', 'invalid-option-value default=abc', 'duplicate-column-name a']);
+  });
+
   it('ignores a default that does not match the type, with a structural error', () => {
     const doc = parseRows('---\ncolumns: n:number default=abc | p:bool default=false\n---\n');
     expect(doc.schema.columns[1].default).toBeNull();

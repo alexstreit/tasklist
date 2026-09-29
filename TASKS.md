@@ -2,7 +2,7 @@
 
 Work these in order. Each task is one Claude Code session. A task is done only when every acceptance criterion is met and the human has reviewed.
 
-**Status:** Tasks 1–22 complete.
+**Status:** Tasks 1–23 complete. Task 24 awaiting review.
 
 ---
 
@@ -310,7 +310,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 - [x] Insert above a parent creates a sibling before it; the parent keeps its children. Insert above a first child creates a new first child. Assert on resulting text.
 - [x] Delete a parent row: its children re-attach to the previous item at a shallower indent (or become roots), matching text-mode deletion. Assert on text and on the new outline numbers.
 - [x] Indent the first root row is a no-op; outdent a root row is a no-op; the toolbar buttons are disabled in those states.
-- [x] Move up/down of a row with children moves only that line — same semantics as the text editor. (v2 may move subtrees; already listed under Grid v2 in §7.)
+- [x] Move up/down of a row with children moves only that line — same semantics as the text editor. (v2 may move subtrees; already listed under Grid v2 in §7.) (Changed by Task 24: the row moves with its subtree.)
 - [x] After each operation the selection follows the row to its new line.
 - [x] Manual: every toolbar button does what its key does. — the keys arrive in Task 14; **browser pass on the buttons pending review**.
 
@@ -318,7 +318,9 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Human review:** in the browser, walk the toolbar on the §2.10 example — insert above a parent and above a first child, delete a parent, indent/outdent, move a parent row, toggle done.
 
-**Changed by Task 23:** on item rows the operations work in levels through the rows edit API (spec §4b.6.4); comment and blank rows still use `src/editing/`. Deleting a parent promotes its children one level instead of leaving them at their indent. Indent and outdent take the row's descendants with it. Moving a row still moves only that line, but snaps its indent, and is refused when no indent leaves every row at a level (a parent below its first child).
+**Changed by Task 23:** on item rows the operations work in levels through the rows edit API (spec §4b.6.4); comment and blank rows still use `src/editing/`. Deleting a parent promotes its children one level instead of leaving them at their indent. Indent and outdent take the row's descendants with it.
+
+**Changed by Task 24:** Move up and Move down on an item row move it with its subtree, swapping with the previous or next sibling's subtree, and are enabled only when that sibling exists; moving across levels is indent and outdent. They no longer move only the line, and are never refused for the indentation. Comment and blank rows still move as single lines, and the text editor's Alt+Up/Down stay raw line moves. Refusals are shown in plain words ("Other rows refer to this task by its ID, so it can't be deleted yet.") instead of rows' reasons.
 
 ---
 
@@ -652,7 +654,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - [x] Property test: `setLevel`, `moveRow`, `deleteRow` and `repairRow` never add a syntax or structural error, and `repairRow` is idempotent. — `packages/rows/tests/edit.test.ts`. The generators gained `generateBroken`: 1,000 nested files with bad indents, tabs, overflow, unnamed cells after named ones, undeclared names, repeated markers, heading titles, unterminated quotes, text after a quote, unknown escapes and rows beginning with the delimiter. Every property test now runs over 5,000 files. `setLevel` writes on at least 1,000 of the 2,151 nested files, `moveRow` moves on at least 2,000 files, `deleteRow` deletes on at least 3,000, and `repairRow` repairs at least 1,000 rows (every row with an error). After parsing, no syntax or structural error is added (counted by code), and every value is unchanged apart from indents. The tree keeps its shape: `setLevel` keeps the row's descendants its descendants; after `deleteRow` its children take its parent; after `repairRow` every row keeps its parent. A refusal must be a documented one. `repairRow` on its own output returns nothing. A planted bug (snapping the row without the rows at its level) fails it.
 - [x] `A / B / C / D` (from extensions §6.2): deleting `B` gives a valid file whose tree is `A` with children `C` and `D`. — in rows and through the grid (`tests/grid/repair.test.ts`).
 - [x] On a `0 / 8 / 4` file, "Insert above" on the third row succeeds, and the third row is rewritten to a valid indent in the same undo step. — the draft shows at indent 8, the result is `A / B / X / C` with `B`, `X` and `C` at 8, the file is valid, and one undo restores the original.
-- [x] Moving a first child above its parent gives a valid file. — `Auth / Login` becomes `Login / Auth`, both at indent 0.
+- [x] Moving a first child above its parent gives a valid file. — `Auth / Login` becomes `Login / Auth`, both at indent 0. (Since Task 24: by Outdent, then Move up; Move up is disabled on a first child.)
 - [x] A grid edit to a row with an unterminated quote in another cell leaves that cell's text unchanged and removes the error. — editing the estimate of `Login | 4h | alice | "call Bob | then Alice` closes the quote; notes still reads `call Bob | then Alice`.
 - [x] Opening a file with errors, or applying a remote change (simulated with `buffer.apply` using origin `remote`), writes nothing. — the grid test records every buffer change: none on opening `tests/fixtures/repair-cases.plan`, and only the `remote` one after it. Repairs are made only by grid edits (`withRepairs`), never by `analyze`.
 - [x] Every diagnostic on a fixture with one of each case in spec §4b.6.6 appears in the problems list, and clicking it focuses the right row. — `tests/fixtures/repair-cases.plan` has every case but the unclosed `---`, which can't coexist with the other settings cases and has its own test. Entries are in document order. Clicking one focuses a cell in its row, and a front matter entry has no row to focus.
@@ -666,7 +668,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 
 **Decisions taken** (spec §4b.5, §4b.6.1 and §4b.6.4, and DESIGN §6):
 - Indent and outdent move the row's descendants with it, as MS Project does. Moving only the row would hand its children to another parent or leave them at no level. Rows after the subtree keep their indent, so outdenting a row makes its later siblings its children.
-- Move up and down move the row alone, as the spec says, and refuse when no indent for it avoids a new indent error. The common case is a parent moved below its first child. The snapped indent is the valid one nearest the row's old level, then nearest its old indent.
+- Move up and down move the row alone, as the spec says, and refuse when no indent for it avoids a new indent error. The common case is a parent moved below its first child. The snapped indent is the valid one nearest the row's old level, then nearest its old indent. (Changed by Task 24: they move the row's subtree past its sibling's, and never refuse for the indentation. A first child moves above its parent by outdent, then Move up.)
 - The indent repair moves the rows the parser put at the repaired row's level, or below it, by the same amount. Snapping only the row would give those rows a bad indent, or new parents: in `A / B(8) / C(4) / D(4)`, `D` must move to 8 with `C`. When that would still change a parent, there is no indent repair.
 - A repair that collides with the grid edit is left out, and the edit is kept. In a cell, that is one that overlaps or touches the edit, since an append after a broken cell already closes it. For the indent repairs, which go together, it is one that overlaps the edit.
 - "Level" is the depth in the indentation tree, not the `parent=` relation. Rows added `levelIndent` for "Insert above", since `insertRow` takes an indent.
@@ -705,13 +707,48 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 
 **Acceptance criteria**
 
-- [ ] `4 Hours`, `1.5 days`, `2 wks 3d` and `90 mins` commit as `4h`, `1.5d`, `2w 3d` and `90m`. `soon` is written as typed and shows a warning.
-- [ ] Normalisation never changes a cell the user didn't edit.
-- [ ] `Login page | 4h | alice | call Bob | then Alice`: "Rejoin into notes" gives `notes = "call Bob | then Alice"`, which reads back exactly.
-- [ ] Every `confirm` fix shows its preview, and cancelling writes nothing.
-- [ ] "Close settings" on an unclosed block inserts `---` after the last `key: value` line, and the settings lines leave the grid.
-- [ ] "Rename the later one" on a duplicate ID warns when the ID is referenced.
-- [ ] Manual, both themes: the problems list, the banner, the badges and the previews are readable, and every fixture case can be fixed without leaving the grid.
+- [x] `4 Hours`, `1.5 days`, `2 wks 3d` and `90 mins` commit as `4h`, `1.5d`, `2w 3d` and `90m`. `soon` is written as typed and shows a warning. — `tests/grid/typed.test.ts`, through the grid, plus a table for `normaliseDuration`.
+- [x] Normalisation never changes a cell the user didn't edit. — editing another row's estimate, or another cell of the row, leaves `4 hours` as it is, and committing it unchanged writes nothing.
+- [x] `Login page | 4h | alice | call Bob | then Alice`: "Rejoin into notes" gives `notes = "call Bob | then Alice"`, which reads back exactly. — the line becomes `Login page | 4h | alice | "call Bob | then Alice"` with no diagnostics left, in core and through the grid.
+- [x] Every `confirm` fix shows its preview, and cancelling writes nothing. — in the grid, every confirm fix of the three messy fixtures, with no buffer change at all; in the text editor, a panel with the preview, where Cancel, Escape and any text edit write nothing (`tests/editor/confirm.test.ts`).
+- [x] "Close settings" on an unclosed block inserts `---` after the last `key: value` line, and the settings lines leave the grid. — `messy-unclosed.plan`: `---` after line 3, the two settings rows become the front matter row, and the banner goes.
+- [x] "Rename the later one" on a duplicate ID warns when the ID is referenced. — `A row refers to #login. It isn't clear which task it meant, so check it after renaming.`, in the grid and the text editor; no warning when nothing refers to it.
+- [ ] Manual, both themes: the problems list, the banner, the badges and the previews are readable, and every fixture case can be fixed without leaving the grid. — **browser pass pending review.** Automated in part: `tests/grid/fixes.test.ts` applies the first fix in the problems list, confirming previews, until none is left, on each messy fixture; what remains is only what the spec gives no fix (values to edit, a title to type, an unknown key, an override that differs) and the profile error below. The colour-token test still passes; the new CSS uses only tokens.
+
+**Changed first, at the start of this task** (see the Task 13 and Task 23 notes): Move up and Move down move a row with its subtree past its previous or next sibling's, enabled only when that sibling exists. rows `moveRow` swaps the two subtrees, keeping the lines between them in place, and gives each subtree the indent the other's first row had, so the tree and its errors stay as they were and it never refuses for the indentation. Its property test now checks the swapped line order and that every row keeps its parent (over 2,000 of the 5,000 generated files move; a planted bug that skips the indent swap fails it). Grid refusals are shown in plain words, mapped from rows' reasons in `src/grid/messages.ts`; a test produces each reason from rows itself, so a change of wording there fails it.
+
+**How it's built:**
+- Typed editors (`src/grid/index.ts`, `src/grid/typed.ts`): `setField` normalises typed durations; enum cells open a `<select>`, date cells a text input with a calendar button beside it that opens the browser's picker from a hidden date input (leaving the input for the button isn't a commit; the visible date input showed its own date fields squeezed under its icon), bool cells show a checkbox that a click or Space toggles through `setMarker`.
+- Fixes (`src/core/fixes.ts`, `src/core/settings.ts`): overflow ("Rejoin into NOTES", "Delete extra values"), column set twice ("Keep owner=sam", "Keep owner=priya"), identity ("Rename the later one", with a `warning` when anything refers to the ID), and the settings fixes ("Close settings", "Rename column…", "Remove this setting", "Remove this option"). `Fix` gained `warning` and `input` (spec §4b.6.2): a rename takes a typed name, starting from a free one, and the preview follows it.
+- rows: an error in a column declaration now spans the `:TYPE` or the option it is about (DESIGN §4), so "Remove this option" removes exactly that. The text editor underlines it too.
+- Grid: the settings banner sits between the toolbar and the problems list. It groups the conversion fix, which 12 diagnostics share in `messy.plan`, into one entry. The WBS cell carries a badge with the extra values (`+ then Alice`) or a column's two values (`owner: sam / priya`).
+- Text editor: a `confirm` lint action opens a panel with the preview, warning and input instead of applying.
+
+**Decisions taken** (spec §4.4, §4b.6.2, §4b.6.5 and §4b.6.6 updated):
+- "Rejoin into NOTES" starts at the notes cell, or, when notes isn't set, at the first extra value and writes `notes=…`. It is offered only when nothing but notes and extra values follows, so it never absorbs another column's value. A trailing delimiter isn't part of the text.
+- A cell named after an undeclared column (`priority=high`) counts as an extra value where rows put it, so rejoining a notes value quotes it.
+- The two "Keep this value" buttons are labelled with their values.
+- An unknown type (`due:dat`) gets "Remove this option" like a malformed one, removing the `:TYPE` so the column reads as text, as it already does. The spec's table listed only malformed types; the key asked for a fix.
+- A repeated option: "Remove this option" removes the one rows flags, the later, so the earlier value applies afterwards. The preview shows it.
+- The `<!--` fix is labelled "Make it a comment", as spec §4b.6.6 says (it was "Change to a // comment").
+- An enum commits on Enter, Tab or leaving it, not on each change, so arrowing through the choices doesn't write every one.
+
+**Where the app differs from `messy-KEY.md`** (asserted in `tests/core/messy.test.ts`, which says so at each line):
+- `{#login}` is on lines 9 and 10, not 8 and 10.
+- Line 17, `priority=high`: read as the notes value, as the key says, but rows also reports `invalid-cell-name` (error). "Rejoin into notes" quotes it and clears it.
+- Line 29, `parent=#perms`: `parent-mismatch`, not `parent-cycle`. An indented row's parent comes from its indentation, so the cycle never forms. The fix is the same.
+- Line 30 also has a `required` warning (no title).
+- `messy-settings.plan`, `done:text`: the marker is ignored as the key says, but rows reports it as `profile-has-errors` on `profile: plan` (base §2.3: errors from a profile's keys collapse into one). There is no diagnostic on `done:text`, and the offered "Remove this setting" removes `profile: plan`, which doesn't help: a `.plan` file uses the plan profile anyway. This case can't be fixed from the grid.
+- `messy-settings.plan`, `Design`: the second `owner` is Design's next positional slot, so editing it there appends positionally rather than using the padding exception. Padding happens only on a row that stops short of the column before it, such as a row with just a title; the fixture has none.
+- `messy-unclosed.plan`: `~Domain renewal` is done before the fix too, since the file name applies the plan profile.
+
+**Rewritten tests:**
+- `packages/rows/tests/edit.test.ts`: the `moveRow` examples and property, for the subtree swap.
+- `tests/grid/grid.test.ts`: "moves a row by itself…" now also moves a parent with its subtree; "refuses to move a parent below its first child…" became "enables move up and move down only when there is a sibling on that side"; "Alt+Up/Down move the row line" moves Admin past Auth's subtree; the three refusal notes expect the plain wording.
+- `tests/grid/repair.test.ts`: "moving a first child above its parent…" does it by Outdent then Move up.
+- `tests/editor/diagnostics.test.ts`: an unknown type underlines `:money`, not the declaration.
+
+**Spec questions:** none. The rows change is to error spans, which the rows specs don't define; `QUESTIONS.md` is unchanged.
 
 ---
 

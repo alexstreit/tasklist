@@ -10,6 +10,7 @@ import { deleteRow, insertRow, levelIndent, moveRow, repairRow, setCell, setLead
 import type { EditResult } from 'rows';
 import type { Model, ModelNode, Span } from '../core';
 import type { TextEdit } from '../buffer';
+import { normaliseDuration } from './typed';
 
 const NOTHING: EditResult = { edits: [] };
 
@@ -31,13 +32,23 @@ export function setTitle(model: Model, node: ModelNode, typed: string): EditResu
   return setLead(model.doc, node.source.row, title);
 }
 
-/** Write the declared column `index`; an empty value clears the cell. */
+/** The rows column for the declared column `index`. */
+export function columnOf(model: Model, index: number) {
+  return model.doc.schema.columns.filter((c) => c.index > 0 && !c.implicit)[index];
+}
+
+/** Write the declared column `index`; an empty value clears the cell. Typed durations are normalised (spec §4b.6.5). */
 export function setField(model: Model, node: ModelNode, index: number, typed: string): EditResult {
   const current = node.source.fields[index]?.text ?? null;
-  const value = written(typed);
+  const column = columnOf(model, index);
+  const value = written(column.kind === 'duration' ? normaliseDuration(typed) : typed);
   if (typed === current || value === current) return NOTHING;
-  const column = model.doc.schema.columns.filter((c) => c.index > 0 && !c.implicit)[index];
   return setCell(model.doc, node.source.row, column, value);
+}
+
+/** Tick or clear a bool cell (spec §4b.6.5), as rows writes a flag. */
+export function setFlag(model: Model, node: ModelNode, index: number, on: boolean): EditResult {
+  return setMarker(model.doc, node.source.row, columnOf(model, index).name, on);
 }
 
 /** Turn the node's own done flag on or off. A node done through an ancestor has none of its own. */
@@ -62,6 +73,7 @@ export function shiftItem(model: Model, node: ModelNode, depth: number, by: 1 | 
   return setLevel(model.doc, node.source.row, depth + by);
 }
 
+/** Swap the row and its subtree with its previous or next sibling's. */
 export function moveItem(model: Model, node: ModelNode, dir: 'up' | 'down'): EditResult {
   return moveRow(model.doc, node.source.row, dir);
 }

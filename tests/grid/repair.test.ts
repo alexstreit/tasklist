@@ -72,9 +72,11 @@ describe('structure operations work in levels (spec §4b.6.4)', () => {
     expect(buffer.text()).toBe(text);
   });
 
-  it('moving a first child above its parent gives a valid file', () => {
+  it('a first child moves above its parent by outdent, then move up, and gives a valid file', () => {
     open('Auth\n    Login | 4h\n');
     select(2);
+    expect(button('up').disabled).toBe(true);
+    button('outdent').click();
     button('up').click();
     expect(buffer.text()).toBe('Login | 4h\nAuth\n');
     valid();

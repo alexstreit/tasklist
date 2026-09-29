@@ -334,7 +334,7 @@ Indent-based folding on items that have child items. Indented comment lines foll
 
 ### 4.4 Diagnostics
 
-Via `@codemirror/lint`, fed from the model produced by the shell's single `analyze()` call (no second analysis). Severities `error`, `warning` and `info` map to the lint severities of the same names. Diagnostics with a span underline only that span; span-less diagnostics get a gutter marker only. Hover shows the model's message verbatim. A diagnostic's fixes appear as lint actions, and applying one dispatches its edits through the buffer with origin `text-editor`.
+Via `@codemirror/lint`, fed from the model produced by the shell's single `analyze()` call (no second analysis). Severities `error`, `warning` and `info` map to the lint severities of the same names. Diagnostics with a span underline only that span; span-less diagnostics get a gutter marker only. Hover shows the model's message verbatim. A diagnostic's fixes appear as lint actions, and applying one dispatches its edits through the buffer with origin `text-editor`. A `confirm` fix first opens a panel below the editor with its preview, its warning and, for a fix that takes a typed value, an input; Apply writes it, and Cancel, Escape or any edit to the text drops it.
 
 ## 4b. Grid editor
 
@@ -359,7 +359,7 @@ Every cell edit goes through the rows edit API (§3.9). The grid never builds ro
 - Writing a column that the row doesn't set yet follows `setCell`'s rules: append it positionally if it is the next slot, otherwise write it as a named cell (`notes=…`). The grid pads with empty cells only in `setCell`'s one exception, a column that can't be named. Clearing a cell removes it, or empties it if later cells depend on its position.
 - A cell with a diagnostic has a coloured outline (error, warning or info) and shows the message on hover. A diagnostic whose span falls in a cell marks that cell. One with no span, or on overflow cells, marks the row's WBS cell. Anything inside the frontmatter marks its collapsed row.
 - Implicit columns (`parent`, and `id` when identity is on) are not shown in v1.
-- When rows refuses an edit, the grid leaves the cell as it was and shows the reason beside it briefly; it never fails silently. An inserted row that rows refuses stays a draft with its text. An edit made while the model still trails the buffer (the shell's debounce) is refused the same way, since its offsets would be for the older text.
+- When rows refuses an edit, the grid leaves the cell as it was and shows the reason beside it briefly; it never fails silently. The reason is worded for someone who has never seen the file ("Other rows refer to this task by its ID, so it can't be deleted yet."): rows gives its reasons in its own terms, and the grid maps them to plain messages. An inserted row that rows refuses stays a draft with its text. An edit made while the model still trails the buffer (the shell's debounce) is refused the same way, since its offsets would be for the older text.
 - Typed values are trimmed, and a tab becomes a space, since the buffer holds no tabs (§2.2).
 
 ### 4b.3 Selection and focus
@@ -381,7 +381,7 @@ MS Project conventions; where Project has no default, the text editor's binding 
 | Delete                  | clear cell (commit empty)                                                                          | —                                              | delete the row; its descendants move up one level (§4b.6.4) |
 | Insert                  | insert a blank item row **above** at the current row's level (§4b.6.4) and start editing its title | —                                              | same                                                        |
 | Alt+Shift+Right / Left  | indent / outdent the row                                                                           | —                                              | same                                                        |
-| Alt+Up / Alt+Down       | move the row's line up / down                                                                      | —                                              | same                                                        |
+| Alt+Up / Alt+Down       | move the row and its subtree past its previous / next sibling (§4b.6.4)                            | —                                              | same                                                        |
 | Space                   | toggle done when the focused cell is the checkbox                                                  | —                                              | —                                                           |
 | Ctrl+Z / Ctrl+Y         | buffer undo / redo                                                                                 | Ctrl+Z cancels the edit                        | same as focused                                             |
 | Arrow keys              | move focus                                                                                         | —                                              | move selection                                              |
@@ -396,7 +396,7 @@ An inserted row is a **draft**: it appears in the grid at the right position and
 
 ### 4b.5 Toolbar
 
-Buttons for Insert row, Delete row, Indent, Outdent, Move up, Move down, Toggle done. Each mirrors a key above and is enabled only when it applies: indent only when the item row above is at the same or a greater level (a row directly below its parent is already as deep as it can usefully go; for a comment or blank row, the row above at the same or a greater indent), outdent only on a row below the top level (or an indented comment or blank row), move up and move down only when there is a line to swap with (never a front matter line), toggle done only on a row whose `~` is its own. All of them are disabled when nothing is selected. The toolbar acts on the current row, whether it is selected by its WBS cell or holds the focused cell. The editor toggle (Text / Grid) is in the app toolbar.
+Buttons for Insert row, Delete row, Indent, Outdent, Move up, Move down, Toggle done. Each mirrors a key above and is enabled only when it applies: indent only when the item row above is at the same or a greater level (a row directly below its parent is already as deep as it can usefully go; for a comment or blank row, the row above at the same or a greater indent), outdent only on a row below the top level (or an indented comment or blank row), move up and move down only when the item row has a previous or next sibling to swap with (for a comment or blank row, a line to swap with, never a front matter line), toggle done only on a row whose `~` is its own. All of them are disabled when nothing is selected. The toolbar acts on the current row, whether it is selected by its WBS cell or holds the focused cell. The editor toggle (Text / Grid) is in the app toolbar.
 
 ### 4b.6 Errors and repair
 
@@ -427,6 +427,8 @@ interface Fix {
   tier: "auto" | "click" | "confirm";
   edits: TextEdit[];
   preview?: string; // required for 'confirm': the affected lines before and after
+  warning?: string; // shown with the preview: what the change may do beyond those lines
+  input?: { span: Span; value: string }; // the fix writes typed text in place of span; edits and preview are for value, a suggestion
 }
 ```
 
@@ -442,25 +444,25 @@ Grid indent, outdent, insert, move and delete work on the **level** the parser a
 
 - **Indent** makes the row the last child of its previous sibling. **Outdent** makes it the next sibling of its parent. The indent written is the one its new siblings already use, or the parent's indent plus the file's usual step (the most common indent difference in the file, default 4). The row's descendants move with it and stay its descendants, as in MS Project; the rows after them keep their indent, so outdenting a row makes its later siblings its children.
 - **Insert above** uses the target row's level, snapped to a valid indent.
-- **Move up / down** swaps the row with its neighbouring line and snaps its indent to the nearest valid level at the new position. It moves the row alone. When no indent for it leaves every row at a level, it is refused: moving a parent below its first child would leave that child indented on its own.
+- **Move up / down** moves the row with its subtree, swapping it with the previous or next sibling's subtree. It is enabled only when that sibling exists; moving across levels is done with indent and outdent. Comment and blank lines between the two subtrees stay where they are, and those inside a subtree move with it. Each subtree takes the indent the other's first row had, so the tree keeps its shape and a move never needs to be refused for the indentation.
 - **Delete** removes the row and promotes its descendants by one level, so the rest of the tree keeps its shape.
 - Any structure operation on a row whose indent fits no level first rewrites it to the level recovered by the parser (`auto`).
 
 Comment and blank rows have no level, so the grid indents, moves and deletes them as raw lines (§3.8).
 
-Text-editor keys stay raw: Tab adds 4 spaces, whatever the result.
+Text-editor keys stay raw: Tab adds 4 spaces and Alt+Up/Down move lines, whatever the result.
 
 #### 4b.6.5 Typed cell editors
 
 The grid edits each column with an editor for its type:
 
-- **duration:** free text, normalised when the user commits. `h`, `hr`, `hrs`, `hour` and `hours` become `h`; likewise `m`/`min`/`mins`/`minute(s)`, `d`/`day(s)`, `w`/`wk(s)`/`week(s)`. Case is ignored, so `4 Hours` and `1.5 days` become `4h` and `1.5d`. A bare number is kept as written when the column has `unit=`. Input that still isn't valid is written as typed, and shows its warning.
-- **date:** a date picker, plus typed `YYYY-MM-DD`.
-- **bool:** a checkbox.
-- **enum:** a dropdown of the declared values.
+- **duration:** free text, normalised when the user commits. `h`, `hr`, `hrs`, `hour` and `hours` become `h`; likewise `m`/`min`/`mins`/`minute(s)`, `d`/`day(s)`, `w`/`wk(s)`/`week(s)`. Case is ignored, so `4 Hours` and `1.5 days` become `4h` and `1.5d`. Normalised input is terms of a number and a unit word, each unit at most once, in any order, with an optional sign in front; they are written in the order typed, separated by a space (`2 wks 3d` becomes `2w 3d`, `2d4h` becomes `2d 4h`). A bare number is kept as written when the column has `unit=`. Input that still isn't valid is written as typed, and shows its warning.
+- **date:** typed `YYYY-MM-DD` in a text input, with a calendar button beside it that opens the browser's date picker; picking a date fills the input.
+- **bool:** a checkbox, toggled by a click or Space. A row that doesn't set the column shows its default. A value that is neither `true` nor `false` shows as written, with its warning, and is edited as text.
+- **enum:** a dropdown of the declared values, plus an empty choice that clears the cell and, when the cell holds a value that isn't declared, that value, so opening the dropdown loses nothing. A printable key opens it on the first value beginning with that key. Enter, Tab or leaving the dropdown commits, as with any cell.
 - **number, text:** plain input.
 
-Normalisation applies only to what the user types, never to existing cells.
+Normalisation applies only to what the user types, never to existing cells. Committing a cell unchanged writes nothing.
 
 #### 4b.6.6 Cases
 
@@ -479,7 +481,9 @@ Normalisation applies only to what the user types, never to existing cells.
 | Unterminated quote, text after a closing quote, unknown escape       | Red cell showing the recovered text            | Rewrite the cell from its recovered text, correctly quoted                                                                                                                             | `auto`             |
 | Overflow: more cells than columns, or unnamed cells after named ones | Badge on the WBS cell listing the extra values | "Rejoin into NOTES", where NOTES is the last declared column if it is `text`: its value becomes the original text from its cell to the end of the line, quoted. "Delete extra values". | `click`, `confirm` |
 | Cell named after an undeclared column (`ratio=2`)                    | As overflow                                    | As overflow                                                                                                                                                                            | `click`, `confirm` |
-| Column set twice in a row                                            | Badge showing both values                      | "Keep this value", for each                                                                                                                                                            | `confirm`          |
+| Column set twice in a row                                            | Badge showing both values                      | "Keep this value", for each, labelled with the value (`Keep owner=sam`, `Keep owner=priya`)                                                                                            | `confirm`          |
+
+The extra values are the overflow cells other than a column's repeat, and any cell whose name is no column's (rows reads it as an unnamed cell, so it may land in a declared column). When NOTES isn't set, "Rejoin into NOTES" starts at the first extra value and writes the result by name (`notes="…"`). It is offered only when nothing but NOTES and extra values comes after where it starts, so it never swallows another column's value. A trailing delimiter is not part of the rejoined text. "Delete extra values" removes each extra overflow cell with its delimiter, and clears an extra value in a declared column as clearing that cell would.
 | Invalid value (`4 hours`, bad date, unknown enum value)              | Cell warning                                   | Edit the cell; the typed editors prevent most of these (§4b.6.5)                                                                                                                       | —                  |
 
 **Titles**
@@ -491,20 +495,20 @@ Normalisation applies only to what the user types, never to existing cells.
 | Repeated marker (`~~x`)                  | Done row titled `~x`   | "Remove extra marker"                        | `click`   |
 | Legacy `<!-- … -->` line                 | Item row               | "Make it a comment"; the row leaves the grid | `confirm` |
 
-**Settings.** Shown as a banner above the grid as well as in the problems list, because they affect every row.
+**Settings.** Shown as a banner above the grid as well as in the problems list, because they affect every row. The banner lists every diagnostic in the front matter, the unclosed `---` included, and each settings fix that diagnostics on rows share (the conversion fix) once, with how many more diagnostics it resolves. A fix is offered only for a setting written in this file: an error that comes from a profile, or a default profile, has no line to change. An error inside a profile is reported by rows on the `profile:` line, so "Remove this setting" removes that line, which doesn't help when the file's name applies the plan profile anyway (§2.1).
 
 | Case                                                                                      | Fix                                                                                    | Tier      |
 | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------- |
 | Unclosed `---`                                                                            | "Close settings": insert `---` after the last line that parses as a `key: value` entry | `confirm` |
 | Duration column without `hpd`, `dpw` or `unit`                                            | "Add unit=h hpd=8 dpw=5"                                                               | `click`   |
-| Duplicate or invalid column name                                                          | "Rename column…": the user types a name; only the declaration changes                  | `confirm` |
-| Malformed type, invalid option, bad `sep`/`comment`, unsupported `format`, profile errors | "Remove this setting" or "Remove this option"                                          | `confirm` |
+| Duplicate or invalid column name                                                          | "Rename column…": the user types a name, starting from a free one (`owner2`); only the declaration changes | `confirm` |
+| Malformed or unknown type, invalid or repeated option, bad `sep`/`comment`, unsupported `format`, profile errors | "Remove this setting" (the whole `key: value` line) or "Remove this option" (the `:TYPE`, leaving a text column, or the option) | `confirm` |
 
 **Identity.** IDs are hidden in the grid, but concurrent edits and copy-paste create these.
 
 | Case                                        | Fix                                                                                                                                  | Tier      |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------- |
-| Duplicate ID, or IDs differing only by case | "Rename the later one": mint a new ID. The preview warns when anything references the ID, since it's ambiguous which row they meant. | `confirm` |
+| Duplicate ID, or IDs differing only by case | "Rename the later one": mint a new ID (`login-2`, unused in any case). The preview warns when anything references the ID, since it's ambiguous which row they meant. | `confirm` |
 | Reference to a missing ID                   | Shown only; the problems list focuses the row                                                                                        | —         |
 
 ## 5. Preview
@@ -553,7 +557,7 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
 - Manual light/dark toggle
 - Multi-user via text CRDT
 - Desktop packaging (Electron)
-- **Grid v2:** multi-row selection and bulk operations; subtree move and subtree delete; add / rename / remove / reorder columns from the header (writes `columns:`); paste TSV rows from a spreadsheet; drag-to-reorder; persisted column widths; editing additive values; front matter editing; full `role="grid"` accessibility
+- **Grid v2:** multi-row selection and bulk operations; subtree delete; add / rename / remove / reorder columns from the header (writes `columns:`); paste TSV rows from a spreadsheet; drag-to-reorder; persisted column widths; editing additive values; front matter editing; full `role="grid"` accessibility
 - Rich-text decoration layer for the text editor (proportional font, rendered checkbox, aligned columns)
 
 ## 8. Build order

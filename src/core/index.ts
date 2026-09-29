@@ -4,3 +4,4 @@ export { readPlan } from './read';
 export { compute } from './compute';
 export { PLAN_PROFILE } from './profile';
 export { formatDuration } from './duration';
+export { preview } from './fixes';

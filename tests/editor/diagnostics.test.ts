@@ -38,7 +38,7 @@ describe('toLintDiagnostics', () => {
     ['more cells than columns', 'A | 1h | bob | note | extra\n', 'error', 'extra'],
     ['unparseable duration', 'A | soon\n', 'warning', 'soon'],
     ['unknown front matter key', '---\ncalendar: x\n---\n', 'info', 'calendar'],
-    ['unknown column type', '---\ncolumns: est:money\n---\n', 'warning', 'est:money'],
+    ['unknown column type', '---\ncolumns: est:money\n---\n', 'warning', ':money'],
     ['duplicate column name', '---\ncolumns: est:duration | est:text\n---\n', 'error', 'est:text'],
     ['front matter not closed', '---\ncolumns: est:duration\n', 'error', '---'],
     ['HTML comment', '<!-- note -->\n', 'info', '<!-- note -->'],

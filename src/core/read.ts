@@ -3,7 +3,8 @@
 
 import { durationToMinutes } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, Row, RowsDocument, RowsError } from 'rows';
-import { preview, rowFixes } from './fixes';
+import { identityFixes, preview, rowFixes } from './fixes';
+import { settingsFixes } from './settings';
 import type { Column, Diagnostic, Field, Fix, ItemNode, Node, Tree } from './types';
 
 /** rows base and extension keys (spec §2.9); any other key that isn't `x-` gets an info. */
@@ -112,7 +113,7 @@ export function readPlan(doc: RowsDocument): Tree {
         code: 'html-comment',
         message: `HTML comments are not comments here; use ${schema.comment}`,
         // The row leaves the grid, so it is confirmed first (spec §4b.6.6).
-        fixes: [{ label: `Change to a ${schema.comment} comment`, tier: 'confirm', edits, preview: preview(text, edits) }],
+        fixes: [{ label: 'Make it a comment', tier: 'confirm', edits, preview: preview(text, edits) }],
       });
     }
 
@@ -131,8 +132,11 @@ export function readPlan(doc: RowsDocument): Tree {
     };
   };
 
-  // The tree and title fixes (spec §4b.6.6), on the rows errors they resolve.
-  for (const row of doc.rows) rowFixes(doc, row, (e) => byError.get(e)!);
+  // The tree, title, cell, identity and settings fixes (spec §4b.6.6), on the rows errors they resolve.
+  const diagnosticOf = (e: RowsError) => byError.get(e)!;
+  for (const row of doc.rows) rowFixes(doc, row, diagnosticOf);
+  identityFixes(doc, diagnosticOf);
+  settingsFixes(doc, diagnosticOf);
 
   const items = new Map<Row, ItemNode>();
   const nodes: Node[] = doc.lines.map((line): Node => {

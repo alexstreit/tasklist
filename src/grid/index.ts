@@ -1,13 +1,14 @@
 // Grid editor. A task sheet over the shared buffer: every change it makes is
 // a text edit like any other. Spec §4b.
 
-import type { EditResult } from 'rows';
-import { formatDuration } from '../core';
+import type { Cell as RowsCell, EditResult } from 'rows';
+import { formatDuration, preview } from '../core';
 import type { Cell, Column, Diagnostic, Fix, Model, ModelNode, Node, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
-import { canMarkDone, deleteItem, insertIndent, insertItem, moveItem, setDone, setField, setLine, setTitle, shiftItem, withRepairs } from './edits';
+import { canMarkDone, columnOf, deleteItem, insertIndent, insertItem, moveItem, setDone, setField, setFlag, setLine, setTitle, shiftItem, withRepairs } from './edits';
+import { plainRefusal } from './messages';
 import './grid.css';
 
 /** Cell columns: the WBS cell (which selects the row), the done checkbox, the title, then the declared columns. */
@@ -71,6 +72,11 @@ const within = (outer: Span, inner: Span): boolean => inner.from >= outer.from &
 export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHooks): GridEditor {
   const bar = document.createElement('div');
   bar.className = 'sheet-toolbar';
+  // Settings problems affect every row, so they show above the grid as well (spec §4b.6.6).
+  const banner = document.createElement('div');
+  banner.className = 'settings-banner';
+  banner.setAttribute('role', 'region');
+  banner.setAttribute('aria-label', 'Settings problems');
   // The problems list (spec §4b.6.3): its count shows even when it is collapsed.
   const problems = document.createElement('details');
   problems.className = 'problems';
@@ -79,7 +85,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   problems.append(problemCount, problemList);
   const table = document.createElement('table');
   table.className = 'plan-sheet';
-  parent.replaceChildren(bar, problems, table);
+  parent.replaceChildren(bar, banner, problems, table);
 
   let model: Model | null = null;
   let rows: Row[] = [];
@@ -173,7 +179,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const result: EditResult =
       model && model.doc.text === buffer.text() ? make(model) : { refused: 'the grid is still reading the last change; try again' };
     if ('refused' in result) {
-      notice(td, `Not changed: ${result.refused}`);
+      notice(td, plainRefusal(result.refused));
       return null;
     }
     apply(result.edits);
@@ -197,14 +203,39 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (column === TITLE) return row.node.title;
     const cell = row.node.cells[column - DECLARED] as Cell | undefined;
     if (!cell) return null;
-    if (cell.kind === 'text') return cell.value;
+    // A bool the checkbox shows is toggled, not typed; any other text is edited as text.
+    if (cell.kind === 'text') return flagOf(column) !== null && isFlag(cell.value) ? null : cell.value;
     // An additive value rolls its children in; editing it in place would be a lie.
     return cell.mode === 'additive' ? null : cell.raw;
   }
 
-  function fill(td: HTMLTableCellElement, column: Column, cell: Cell): void {
+  /** For a bool column, what its checkbox shows when the row doesn't set it (the default); null for any other column. */
+  function flagOf(column: number): boolean | null {
+    if (!model || column < DECLARED) return null;
+    const rowsColumn = columnOf(model, column - DECLARED);
+    if (rowsColumn?.kind !== 'bool') return null;
+    return rowsColumn.default?.type === 'bool' && rowsColumn.default.value;
+  }
+
+  const isFlag = (text: string) => text === '' || text === 'true' || text === 'false';
+
+  function fill(td: HTMLTableCellElement, column: Column, cell: Cell, node?: ModelNode, index?: number): void {
     td.replaceChildren();
     if (cell.kind === 'text') {
+      const fallback = index === undefined ? null : flagOf(DECLARED + index);
+      // A bool is a checkbox (spec §4b.6.5), unless its text is no bool; then it shows as written.
+      if (fallback !== null && node && isFlag(cell.value)) {
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.tabIndex = -1;
+        box.checked = cell.value === '' ? fallback : cell.value === 'true';
+        box.addEventListener('change', () => {
+          if (!write(td, (current) => withRepairs(current, setFlag(current, node, index!, box.checked), [node]))) box.checked = !box.checked;
+        });
+        td.classList.add('check');
+        td.append(box);
+        return;
+      }
       td.textContent = cell.value;
       return;
     }
@@ -235,6 +266,22 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     return td;
   }
 
+  /** What a row's WBS badge lists: its extra values, and each column it sets twice with both values. */
+  function extraValues(node: ModelNode): string {
+    const row = node.source.row;
+    const repeated = (c: RowsCell) => row.errors.some((e) => e.code === 'column-set-twice' && e.from! >= c.from && e.from! < c.to);
+    const shown = (c: RowsCell) => (c.name ? `${c.name.text}=` : '') + (c.text ?? '');
+    const parts: string[] = [];
+    const extras = row.overflow.filter((c) => !repeated(c));
+    if (extras.length > 0) parts.push(`+ ${extras.map(shown).join(' | ')}`);
+    for (const c of row.overflow.filter(repeated)) {
+      const column = model?.doc.schema.columns.find((x) => x.name === c.name?.text && x.index > 0);
+      const first = column ? row.cells[column.index] : null;
+      parts.push(`${c.name!.text}: ${first?.text ?? ''} / ${c.text ?? ''}`);
+    }
+    return parts.join(' · ');
+  }
+
   /** The placeholder row for a title that has not been written to the buffer yet. */
   function addDraftRow(body: HTMLTableSectionElement, columns: Column[]): void {
     const row = body.insertRow();
@@ -254,7 +301,17 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     tr.dataset.line = String(node.line);
     tr.classList.toggle('done', node.done);
 
-    addCell(tr, node.line, WBS, 'wbs').textContent = node.outlineNumber;
+    const wbs = addCell(tr, node.line, WBS, 'wbs');
+    wbs.textContent = node.outlineNumber;
+    const extra = extraValues(node);
+    if (extra) {
+      // The values rows kept as overflow, or a column's two values (spec §4b.6.6).
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = extra;
+      badge.title = extra;
+      wbs.prepend(badge);
+    }
 
     const check = addCell(tr, node.line, DONE, 'check');
     const box = document.createElement('input');
@@ -274,7 +331,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     title.textContent = node.title;
     title.style.paddingLeft = `${0.5 + row.depth * 1.25}em`;
 
-    node.cells.forEach((cell, i) => fill(addCell(tr, node.line, DECLARED + i), columns[i], cell));
+    node.cells.forEach((cell, i) => fill(addCell(tr, node.line, DECLARED + i), columns[i], cell, node, i));
   }
 
   /** A comment or blank line: one full-width cell holding the raw text. */
@@ -430,7 +487,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     // Shows the model as it stands; the rebuild after the edit corrects it.
     if (row.kind === 'line') td.textContent = row.text;
     else if (column === TITLE) td.textContent = row.node.title;
-    else if (model) fill(td, model.columns[column - DECLARED], row.node.cells[column - DECLARED]);
+    else if (model) fill(td, model.columns[column - DECLARED], row.node.cells[column - DECLARED], row.node, column - DECLARED);
     td.focus();
   }
 
@@ -441,6 +498,66 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     write(cellFor(row.line, column), (current) =>
       withRepairs(current, column === TITLE ? setTitle(current, node, value) : setField(current, node, column - DECLARED, value), [node]),
     );
+  }
+
+  /**
+   * The input for a cell, by its column's type (spec §4b.6.5): a dropdown of
+   * the declared values for an enum, a text input with a date picker beside it
+   * for a date, and a plain text input otherwise. Durations are normalised on
+   * commit (setField). `focus` is what takes the keyboard.
+   */
+  function cellEditor(column: number, value: string, typed: string | null): { element: HTMLElement; focus: HTMLInputElement | HTMLSelectElement } {
+    const input = document.createElement('input');
+    input.className = 'cell-input';
+    const rowsColumn = model && column >= DECLARED ? columnOf(model, column - DECLARED) : undefined;
+    if (rowsColumn?.kind === 'enum' && rowsColumn.enumValues) {
+      const select = document.createElement('select');
+      select.className = 'cell-input';
+      // An empty choice clears the cell; a value that isn't declared stays choosable, so opening the dropdown loses nothing.
+      const choices = ['', ...rowsColumn.enumValues];
+      if (!choices.includes(value)) choices.push(value);
+      for (const choice of choices) select.add(new Option(choice, choice));
+      const key = typed?.toLowerCase();
+      select.value = (key && rowsColumn.enumValues.find((v) => v.toLowerCase().startsWith(key))) || value;
+      return { element: select, focus: select };
+    }
+    input.value = typed ? typed : value;
+    if (rowsColumn?.kind === 'date') {
+      input.placeholder = 'YYYY-MM-DD';
+      // The browser's own date input shows its date fields, which don't fit a
+      // cell; it stays hidden, and a calendar button opens its picker.
+      const picker = document.createElement('input');
+      picker.type = 'date';
+      picker.className = 'date-picker';
+      picker.tabIndex = -1;
+      picker.setAttribute('aria-hidden', 'true');
+      picker.addEventListener('change', () => {
+        input.value = picker.value;
+        input.focus();
+      });
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'date-button';
+      open.tabIndex = -1;
+      open.setAttribute('aria-label', 'Pick a date');
+      open.innerHTML =
+        '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5 1.5v3M11 1.5v3"/></svg>';
+      open.addEventListener('click', () => {
+        picker.value = /^\d{4}-\d{2}-\d{2}$/.test(input.value) ? input.value : '';
+        try {
+          picker.showPicker();
+        } catch {
+          // No showPicker (older browsers, jsdom) or not allowed here (a cross-origin frame).
+          picker.focus();
+          picker.click();
+        }
+      });
+      const wrap = document.createElement('span');
+      wrap.className = 'date-editor';
+      wrap.append(input, open, picker);
+      return { element: wrap, focus: input };
+    }
+    return { element: input, focus: input };
   }
 
   /**
@@ -455,15 +572,16 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const td = cellFor(row.line, column);
     if (!td) return;
     editing = { line: row.line, column };
-    const input = document.createElement('input');
-    input.className = 'cell-input';
     // Spreadsheet rule: editing shows the text as written, not the computed value.
-    input.value = typed ? typed : raw;
-    td.replaceChildren(input);
+    const { element, focus: input } = cellEditor(column, raw, typed);
+    td.replaceChildren(element);
     input.focus();
-    if (typed === null) input.select();
-    else input.setSelectionRange(input.value.length, input.value.length);
-    input.addEventListener('keydown', (event) => {
+    if (input instanceof HTMLInputElement) {
+      if (typed === null) input.select();
+      else input.setSelectionRange(input.value.length, input.value.length);
+    }
+    const keys: HTMLElement = input;
+    keys.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         commit(row, column, input.value);
@@ -481,7 +599,9 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
         endEdit(row, column);
       }
     });
-    input.addEventListener('blur', () => {
+    keys.addEventListener('blur', (event) => {
+      // Moving to the date picker beside the input is still editing.
+      if (element.contains(event.relatedTarget as globalThis.Node | null)) return;
       if (editing?.line === row.line && editing.column === column) commit(row, column, input.value);
     });
   }
@@ -619,15 +739,16 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       label: 'Move up',
       run: (row) =>
         row.kind === 'item' ? structure(row, (m) => withRepairs(m, moveItem(m, row.node, 'up'), [row.node], false)) : apply(moveUp(buffer.text(), range(row))),
-      // Never into the front matter.
-      enabled: (row) => row.line > 1 && model?.lines[row.line - 2]?.kind !== 'front-matter',
+      // An item row swaps with its previous sibling, so there must be one; a line never goes into the front matter.
+      enabled: (row) =>
+        row.kind === 'item' ? model !== null && !('refused' in moveItem(model, row.node, 'up')) : row.line > 1 && model?.lines[row.line - 2]?.kind !== 'front-matter',
     },
     {
       id: 'down',
       label: 'Move down',
       run: (row) =>
         row.kind === 'item' ? structure(row, (m) => withRepairs(m, moveItem(m, row.node, 'down'), [row.node], false)) : apply(moveDown(buffer.text(), range(row))),
-      enabled: (row) => row.line < (model?.lines.length ?? 0),
+      enabled: (row) => (row.kind === 'item' ? model !== null && !('refused' in moveItem(model, row.node, 'down')) : row.line < (model?.lines.length ?? 0)),
     },
     {
       id: 'done',
@@ -673,7 +794,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   // the table says they do.
   table.addEventListener('keydown', (event) => {
     // Cell editors, the draft and new-task rows and the checkbox take their own keys.
-    if ((event.target as HTMLElement).tagName === 'INPUT') return;
+    if (['INPUT', 'SELECT'].includes((event.target as HTMLElement).tagName)) return;
     const row = target();
     if (!row || !at) return;
     const column = at.column;
@@ -716,15 +837,19 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
         return handled(), clearPlace();
       case 'Delete':
         if (selected) return handled(), act('delete');
-        if (rawOf(row, column) === null) return;
+        if (rawOf(row, column) === null && flagOf(column) === null) return;
         return handled(), commit(row, column, '');
       case 'Insert':
         return handled(), act('insert');
       case 'F2':
         return handled(), beginEdit(row, column, '');
-      case ' ':
-        if (column !== DONE) break;
-        return handled(), act('done');
+      case ' ': {
+        if (column === DONE) return handled(), act('done');
+        // A bool cell's checkbox (spec §4b.6.5).
+        const box = cellFor(row.line, column)?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        if (!box) break;
+        return handled(), box.click();
+      }
     }
     // Any other printable key starts an edit, replacing the cell's content.
     if (event.key.length === 1) handled(), beginEdit(row, column, event.key);
@@ -870,21 +995,85 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     return li;
   }
 
-  /** Apply a fix; a confirm fix shows its exact change first, and cancelling writes nothing (spec §4b.6.1). */
-  function runFix(li: HTMLLIElement, fix: Fix): void {
+  /**
+   * Apply a fix; a confirm fix shows its exact change first, with its warning,
+   * and cancelling writes nothing (spec §4b.6.1). A fix that takes a typed
+   * value (a column's new name) shows it in an input, and the preview follows it.
+   */
+  function runFix(host: HTMLElement, fix: Fix): void {
     if (fix.tier !== 'confirm') {
-      write(li, () => ({ edits: fix.edits }));
+      write(host, () => ({ edits: fix.edits }));
       return;
     }
-    li.querySelector('.fix-preview')?.remove();
+    host.querySelector('.fix-preview')?.remove();
     const box = document.createElement('div');
     box.className = 'fix-preview';
     const pre = document.createElement('pre');
     pre.textContent = fix.preview ?? '';
-    const ok = button('fix', 'Apply', () => write(li, () => ({ edits: fix.edits })));
+    let edits = fix.edits;
+    const ok = button('fix', 'Apply', () => write(host, () => ({ edits })));
+    if (fix.warning) box.append(part('fix-warning', fix.warning));
+    let first: HTMLElement = ok;
+    if (fix.input) {
+      const { span } = fix.input;
+      const text = model?.doc.text ?? '';
+      const input = document.createElement('input');
+      input.className = 'fix-input';
+      input.value = fix.input.value;
+      input.setAttribute('aria-label', 'New name');
+      input.addEventListener('input', () => {
+        const value = input.value.trim();
+        edits = [{ ...span, insert: value }];
+        pre.textContent = preview(text, edits);
+        ok.disabled = value === '';
+      });
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !ok.disabled) ok.click();
+      });
+      box.append(input);
+      first = input;
+    }
     box.append(pre, ok, button('fix', 'Cancel', () => box.remove()));
-    li.append(box);
-    ok.focus();
+    host.append(box);
+    first.focus();
+  }
+
+  /**
+   * The settings banner (spec §4b.6.6): every diagnostic in the front matter,
+   * the unclosed one included, and each fix to the settings that diagnostics
+   * on rows share, such as the conversion fix, once with how many rows it
+   * would help.
+   */
+  function renderBanner(): void {
+    const diagnostics = [...(model?.diagnostics ?? [])].sort((a, b) => a.line - b.line);
+    const inSettings = (d: Diagnostic) => model?.lines[d.line - 1]?.kind === 'front-matter';
+    const settingsEdit = (d: Diagnostic) =>
+      frontMatter !== null && d.fixes?.some((f) => f.edits.every((e) => e.from >= frontMatter!.span.from && e.to <= frontMatter!.span.to));
+    const shared = new Map<string, Diagnostic[]>();
+    const entries: { diagnostic: Diagnostic; more: number }[] = [];
+    for (const d of diagnostics) {
+      if (inSettings(d)) entries.push({ diagnostic: d, more: 0 });
+      else if (settingsEdit(d)) {
+        const key = JSON.stringify(d.fixes!.map((f) => f.edits));
+        if (!shared.has(key)) entries.push({ diagnostic: d, more: 0 });
+        shared.set(key, [...(shared.get(key) ?? []), d]);
+      }
+    }
+    for (const entry of entries) {
+      const group = shared.get(JSON.stringify(entry.diagnostic.fixes?.map((f) => f.edits)));
+      if (group && !inSettings(entry.diagnostic)) entry.more = group.length - 1;
+    }
+    banner.hidden = entries.length === 0;
+    banner.replaceChildren(
+      ...entries.map(({ diagnostic, more }) => {
+        const item = document.createElement('div');
+        item.className = `banner-item ${diagnostic.severity}`;
+        const message = more > 0 ? `${diagnostic.message} (and ${more} more like it)` : diagnostic.message;
+        item.append(part('severity', diagnostic.severity), part('message', message));
+        item.append(...(diagnostic.fixes ?? []).map((fix) => button('fix', fix.label, () => runFix(item, fix))));
+        return item;
+      }),
+    );
   }
 
   function columnFor(row: Row, diagnostic: Diagnostic): number {
@@ -900,6 +1089,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       model = next;
       readModel(next);
       build();
+      renderBanner();
       renderProblems();
       restore();
       updateToolbar();
