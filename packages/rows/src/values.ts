@@ -4,7 +4,9 @@ import type { Column, Value } from './types';
 export type TypeKind = 'text' | 'number' | 'bool' | 'date' | 'datetime' | 'duration' | 'enum' | 'ref';
 export type DurationUnit = 'm' | 'h' | 'd' | 'w';
 
-const SIMPLE = new Set(['text', 'number', 'bool', 'date', 'datetime', 'duration']);
+/** Every base type name (base §5), `ref` included (base §9). */
+export const TYPE_NAMES = ['text', 'number', 'bool', 'date', 'datetime', 'duration', 'enum', 'ref'] as const;
+const SIMPLE = new Set<string>(TYPE_NAMES.filter((t) => t !== 'enum' && t !== 'ref'));
 // A type is a name, optionally followed by one bracketed parameter.
 const TYPE = /^([A-Za-z_][A-Za-z0-9_-]*)(?:\[([^\]]*)\])?$/;
 

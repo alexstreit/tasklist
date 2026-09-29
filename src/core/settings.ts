@@ -4,7 +4,7 @@
 // Each is added to the diagnostic of the rows error it resolves. The conversion fix, which only
 // adds to the settings, is in read.ts.
 
-import { tokenizeLine } from 'rows';
+import { NAME, tokenizeLine, TYPE_NAMES } from 'rows';
 import type { RowsDocument, RowsError, TextEdit } from 'rows';
 import { confirm } from './fixes';
 import type { Diagnostic, Fix } from './types';
@@ -12,9 +12,8 @@ import type { Diagnostic, Fix } from './types';
 const REMOVE_SETTING = new Set(['invalid-sep', 'invalid-comment', 'unsupported-format', 'unresolvable-profile', 'forbidden-profile-key', 'profile-has-errors']);
 const REMOVE_OPTION = new Set(['malformed-type', 'invalid-option-value', 'duplicate-option']);
 const RENAME = new Set(['duplicate-column-name', 'invalid-column-name']);
-const NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 /** Types an unknown one may be a typo of. `enum` needs its values, so it is never suggested. */
-const TYPES = ['text', 'number', 'bool', 'date', 'datetime', 'duration', 'ref'];
+const TYPES = TYPE_NAMES.filter((t) => t !== 'enum');
 
 /** Levenshtein distance. */
 function distance(a: string, b: string): number {
@@ -25,13 +24,6 @@ function distance(a: string, b: string): number {
     row = next;
   }
   return row[b.length];
-}
-
-/** The `:TYPE` of a declaration written in this file, as a span; empty at the end of the name when it has none. */
-function typeSpan(text: string, from: number, to: number): { from: number; to: number } {
-  const head = /^\S*/.exec(text.slice(from, to))![0];
-  const colon = head.indexOf(':');
-  return colon === -1 ? { from: from + head.length, to: from + head.length } : { from: from + colon, to: from + head.length };
 }
 
 /** "Close settings": `---` after the last line from line 2 on that reads as a `key: value` entry. */
@@ -89,11 +81,10 @@ export function settingsFixes(doc: RowsDocument, diagnosticOf: (e: RowsError) =>
       // A marker's column declared in this file with another type: "Make done a checkbox column".
       const markers = doc.schema.keys.markers ?? '';
       const column = doc.schema.columns.find(
-        (c) => c.from !== undefined && c.kind !== 'bool' && !c.implicit && markers.split(/[ \t]+/).some((m) => m.startsWith(`${c.name}=`)) && (c.from === e.from || entry.key === 'markers'),
+        (c) => c.typeFrom !== undefined && c.kind !== 'bool' && !c.implicit && markers.split(/[ \t]+/).some((m) => m.startsWith(`${c.name}=`)) && (c.from === e.from || entry.key === 'markers'),
       );
       if (!column) continue;
-      const span = typeSpan(text, column.from!, column.to!);
-      add(e, confirm(text, `Make ${column.name} a checkbox column`, [{ ...span, insert: ':bool' }]));
+      add(e, confirm(text, `Make ${column.name} a checkbox column`, [{ from: column.typeFrom!, to: column.typeTo!, insert: ':bool' }]));
     } else if (RENAME.has(e.code)) {
       const column = doc.schema.columns.find((c) => c.from === e.from);
       if (!column) continue;

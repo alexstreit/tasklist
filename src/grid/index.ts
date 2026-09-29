@@ -1,14 +1,16 @@
 // Grid editor. A task sheet over the shared buffer: every change it makes is
 // a text edit like any other. Spec §4b.
 
-import type { Cell as RowsCell, EditResult } from 'rows';
-import { formatDuration, preview } from '../core';
-import type { Cell, Column, Diagnostic, Fix, Model, ModelNode, Node, Span } from '../core';
+import { readFlag } from 'rows';
+import type { Cell as RowsCell, Column as RowsColumn, EditResult } from 'rows';
+import { formatDuration } from '../core';
+import type { Cell, Column, Diagnostic, Model, ModelNode, Node, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
-import { canMarkDone, columnOf, deleteItem, insertIndent, insertItem, moveItem, setDone, setField, setFlag, setLine, setTitle, shiftItem, withRepairs } from './edits';
+import { canMarkDone, columnOf, deleteItem, insertIndent, insertItem, levels, moveItem, setDone, setField, setFlag, setLine, setTitle, shiftItem, withRepairs } from './edits';
 import { plainRefusal } from './messages';
+import { mountProblems } from './problems';
 import './grid.css';
 
 /** Cell columns: the WBS cell (which selects the row), the done checkbox, the title, then the declared columns. */
@@ -19,7 +21,8 @@ const DECLARED = 2;
 
 /** An item line, or any other line shown as one editable full-width cell. */
 type Row =
-  | { kind: 'item'; line: number; span: Span; indent: number; node: ModelNode; depth: number }
+  // `depth` is the level the row is shown at, `level` the one rows' structure edits use (edits.ts `levels`).
+  | { kind: 'item'; line: number; span: Span; indent: number; node: ModelNode; depth: number; level: number }
   | { kind: 'line'; line: number; span: Span; indent: number; text: string; blank: boolean };
 
 export interface GridHooks {
@@ -72,20 +75,22 @@ const within = (outer: Span, inner: Span): boolean => inner.from >= outer.from &
 export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHooks): GridEditor {
   const bar = document.createElement('div');
   bar.className = 'sheet-toolbar';
-  // Settings problems affect every row, so they show above the grid as well (spec §4b.6.6).
-  const banner = document.createElement('div');
-  banner.className = 'settings-banner';
-  banner.setAttribute('role', 'region');
-  banner.setAttribute('aria-label', 'Settings problems');
-  // The problems list (spec §4b.6.3): its count shows even when it is collapsed.
-  const problems = document.createElement('details');
-  problems.className = 'problems';
-  const problemCount = document.createElement('summary');
-  const problemList = document.createElement('ol');
-  problems.append(problemCount, problemList);
+  // The settings banner and the problems list, with their fixes (spec §4b.6.3, §4b.6.6).
+  const problems = mountProblems({
+    write: (host, make) => void write(host, make),
+    titleOf: (line) => {
+      const row = byLine.get(line);
+      return row?.kind === 'item' && row.node.title !== '' ? row.node.title : null;
+    },
+    // Focuses the row, or the cell the diagnostic's span falls in.
+    focus: (diagnostic) => {
+      const row = byLine.get(diagnostic.line);
+      if (row) place(row.line, diagnostic.span ? columnFor(row, diagnostic) : WBS);
+    },
+  });
   const table = document.createElement('table');
   table.className = 'plan-sheet';
-  parent.replaceChildren(bar, banner, problems, table);
+  parent.replaceChildren(bar, problems.banner, problems.list, table);
 
   let model: Model | null = null;
   let rows: Row[] = [];
@@ -204,17 +209,16 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const cell = row.node.cells[column - DECLARED] as Cell | undefined;
     if (!cell) return null;
     // A bool the checkbox shows is toggled, not typed; any other text is edited as text.
-    if (cell.kind === 'text') return flagOf(column) !== null && isFlag(cell.value) ? null : cell.value;
+    if (cell.kind === 'text') return boolColumn(column) && isFlag(cell.value) ? null : cell.value;
     // An additive value rolls its children in; editing it in place would be a lie.
     return cell.mode === 'additive' ? null : cell.raw;
   }
 
-  /** For a bool column, what its checkbox shows when the row doesn't set it (the default); null for any other column. */
-  function flagOf(column: number): boolean | null {
+  /** The rows column behind a grid column when it is bool, whose cells show a checkbox; null otherwise. */
+  function boolColumn(column: number): RowsColumn | null {
     if (!model || column < DECLARED) return null;
     const rowsColumn = columnOf(model, column - DECLARED);
-    if (rowsColumn?.kind !== 'bool') return null;
-    return rowsColumn.default?.type === 'bool' && rowsColumn.default.value;
+    return rowsColumn?.kind === 'bool' ? rowsColumn : null;
   }
 
   const isFlag = (text: string) => text === '' || text === 'true' || text === 'false';
@@ -222,13 +226,13 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function fill(td: HTMLTableCellElement, column: Column, cell: Cell, node?: ModelNode, index?: number): void {
     td.replaceChildren();
     if (cell.kind === 'text') {
-      const fallback = index === undefined ? null : flagOf(DECLARED + index);
+      const bool = index === undefined ? null : boolColumn(DECLARED + index);
       // A bool is a checkbox (spec §4b.6.5), unless its text is no bool; then it shows as written.
-      if (fallback !== null && node && isFlag(cell.value)) {
+      if (bool && node && isFlag(cell.value)) {
         const box = document.createElement('input');
         box.type = 'checkbox';
         box.tabIndex = -1;
-        box.checked = cell.value === '' ? fallback : cell.value === 'true';
+        box.checked = readFlag(model!.doc, node.source.row, bool) === true;
         box.addEventListener('change', () => {
           if (!write(td, (current) => withRepairs(current, setFlag(current, node, index!, box.checked), [node]))) box.checked = !box.checked;
         });
@@ -610,7 +614,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   // (§4b.6.4); comment and blank rows have none, so theirs are src/editing's.
 
   function startDraft(row: Row): void {
-    const indent = row.kind === 'item' && model ? insertIndent(model, row.node, row.depth) : row.indent;
+    const indent = row.kind === 'item' && model ? insertIndent(model, row.node, row.level) : row.indent;
     draft = { anchor: row.span.from, indent };
     draftInput.value = '';
     build();
@@ -711,13 +715,13 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       label: 'Indent',
       run: (row) =>
         row.kind === 'item'
-          ? structure(row, (m) => withRepairs(m, shiftItem(m, row.node, row.depth, 1), [row.node], false))
+          ? structure(row, (m) => withRepairs(m, shiftItem(m, row.node, row.level, 1), [row.node], false))
           : apply(indent(buffer.text(), range(row))),
-      // An item row needs a previous sibling to become its child: an item row above at the same or a greater depth.
+      // An item row needs a previous sibling to become its child: an item row above at the same or a greater level.
       enabled: (row) => {
         if (row.kind === 'item') {
           const previous = rows.slice(0, rowIndex(row.line)).reverse().find((r) => r.kind === 'item');
-          return previous?.kind === 'item' && previous.depth >= row.depth;
+          return previous?.kind === 'item' && previous.level >= row.level;
         }
         const previous = rows[rowIndex(row.line) - 1];
         return previous !== undefined && previous.indent >= row.indent;
@@ -728,11 +732,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       label: 'Outdent',
       run: (row) =>
         row.kind === 'item'
-          ? structure(row, (m) => withRepairs(m, shiftItem(m, row.node, row.depth, -1), [row.node], false))
+          ? structure(row, (m) => withRepairs(m, shiftItem(m, row.node, row.level, -1), [row.node], false))
           : apply(outdent(buffer.text(), range(row))),
       // The same conditions the operations use, without re-reading the document
       // on every focus move: a level or indentation to remove, a line above, a line below.
-      enabled: (row) => (row.kind === 'item' ? row.depth > 0 : row.indent > 0),
+      enabled: (row) => (row.kind === 'item' ? row.level > 0 : row.indent > 0),
     },
     {
       id: 'up',
@@ -837,7 +841,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
         return handled(), clearPlace();
       case 'Delete':
         if (selected) return handled(), act('delete');
-        if (rawOf(row, column) === null && flagOf(column) === null) return;
+        if (rawOf(row, column) === null && !boolColumn(column)) return;
         return handled(), commit(row, column, '');
       case 'Insert':
         return handled(), act('insert');
@@ -913,12 +917,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   /** Every line of the file becomes a row; front matter collapses into one. */
   function readModel(next: Model): void {
     const text = buffer.text();
-    const depths = new Map<number, number>();
-    const visit = (node: ModelNode, depth: number): void => {
-      depths.set(node.line, depth);
-      node.children.forEach((child) => visit(child, depth + 1));
-    };
-    next.roots.forEach((root) => visit(root, 0));
+    const level = levels(next);
     const items = new Map<number, ModelNode>();
     const collect = (node: ModelNode): void => void (items.set(node.line, node), node.children.forEach(collect));
     next.roots.forEach(collect);
@@ -933,7 +932,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       }
       const item = node.kind === 'item' ? items.get(node.line) : undefined;
       if (item) {
-        rows.push({ kind: 'item', line: node.line, span: node.span, indent: item.indent, node: item, depth: depths.get(node.line) ?? 0 });
+        rows.push({ kind: 'item', line: node.line, span: node.span, indent: item.indent, node: item, depth: level.get(node.line)?.shown ?? 0, level: level.get(node.line)?.indent ?? 0 });
       } else {
         const raw = text.slice(node.span.from, node.span.to);
         rows.push({ kind: 'line', line: node.line, span: node.span, indent: indentOf(raw), text: raw, blank: node.kind === 'blank' });
@@ -959,123 +958,6 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     }
   }
 
-  /** Every diagnostic in document order, each with its row and its fixes (spec §4b.6.3). */
-  function renderProblems(): void {
-    const all = [...(model?.diagnostics ?? [])].sort((a, b) => a.line - b.line || (a.span?.from ?? -1) - (b.span?.from ?? -1));
-    problemCount.textContent = `Problems (${all.length})`;
-    problemList.replaceChildren(...all.map(problem));
-  }
-
-  function part(className: string, text: string): HTMLSpanElement {
-    const span = document.createElement('span');
-    span.className = className;
-    span.textContent = text;
-    return span;
-  }
-
-  function button(className: string, label: string, onClick: () => void): HTMLButtonElement {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = className;
-    b.textContent = label;
-    b.addEventListener('click', onClick);
-    return b;
-  }
-
-  function problem(diagnostic: Diagnostic): HTMLLIElement {
-    const li = document.createElement('li');
-    li.className = diagnostic.severity;
-    li.dataset.line = String(diagnostic.line);
-    const row = byLine.get(diagnostic.line);
-    const where = row?.kind === 'item' && row.node.title !== '' ? row.node.title : `Line ${diagnostic.line}`;
-    // Focuses the row, or the cell the diagnostic's span falls in.
-    const go = button('problem', '', () => row && place(row.line, diagnostic.span ? columnFor(row, diagnostic) : WBS));
-    go.append(part('severity', diagnostic.severity), part('where', where), part('message', diagnostic.message));
-    li.append(go, ...(diagnostic.fixes ?? []).map((fix) => button('fix', fix.label, () => runFix(li, fix))));
-    return li;
-  }
-
-  /**
-   * Apply a fix; a confirm fix shows its exact change first, with its warning,
-   * and cancelling writes nothing (spec §4b.6.1). A fix that takes a typed
-   * value (a column's new name) shows it in an input, and the preview follows it.
-   */
-  function runFix(host: HTMLElement, fix: Fix): void {
-    if (fix.tier !== 'confirm') {
-      write(host, () => ({ edits: fix.edits }));
-      return;
-    }
-    host.querySelector('.fix-preview')?.remove();
-    const box = document.createElement('div');
-    box.className = 'fix-preview';
-    const pre = document.createElement('pre');
-    pre.textContent = fix.preview ?? '';
-    let edits = fix.edits;
-    const ok = button('fix', 'Apply', () => write(host, () => ({ edits })));
-    if (fix.warning) box.append(part('fix-warning', fix.warning));
-    let first: HTMLElement = ok;
-    if (fix.input) {
-      const { span } = fix.input;
-      const text = model?.doc.text ?? '';
-      const input = document.createElement('input');
-      input.className = 'fix-input';
-      input.value = fix.input.value;
-      input.setAttribute('aria-label', 'New name');
-      input.addEventListener('input', () => {
-        const value = input.value.trim();
-        edits = [{ ...span, insert: value }];
-        pre.textContent = preview(text, edits);
-        ok.disabled = value === '';
-      });
-      input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !ok.disabled) ok.click();
-      });
-      box.append(input);
-      first = input;
-    }
-    box.append(pre, ok, button('fix', 'Cancel', () => box.remove()));
-    host.append(box);
-    first.focus();
-  }
-
-  /**
-   * The settings banner (spec §4b.6.6): every diagnostic in the front matter,
-   * the unclosed one included, and each fix to the settings that diagnostics
-   * on rows share, such as the conversion fix, once with how many rows it
-   * would help.
-   */
-  function renderBanner(): void {
-    const diagnostics = [...(model?.diagnostics ?? [])].sort((a, b) => a.line - b.line);
-    const inSettings = (d: Diagnostic) => model?.lines[d.line - 1]?.kind === 'front-matter';
-    const settingsEdit = (d: Diagnostic) =>
-      frontMatter !== null && d.fixes?.some((f) => f.edits.every((e) => e.from >= frontMatter!.span.from && e.to <= frontMatter!.span.to));
-    const shared = new Map<string, Diagnostic[]>();
-    const entries: { diagnostic: Diagnostic; more: number }[] = [];
-    for (const d of diagnostics) {
-      if (inSettings(d)) entries.push({ diagnostic: d, more: 0 });
-      else if (settingsEdit(d)) {
-        const key = JSON.stringify(d.fixes!.map((f) => f.edits));
-        if (!shared.has(key)) entries.push({ diagnostic: d, more: 0 });
-        shared.set(key, [...(shared.get(key) ?? []), d]);
-      }
-    }
-    for (const entry of entries) {
-      const group = shared.get(JSON.stringify(entry.diagnostic.fixes?.map((f) => f.edits)));
-      if (group && !inSettings(entry.diagnostic)) entry.more = group.length - 1;
-    }
-    banner.hidden = entries.length === 0;
-    banner.replaceChildren(
-      ...entries.map(({ diagnostic, more }) => {
-        const item = document.createElement('div');
-        item.className = `banner-item ${diagnostic.severity}`;
-        const message = more > 0 ? `${diagnostic.message} (and ${more} more like it)` : diagnostic.message;
-        item.append(part('severity', diagnostic.severity), part('message', message));
-        item.append(...(diagnostic.fixes ?? []).map((fix) => button('fix', fix.label, () => runFix(item, fix))));
-        return item;
-      }),
-    );
-  }
-
   function columnFor(row: Row, diagnostic: Diagnostic): number {
     if (!diagnostic.span) return WBS;
     if (row.kind === 'line') return TITLE;
@@ -1089,8 +971,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       model = next;
       readModel(next);
       build();
-      renderBanner();
-      renderProblems();
+      problems.update(next, frontMatter?.span ?? null);
       restore();
       updateToolbar();
     },

@@ -89,6 +89,8 @@ export interface Column {
   implicit: boolean;
   from?: number; // the declaration, when it is written unquoted in this file
   to?: number;
+  typeFrom?: number; // its `:TYPE`, then; empty at the end of the name when it has none
+  typeTo?: number;
 }
 
 export interface Schema {

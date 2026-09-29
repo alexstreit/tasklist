@@ -1,17 +1,16 @@
 // readPlan: a rows document read as a plan. Spec §2.3–2.6 and §3.1. Items
 // carry the rows spans through unchanged; summable cells are read as hours.
 
-import { applyEdits, durationToMinutes } from 'rows';
+import { applyEdits, durationToMinutes, KNOWN_KEYS, parseDuration, readFlag } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, Row, RowsDocument, RowsError } from 'rows';
 import { identityFixes, mapPos, preview, rowFixes } from './fixes';
 import { settingsFixes } from './settings';
 import type { Column, Diagnostic, Field, Fix, ItemNode, Node, Tree } from './types';
 
 /** rows base and extension keys (spec §2.9); any other key that isn't `x-` gets an info. */
-const KNOWN_KEYS = new Set(['format', 'table', 'profile', 'sep', 'comment', 'lead', 'columns', 'key', 'include', 'markers', 'nest', 'order']);
+const KNOWN = new Set<string>(KNOWN_KEYS);
 /** What a duration column needs to convert every term to hours (spec §2.6). */
 const CONVERSION = { unit: 'h', hpd: '8', dpw: '5' };
-const BARE_NUMBER = /^[+-]?\d+(\.\d+)?$/;
 
 function fromRowsError(e: RowsError): Diagnostic {
   const d: Diagnostic = { line: e.line, severity: e.class === 'validation' ? 'warning' : 'error', code: e.code, message: e.message };
@@ -68,7 +67,7 @@ export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocu
   }
 
   for (const entry of doc.frontmatter?.entries ?? []) {
-    if (KNOWN_KEYS.has(entry.key) || entry.key.startsWith('x-')) continue;
+    if (KNOWN.has(entry.key) || entry.key.startsWith('x-')) continue;
     diagnostics.push({
       line: entry.line,
       span: { from: entry.keyFrom, to: entry.keyTo },
@@ -84,13 +83,8 @@ export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocu
   const columns: Column[] = declared.map((c) => ({ name: c.name, type: c.kind }));
   const doneColumn = schema.columns.find((c) => c.name === 'done' && c.kind === 'bool');
 
-  const isDone = (row: Row): boolean => {
-    if (row.markers.some((m) => m.name === 'done')) return true;
-    if (!doneColumn) return false;
-    const value = row.cells[doneColumn.index]?.value;
-    if (value?.type === 'bool') return value.value;
-    return doneColumn.default?.type === 'bool' && doneColumn.default.value;
-  };
+  // A `done` marker always has this column: the declared bool, or the implicit one (ext §5).
+  const isDone = (row: Row): boolean => (doneColumn ? readFlag(doc, row, doneColumn) === true : false);
 
   /** Reads a summable cell into `field`, or reports why it counts as empty (spec §2.6). */
   const readAmount = (row: Row, column: RowsColumn, cell: RowsCell, field: Field): void => {
@@ -99,8 +93,10 @@ export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocu
     };
     const value = cell.value;
     if (!value) {
-      // A bare number without `unit=` is a rows validation error; it gets the conversion fix.
-      if (column.kind === 'duration' && column.unit === undefined && BARE_NUMBER.test(field.text)) {
+      // A bare number without `unit=` is a rows validation error; it gets the conversion fix. It
+      // would read as one with a unit.
+      const withUnit = column.kind === 'duration' && column.unit === undefined ? parseDuration(field.text, 'h') : null;
+      if (withUnit?.type === 'duration' && withUnit.bare) {
         const error = row.errors.find((e) => e.code === 'invalid-value' && e.from === cell.valueFrom);
         const d = error && byError.get(error);
         const fixes = conversionFix(column);
@@ -111,8 +107,10 @@ export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocu
       }
       return;
     }
-    if (field.text.startsWith('-')) return warn('negative-value', `negative values are not supported yet; "${field.text}" is treated as empty`);
-    field.additive = field.text.startsWith('+');
+    // A duration's sign is parsed; a number's value keeps none, so its sign is read from the text.
+    const sign = value.type === 'duration' ? value.sign : field.text[0] === '-' || field.text[0] === '+' ? field.text[0] : null;
+    if (sign === '-') return warn('negative-value', `negative values are not supported yet; "${field.text}" is treated as empty`);
+    field.additive = sign === '+';
     if (value.type === 'number') {
       field.amount = value.value;
     } else if (value.type === 'duration') {

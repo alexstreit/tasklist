@@ -1,12 +1,11 @@
 // The fixes for rows errors on a row (spec §4b.6.6): the tree, title and cell cases, and the
 // identity cases. Each fix is added to the diagnostic of the error it resolves.
 
-import { applyEdits, formatValue, repairRow, setCell } from 'rows';
+import { applyEdits, formatValue, isWs, RECOVERED_CODES, removeCell, repairs, setCell } from 'rows';
 import type { Cell, Row, RowsDocument, RowsError, TextEdit } from 'rows';
 import type { Diagnostic, Fix } from './types';
 
-const RECOVERED = new Set(['unterminated-quote', 'text-after-quote', 'unknown-escape']);
-const REPAIRED = new Set([...RECOVERED, 'heading-line', 'bad-indent']);
+const REPAIRED = new Set([...RECOVERED_CODES, 'heading-line', 'bad-indent']);
 const OVERFLOW = new Set(['too-many-cells', 'unnamed-after-named', 'invalid-cell-name']);
 
 /** The lines the edits touch, before (`- `) and after (`+ `). Spec §4b.6.2. */
@@ -33,16 +32,6 @@ export function mapPos(pos: number, edits: TextEdit[]): number {
 /** A confirm fix: its preview is made from its edits. */
 export function confirm(text: string, label: string, edits: TextEdit[], extra: Partial<Fix> = {}): Fix {
   return { label, tier: 'confirm', edits, preview: preview(text, edits), ...extra };
-}
-
-const isWs = (c: string | undefined) => c === ' ' || c === '\t';
-
-/** Removes a cell that isn't the lead, together with the delimiter before it and the whitespace around that. */
-function removeCell(text: string, cell: Cell): TextEdit {
-  let d = cell.from - 1;
-  while (isWs(text[d])) d--; // the delimiter
-  while (isWs(text[d - 1])) d--;
-  return { from: d, to: cell.to, insert: '' };
 }
 
 /**
@@ -75,7 +64,7 @@ function overflowFixes(doc: RowsDocument, row: Row): Fix[] {
 
   const edits = extras
     .map((c) => {
-      if (c.column === null) return [removeCell(text, c)];
+      if (c.column === null) return [removeCell(doc, row, c)];
       const result = setCell(doc, row, c.column, null);
       return 'edits' in result ? result.edits : [];
     })
@@ -90,7 +79,7 @@ function keepFixes(doc: RowsDocument, row: Row, e: RowsError): Fix[] {
   const column = repeat?.name && doc.schema.columns.find((c) => c.name === repeat.name!.text && c.index > 0);
   const first = column ? row.cells[column.index] : null;
   if (!repeat || !column || !first) return [];
-  const remove = removeCell(doc.text, repeat);
+  const remove = removeCell(doc, row, repeat);
   const keep = (cell: Cell) => `Keep ${column.name}=${cell.text ?? ''}`;
   return [
     confirm(doc.text, keep(first), [remove]),
@@ -101,22 +90,21 @@ function keepFixes(doc: RowsDocument, row: Row, e: RowsError): Fix[] {
 export function rowFixes(doc: RowsDocument, row: Row, diagnosticOf: (e: RowsError) => Diagnostic): void {
   const add = (e: RowsError, fix: Fix) => (diagnosticOf(e).fixes ??= []).push(fix);
   const cells: Cell[] = [...row.cells.filter((c): c is Cell => c !== null), ...row.overflow];
-  const repairs = row.errors.some((e) => REPAIRED.has(e.code)) ? repairRow(doc, row) : [];
-  // Indent repairs may move the rows after this one; cell repairs stay inside it.
-  const inRow = (e: TextEdit) => e.from >= row.indent.to && e.to <= row.to;
-  const indents = repairs.filter((e) => !inRow(e));
+  const repaired = row.errors.some((e) => REPAIRED.has(e.code)) ? repairs(doc, row) : [];
+  const indents = repaired.find((r) => r.kind === 'indent')?.edits ?? [];
   const overflow = row.errors.some((e) => OVERFLOW.has(e.code)) ? overflowFixes(doc, row) : [];
 
   for (const e of row.errors) {
     if (e.code === 'bad-indent' && indents.length > 0) {
       add(e, { label: doc.rows[0] === row ? 'Indent 0' : 'Rewrite the indent', tier: 'auto', edits: indents });
     } else if (e.code === 'heading-line') {
-      const quote = repairs.find((r) => inRow(r) && r.from === row.lead.valueFrom);
-      if (quote) add(e, { label: 'Quote the title', tier: 'auto', edits: [quote] });
-    } else if (RECOVERED.has(e.code)) {
+      // Quoted by the title repair, or by rewriting the lead when it is also broken.
+      const quote = repaired.find((r) => r.kind === 'title' || (r.kind === 'cell' && r.cell === row.lead));
+      if (quote) add(e, { label: 'Quote the title', tier: 'auto', edits: quote.edits });
+    } else if (RECOVERED_CODES.has(e.code)) {
       const cell = cells.find((c) => e.from! >= c.from && e.to! <= c.to);
-      const rewrite = cell && repairs.find((r) => inRow(r) && r.from === cell.valueFrom);
-      if (rewrite) add(e, { label: 'Rewrite the cell', tier: 'auto', edits: [rewrite] });
+      const rewrite = repaired.find((r) => r.kind === 'cell' && r.cell === cell);
+      if (rewrite) add(e, { label: 'Rewrite the cell', tier: 'auto', edits: rewrite.edits });
     } else if (e.code === 'repeated-marker') {
       add(e, { label: 'Remove extra marker', tier: 'click', edits: [{ from: e.from!, to: e.to!, insert: '' }] });
     } else if (OVERFLOW.has(e.code)) {

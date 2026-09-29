@@ -11,6 +11,8 @@ const DEFAULT_SEP = '|';
 const DEFAULT_COMMENT = '//';
 const DEFAULT_LEAD = 'name:text';
 const FORBIDDEN_IN_PROFILE = new Set(['format', 'table', 'profile', 'sep', 'comment', 'include']);
+/** The keys rows reads: the base keys (base §2.2), then the extension keys. Any other key is ignored. */
+export const KNOWN_KEYS = ['format', 'table', 'profile', 'sep', 'comment', 'lead', 'columns', 'key', 'include', 'markers', 'nest', 'order'] as const;
 
 /** Where a key's value came from: an entry in this file, or the profile. */
 type Source = { entry: FrontmatterEntry } | { profile: true };
@@ -253,6 +255,8 @@ export function resolveSchema(
       span = { from: key.source.entry.valueFrom + piece.from, to: key.source.entry.valueFrom + piece.to };
       column.from = span.from;
       column.to = span.to;
+      column.typeFrom = span.from + d.typeSpan.from;
+      column.typeTo = span.from + d.typeSpan.to;
     }
     // Type and option errors point at the type or the option, when the declaration has a span.
     const at = (part?: { from: number; to: number }) => (span && part ? { from: span.from + part.from, to: span.from + part.to } : span);

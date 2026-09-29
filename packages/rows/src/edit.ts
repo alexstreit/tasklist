@@ -94,9 +94,9 @@ function appendCell(doc: RowsDocument, row: Row, cellText: string): TextEdit[] {
 
 /**
  * Removes a cell together with the delimiter before it and the whitespace around that. A row must
- * keep something on its line, so a delimiter that begins the row stays.
+ * keep something on its line, so a delimiter that begins the row stays. For a cell that isn't the lead.
  */
-function removeCell(doc: RowsDocument, row: Row, cell: Cell): TextEdit {
+export function removeCell(doc: RowsDocument, row: Row, cell: Cell): TextEdit {
   let d = cell.from - 1;
   while (d >= 0 && isWs(doc.text[d])) d--; // d is now the delimiter
   if (d === row.indent.to && row.markers.length === 0) return { from: d + 1, to: cell.to, insert: '' };
@@ -157,8 +157,8 @@ export function setCell(doc: RowsDocument, row: Row, column: Column, text: strin
   return { refused: `column ${column.name} can't be named, and padding up to it would follow a named cell` };
 }
 
-/** The value a bool column has for a row: its marker, its cell, or its default. */
-function flag(doc: RowsDocument, row: Row, column: Column): boolean | null {
+/** The value a bool column has for a row: its marker, then its cell, then its default; null when none says. */
+export function readFlag(doc: RowsDocument, row: Row, column: Column): boolean | null {
   const marker = doc.schema.markers.find((m) => m.column === column);
   if (marker && row.markers.some((m) => m.name === marker.name)) return true;
   const value = row.cells[column.index]?.value;
@@ -179,7 +179,7 @@ export function setMarker(doc: RowsDocument, row: Row, name: string, on: boolean
   const cellValue = cell?.value?.type === 'bool' ? cell.value.value : null;
 
   if (!marker) {
-    if (flag(doc, row, column) === on) return { edits: [] };
+    if (readFlag(doc, row, column) === on) return { edits: [] };
     const removes = !on && column.default?.type === 'bool' && !column.default.value && cell?.text != null;
     return setCell(doc, row, column, removes ? null : String(on));
   }
@@ -315,6 +315,17 @@ function indentEdits(rows: Row[], widths: number[]): TextEdit[] {
 }
 
 /**
+ * Each row's level: its depth in the indentation tree (ext §6.2, the parser's `indentLevels`), which
+ * setLevel, levelIndent and moveRow work in. This is not `Row.depth`, which follows the parent
+ * relation: an indent-0 row naming a parent in the `parent` column is at level 0 here, and so are
+ * its descendants one level down. Every row is at level 0 without nesting.
+ */
+export function rowLevels(doc: RowsDocument): Map<Row, number> {
+  const depth = doc.schema.nest ? indentTree(doc.rows.map((r) => r.indent.width)).depth : [];
+  return new Map(doc.rows.map((row, i) => [row, depth[i] ?? 0]));
+}
+
+/**
  * The indent a row inserted before a line (or at the end) would take at `level` (plan spec
  * §4b.6.4). Null when the document has no nesting or that level isn't open there.
  */
@@ -446,27 +457,43 @@ export function deleteRow(doc: RowsDocument, row: Row): EditResult {
   return { edits: [...edits, ...indentEdits(rest, after)] };
 }
 
-const RECOVERED = new Set(['unterminated-quote', 'text-after-quote', 'unknown-escape']);
+/** The syntax errors whose cell the parser recovers, and repairRow rewrites. */
+export const RECOVERED_CODES: ReadonlySet<string> = new Set(['unterminated-quote', 'text-after-quote', 'unknown-escape']);
 
 /**
- * The `auto` repairs for a row (DESIGN §6): cells rewritten from their recovered text, a heading-like
- * lead quoted, and an indent that fits no level snapped to the level the parser recovered. The rows
- * after it at that level move with it, so the tree is unchanged. Idempotent.
+ * One kind of repair: a cell rewritten from its recovered text (`cell` says which, the lead
+ * included), a heading-like title quoted, or the indent snap, whose edits may move later rows.
  */
-export function repairRow(doc: RowsDocument, row: Row): TextEdit[] {
-  const edits: TextEdit[] = [];
+export type Repair = { kind: 'cell'; cell: Cell; edits: TextEdit[] } | { kind: 'title' | 'indent'; edits: TextEdit[] };
+
+/**
+ * The `auto` repairs for a row (DESIGN §6), labelled: cells rewritten from their recovered text, a
+ * heading-like lead quoted, and an indent that fits no level snapped to the level the parser
+ * recovered. The rows after it at that level move with it, so the tree is unchanged. Idempotent.
+ */
+export function repairs(doc: RowsDocument, row: Row): Repair[] {
+  const out: Repair[] = [];
   for (const cell of sourceCells(row)) {
-    const broken = row.errors.some((e) => RECOVERED.has(e.code) && e.from! >= cell.from && e.to! <= cell.to);
+    const broken = row.errors.some((e) => RECOVERED_CODES.has(e.code) && e.from! >= cell.from && e.to! <= cell.to);
     if (!broken || cell.text === null) continue;
-    edits.push({ from: cell.valueFrom, to: cell.valueTo, insert: quote(doc, cell === row.lead, cell.text) });
+    out.push({ kind: 'cell', cell, edits: [{ from: cell.valueFrom, to: cell.valueTo, insert: quote(doc, cell === row.lead, cell.text) }] });
   }
   const lead = row.lead;
-  if (row.errors.some((e) => e.code === 'heading-line') && !edits.some((e) => e.from === lead.valueFrom) && lead.text !== null && !lead.quoted) {
+  const leadRewritten = out.some((r) => r.kind === 'cell' && r.cell === lead);
+  if (row.errors.some((e) => e.code === 'heading-line') && !leadRewritten && lead.text !== null && !lead.quoted) {
     const quoted = quote(doc, true, lead.text);
-    if (quoted !== lead.text) edits.push({ from: lead.valueFrom, to: lead.valueTo, insert: quoted });
+    if (quoted !== lead.text) out.push({ kind: 'title', edits: [{ from: lead.valueFrom, to: lead.valueTo, insert: quoted }] });
   }
-  if (row.errors.some((e) => e.code === 'bad-indent')) edits.push(...snapIndent(doc, row));
-  return edits;
+  if (row.errors.some((e) => e.code === 'bad-indent')) {
+    const edits = snapIndent(doc, row);
+    if (edits.length > 0) out.push({ kind: 'indent', edits });
+  }
+  return out;
+}
+
+/** The edits of every repair for a row, as one list. */
+export function repairRow(doc: RowsDocument, row: Row): TextEdit[] {
+  return repairs(doc, row).flatMap((r) => r.edits);
 }
 
 /** The indent edits that put a bad-indent row, and the rows after it at its level, where the parser recovered them. */

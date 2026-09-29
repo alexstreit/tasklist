@@ -6,7 +6,7 @@
 // (spec §4b.6.4), and every edit carries the auto repairs of the rows it
 // touches (spec §4b.6.1).
 
-import { deleteRow, insertRow, levelIndent, moveRow, repairRow, setCell, setLead, setLevel, setMarker } from 'rows';
+import { deleteRow, insertRow, levelIndent, moveRow, repairs, rowLevels, setCell, setLead, setLevel, setMarker } from 'rows';
 import type { EditResult } from 'rows';
 import type { Model, ModelNode, Span } from '../core';
 import type { TextEdit } from '../buffer';
@@ -63,6 +63,27 @@ export function insertItem(model: Model, at: { beforeLine: number } | 'end', ind
   return title === null ? NOTHING : insertRow(model.doc, at, indent, title);
 }
 
+/**
+ * Each item's level, by line, in the two senses the grid meets:
+ * - `shown`: its depth in the plan's tree, which follows rows' parent relation. The grid indents
+ *   titles by it.
+ * - `indent`: its depth in the indentation tree (rows `rowLevels`), the level rows' structure edits
+ *   (setLevel, levelIndent, moveRow) work in. The grid passes it to insertIndent and shiftItem, and
+ *   enables Indent and Outdent by it.
+ * They agree except for an indent-0 row whose `parent=` names another row, and that row's
+ * descendants: rows puts it under its parent, so `shown` is deeper than `indent`.
+ */
+export function levels(model: Model): Map<number, { shown: number; indent: number }> {
+  const indent = rowLevels(model.doc);
+  const out = new Map<number, { shown: number; indent: number }>();
+  const visit = (node: ModelNode, depth: number): void => {
+    out.set(node.line, { shown: depth, indent: indent.get(node.source.row) ?? 0 });
+    node.children.forEach((child) => visit(child, depth + 1));
+  };
+  model.roots.forEach((root) => visit(root, 0));
+  return out;
+}
+
 /** The indent of a row inserted above `node`: the node's level, snapped to a valid indent (spec §4b.6.4). */
 export function insertIndent(model: Model, node: ModelNode, depth: number): number {
   return levelIndent(model.doc, { beforeLine: node.line }, depth) ?? node.indent;
@@ -98,12 +119,10 @@ export function withRepairs(model: Model, result: EditResult, touched: ModelNode
   if ('refused' in result || result.edits.length === 0) return result;
   const edits = [...result.edits];
   for (const { source } of touched) {
-    const row = source.row;
-    const repairs = repairRow(model.doc, row);
-    const inRow = (e: TextEdit) => e.from >= row.indent.to && e.to <= row.to;
-    const indent = repairs.filter((r) => !inRow(r));
+    const labelled = repairs(model.doc, source.row);
+    const indent = labelled.find((r) => r.kind === 'indent')?.edits ?? [];
     if (indents && indent.length > 0 && !indent.some((r) => edits.some((e) => overlap(e, r)))) edits.push(...indent);
-    for (const r of repairs.filter(inRow)) if (!edits.some((e) => touch(e, r))) edits.push(r);
+    for (const r of labelled.filter((r) => r.kind !== 'indent').flatMap((r) => r.edits)) if (!edits.some((e) => touch(e, r))) edits.push(r);
   }
   // An insert and a replacement that start at one place become one edit, the insert first.
   const sorted = edits.sort((a, b) => a.from - b.from || a.to - b.to);

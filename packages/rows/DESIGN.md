@@ -147,8 +147,15 @@ Helpers:
 
 ```ts
 durationToMinutes(v, column): { minutes: number } | { error: 'needs-hpd' | 'needs-dpw' }
+parseDuration(text, unit?): Value | null                    // a duration value as a column with that unit reads it
 tokenizeLine(text: string, ctx: LineContext): LineTokens    // for highlighters
+readFlag(doc, row, column): boolean | null                  // a bool: its marker, then its cell, then its default
+rowLevels(doc): Map<Row, number>                            // each row's depth in the indentation tree (§6)
+isWs(c), NAME                                               // base whitespace; the column-name grammar
+KNOWN_KEYS, TYPE_NAMES, RECOVERED_CODES                     // the keys rows reads; base type names; recovered syntax errors
 ```
+
+Hosts use these instead of restating the grammar. A column declared unquoted in the file also carries `from`/`to` for its declaration and `typeFrom`/`typeTo` for its `:TYPE` (empty at the end of the name when it has none).
 
 An error in a column declaration written unquoted in the file spans the part it is about: the `:TYPE` for a malformed or unknown type or a bad enum value, the option for an invalid or repeated one, and the whole declaration for a name error. Hosts use the span to remove exactly that part.
 
@@ -174,6 +181,8 @@ setLevel(doc, row, level: number): EditResult
 moveRow(doc, row, dir: 'up' | 'down'): EditResult
 deleteRow(doc, row): EditResult
 repairRow(doc, row): TextEdit[]
+repairs(doc, row): Repair[]      // the same, labelled: { kind: 'cell', cell, edits } | { kind: 'title' | 'indent', edits }
+removeCell(doc, row, cell): TextEdit
 levelIndent(doc, at: { beforeLine: number } | 'end', level: number): number | null
 formatValue(doc, column | 'lead', text): string   // quotes exactly when base §3 requires
 ```
@@ -189,7 +198,7 @@ Rules:
 - **`setMarker`** inserts or removes the marker character straight after the indent. When the column has no marker, it sets the value by name. A row with both a marker and an explicit `done=false` has both corrected.
 - **`setCell` padding exception.** When a column can't be set by name (its name is invalid or duplicated) and the row doesn't reach it, `setCell` pads with empty cells up to it instead of refusing. This is the only case where it pads. It can't pad a row that has a named or overflow cell, since the padding would be unnamed cells after it; that is still a refusal.
 - **`setLevel(doc, row, level)`, `moveRow(doc, row, 'up' | 'down')`, `deleteRow(doc, row)`.** These are level-based structure edits, with the behaviour described in plan spec §4b.6.4 and the same `EditResult` return, refusals and no-new-errors invariant as the other edit functions. They are generic, not plan-specific: any host with `nest` needs them.
-- **`repairRow(doc, row): TextEdit[]`.** Returns the `auto`-tier repairs for a row: rewriting cells from their recovered text, quoting a heading-like lead, and snapping the indent to the recovered level. It is idempotent: `repairRow` on its own output returns no edits.
+- **`repairRow(doc, row): TextEdit[]`.** Returns the `auto`-tier repairs for a row (`repairs` returns them labelled by kind, so a host can offer each on the error it resolves): rewriting cells from their recovered text, quoting a heading-like lead, and snapping the indent to the recovered level. It is idempotent: `repairRow` on its own output returns no edits.
 - **`levelIndent`** is the indent a row inserted there would take at a level, by the rule in plan spec §4b.6.4, or `null` when that level isn't open there or the document has no `nest`. Hosts pass it to `insertRow`.
 - Every edit function is tested by the same property: for random documents and random edits, parsing the edited text gives the intended value in the target, every other row, cell, marker, anchor and comment is unchanged, and the text has no syntax or structural error it didn't have before (counted by code).
 - An edit that has nothing to change returns `{ edits: [] }`. An edit that can't be made without breaking the rules above returns `{ refused }` with the reason, and the host leaves the text as it is.
