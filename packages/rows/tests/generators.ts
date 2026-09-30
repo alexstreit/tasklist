@@ -17,6 +17,8 @@ const FM_LINES = [
   'lead: task', 'profile: p', 'profile: ./q.rows', 'profile: missing', 'format: rows/2', '# c', '', '  x : y', 'bad line', 'k:',
   'markers: done=~ blocked=!', 'markers: x=# ok=+', 'nest: parent', 'nest: est', 'key: id', 'key:', 'order: est', 'order: -name',
   'include: a.rows | b.rows as t', 'columns: dep:ref many qualifier=lag:duration | parent | est:number',
+  'roles: effort=est title=name who=owner', 'roles: p.q=est  up=parent\tflag=done', 'roles: bad a.b.c=est x= =y e=missing e=est w = est',
+  'roles: "effort=est"', 'roles:', 'profile: r', 'propricer.rate-table: x', 'x-me.k: v', 'a..b: x', '.a: x', 'a.: x', 'a.b.c: y',
 ];
 const FRAGMENTS = [
   'Auth', 'Login page', '  ', '\t', ' | ', '|', ';', ',', '/', '"', '\\"', '\\\\', '\\n', '\\q', '"quoted | cell"', '""',
@@ -48,7 +50,7 @@ export function generate(random: () => number): string {
 }
 
 export const PROFILES: ParseOptions = {
-  profiles: { p: '---\ncolumns: a | b\nsep: ;\n---\n' },
+  profiles: { p: '---\ncolumns: a | b\nsep: ;\n---\n', r: '---\nlead: task\ncolumns: est | owner\nroles: effort=est who=owner title=task lost=gone\n---\n' },
   resolveProfile: (path) => (path === './q.rows' ? '---\ncolumns q\ncolumns: c\n---\n' : undefined),
 };
 
@@ -56,7 +58,7 @@ export const PROFILES: ParseOptions = {
 export function generateNested(random: () => number): string {
   const pick = <T,>(xs: T[]) => xs[Math.floor(random() * xs.length)];
   const ids = ['a', 'b', 'c', 'd', 'A'];
-  const lines = ['---', 'nest: parent', 'markers: done=~', pick(['order: n', 'order: -dep', 'key: id', '# none']), 'columns: n:number | dep:ref many', '---'];
+  const lines = ['---', 'nest: parent', 'markers: done=~', pick(['order: n', 'order: -dep', 'key: id', '# none']), pick(['roles: size=n links=dep up=parent flag=done', 'roles: x.y=n x.y=dep', '# none']), 'columns: n:number | dep:ref many', '---'];
   const rows = 1 + Math.floor(random() * 8);
   for (let i = 0; i < rows; i++) {
     let line = pick(['', '', '  ', '    ', '        ', '\t']) + pick(['', '~', '~~']) + `R${i}`;

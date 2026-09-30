@@ -77,6 +77,26 @@ describe('tokenizeLine', () => {
     ]);
   });
 
+  it('reads a qualified key as one key, and splits roles and markers entries (base §2.1, ext §5, §11)', () => {
+    const fm = (text: string, extensions?: boolean) =>
+      tokenizeLine(text, { ...ctx, state: 'frontmatter', extensions }).tokens.map((t) => [t.type, text.slice(t.from, t.to)]);
+    expect(fm('propricer.rate-table: std')).toEqual([['fm-key', 'propricer.rate-table'], ['fm-colon', ':'], ['fm-value', 'std']]);
+    expect(tokenizeLine('a.b.c: x', { ...ctx, state: 'frontmatter' }).kind).toBe('fm-malformed');
+    expect(fm('roles: p.q=est  =x bad')).toEqual([
+      ['fm-key', 'roles'],
+      ['fm-colon', ':'],
+      ['name', 'p.q'],
+      ['equals', '='],
+      ['value', 'est'],
+      ['equals', '='],
+      ['value', 'x'],
+      ['value', 'bad'],
+    ]);
+    expect(fm('markers: done=~').slice(2)).toEqual([['name', 'done'], ['equals', '='], ['value', '~']]);
+    expect(fm('roles: "a=b"').slice(2)).toEqual([['fm-value', '"a=b"']]);
+    expect(fm('roles: a=b', false).slice(2)).toEqual([['fm-value', 'a=b']]);
+  });
+
   it('allows trailing whitespace on a delimiter line, but not leading (base §1)', () => {
     expect(tokenizeLine('---  ', { ...ctx, state: 'start' }).kind).toBe('fm-open');
     expect(tokenizeLine('---\t', { ...ctx, state: 'frontmatter' }).kind).toBe('fm-close');

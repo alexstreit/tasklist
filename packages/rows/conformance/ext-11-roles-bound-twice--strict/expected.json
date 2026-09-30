@@ -1,0 +1,14 @@
+{
+  "spec": [
+    "ext §11, §10: a role bound twice is an invalid entry, and the later one is ignored (by analogy with A2)"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    }
+  ]
+}

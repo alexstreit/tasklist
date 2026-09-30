@@ -1,6 +1,6 @@
 # rows conformance suite
 
-Language-neutral test cases for rows base 0.10, rows extensions 0.7 and Text Anchors 0.2 (`../spec/`). Every `expected.json` was written by hand from the specs, before any parser existed. Each one is a claim about what the specs mean. If a case and a spec disagree, one of them is wrong, and which one is a spec decision.
+Language-neutral test cases for rows base 0.11, rows extensions 0.9 and Text Anchors 0.2 (`../spec/`). Every `expected.json` was written by hand from the specs, before any parser existed. Each one is a claim about what the specs mean. If a case and a spec disagree, one of them is wrong, and which one is a spec decision.
 
 Cases marked `"disputed": true` rest on a reading the specs don't settle. Each one has an entry in [QUESTIONS.md](QUESTIONS.md).
 
@@ -39,6 +39,7 @@ Case names start with the spec and section they come from: `base-6-…`, `ext-5-
 | `errors`   | yes      | Every error, as `{ class, code, line }`. Complete and compared ignoring order.           |
 | `table`    | no       | The resolved table name.                                                                 |
 | `columns`  | no       | The resolved schema, lead first: `{ name, type, implicit? }`.                            |
+| `roles`    | no       | The role bindings, in entry order: `{ role, column }`, with the column's name.          |
 | `rows`     | yes\*    | Every body row, in order. \*May be omitted in a `--strict` variant.                      |
 
 `columns[].type` is the type values are read as, after recovery: a malformed or unknown type is `text`, and so is `ref` in a base-only parse. Parameterised types keep their parameters: `enum[low,high]`, `ref[people]`. Enum values are written trimmed and without spaces, so `enum[ low , high ]` is `enum[low,high]`.
@@ -100,6 +101,8 @@ The specs define classes, not codes (DESIGN §4). These codes are the library's;
 | `bad-indent`                 | structural | ext §6.2                                                      |
 | `invalid-nest-column`        | structural | ext §6.1, §10                                                 |
 | `unknown-order-column`       | structural | ext §7, §10                                                   |
+| `invalid-role`               | structural | ext §11, §10: an invalid `roles` entry, or a role bound twice |
+| `unknown-role-column`        | structural | ext §11, §10: a role bound to no column                       |
 | `unknown-type`               | validation | base §6                                                       |
 | `invalid-value`              | validation | base §6: value does not match its column                      |
 | `required`                   | validation | base §4                                                       |

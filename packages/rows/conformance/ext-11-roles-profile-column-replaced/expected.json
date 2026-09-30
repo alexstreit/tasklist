@@ -1,0 +1,14 @@
+{
+  "spec": [
+    "base §2.3, ext §11: a profile's role on a column the file's lead or columns replaced is dropped, with no error (Q43, superseding A9)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "columns": [
+    { "name": "item", "type": "text" },
+    { "name": "size", "type": "number" }
+  ],
+  "roles": [],
+  "rows": [{ "line": 6, "lead": "A", "values": { "size": "3" } }]
+}

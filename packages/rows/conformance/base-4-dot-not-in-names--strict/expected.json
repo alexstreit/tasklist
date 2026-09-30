@@ -1,0 +1,19 @@
+{
+  "spec": [
+    "base §2.1, §3, §4: the dot is for keys only; my.notes is not a valid column name, and my.notes=x is an unnamed cell"
+  ],
+  "stage": "base",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-column-name",
+      "line": 2
+    },
+    {
+      "class": "structural",
+      "code": "unnamed-after-named",
+      "line": 5
+    }
+  ]
+}

@@ -4,6 +4,7 @@ nest: parent
 markers: done=~
 order: est
 include: other.rows
+roles: effort=est
 columns: est | dep:ref[other] | link:ref
 ---
 ~Auth {#auth} | 2 | #x | #y

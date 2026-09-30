@@ -109,6 +109,8 @@ export interface Schema {
   markers: { name: string; char: string; column: Column }[];
   order: 'position' | 'none' | { column: Column; descending: boolean };
   includes: { path: string; table: string }[];
+  // ext §11: the profile's and the file's merged per role (profile order, then the file's new roles). Spans, of the role name and of the column name, when written unquoted in this file.
+  roles: { name: string; column: Column; from?: number; to?: number; columnFrom?: number; columnTo?: number }[];
 }
 
 export interface Row {

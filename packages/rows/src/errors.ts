@@ -40,6 +40,8 @@ export const ERROR_CODES = {
   'bad-indent': 'structural',
   'invalid-nest-column': 'structural',
   'unknown-order-column': 'structural',
+  'invalid-role': 'structural',
+  'unknown-role-column': 'structural',
   'unknown-type': 'validation',
   'invalid-value': 'validation',
   required: 'validation',

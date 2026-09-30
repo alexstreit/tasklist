@@ -1,0 +1,5 @@
+---
+columns: my.notes | notes
+---
+A | x | my.notes=y
+B | notes=z | my.notes=w

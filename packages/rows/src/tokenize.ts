@@ -228,7 +228,16 @@ export interface FrontmatterLine {
   value?: Span; // as written, quotes included
 }
 
-const ENTRY = /^([A-Za-z_][A-Za-z0-9_-]*)[ \t]*:/;
+// A key is a name, or a qualified name with one dot (base §2.1).
+const ENTRY = /^([A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)?)[ \t]*:/;
+
+/** The keys whose values are lists of `NAME=VALUE` entries separated by whitespace (ext §5, §11). */
+const ENTRY_LISTS = new Set(['markers', 'roles']);
+
+/** The whitespace-separated entries of a `markers` or `roles` value; `eq` is the first `=` in each, or -1. */
+export function listEntries(value: string): (Span & { eq: number })[] {
+  return [...value.matchAll(/[^ \t]+/g)].map((m) => ({ from: m.index!, to: m.index! + m[0].length, eq: m[0].indexOf('=') }));
+}
 
 /** A frontmatter delimiter: `---`, with trailing whitespace allowed and none leading (base §1). */
 export const isDelimiterLine = (text: string): boolean => /^---[ \t]*$/.test(text);
@@ -309,7 +318,19 @@ export function tokenizeLine(text: string, ctx: LineContext): LineTokens {
     else if (fm.kind === 'fm-entry') {
       tokens.push({ type: 'fm-key', from: fm.key!.from, to: fm.key!.to });
       tokens.push({ type: 'fm-colon', from: fm.colon!, to: fm.colon! + 1 });
-      if (fm.value!.to > fm.value!.from) tokens.push({ type: 'fm-value', ...fm.value! });
+      const { from, to } = fm.value!;
+      const raw = text.slice(from, to);
+      const quoted = raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"');
+      if (ctx.extensions !== false && ENTRY_LISTS.has(fm.key!.text) && !quoted) {
+        // Each entry as name, `=` and value, like a named cell; an entry without `=` is all value.
+        for (const e of listEntries(raw)) {
+          const eq = e.eq === -1 ? -1 : from + e.from + e.eq;
+          if (eq > from + e.from) tokens.push({ type: 'name', from: from + e.from, to: eq });
+          if (eq !== -1) tokens.push({ type: 'equals', from: eq, to: eq + 1 });
+          const valueFrom = eq === -1 ? from + e.from : eq + 1;
+          if (from + e.to > valueFrom) tokens.push({ type: 'value', from: valueFrom, to: from + e.to });
+        }
+      } else if (to > from) tokens.push({ type: 'fm-value', from, to });
     }
     return { kind: fm.kind, tokens, next: fm.kind === 'fm-close' ? 'body' : 'frontmatter' };
   }

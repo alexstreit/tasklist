@@ -74,7 +74,7 @@ A plugin is up to five parts that read columns by role and add to one shared mod
 A role is what a column means to a plugin, separate from its name and type. The file binds roles to columns with a `roles:` key, the same pattern as `nest: parent` and `markers: done=~`:
 
 ```
-roles: effort=est, duration=dur, start=start, deps=deps
+roles: effort=est duration=dur start=start deps=deps
 ```
 
 Profiles supply the defaults, so a user who never changes columns never sees the key.

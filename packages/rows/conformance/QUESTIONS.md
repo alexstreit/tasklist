@@ -293,3 +293,42 @@ None open.
 **Decision:** it is reported on the file's own declaration, not as `profile-has-errors`, which is only for errors in the profile's frontmatter taken alone. The class and recovery are the ones the conflict would have if the file had set both keys. The error goes on the declaration of the column when there is one (a marker or nest column the file declares with the wrong type, a profile column repeating the name of the file's `lead`), and otherwise on the file's key: its `sep` or `comment` when a profile's marker character clashes with it, and its `columns` or `lead` when they replaced a column the profile's `order` names. Q23 still holds when the file sets `markers:` itself.
 **Spec changed:** base §2.3, §6 (base 0.10); ext §5, §6.1, §7, §10 (extensions 0.7).
 **Cases:** `ext-5-marker-column-not-bool-from-profile`, `ext-5-marker-clashes-with-file-comment`, `ext-6.1-nest-column-not-ref-from-profile`, `ext-7-order-unknown-column-from-profile`, `base-2.3-profile-column-repeats-file-lead`, and `ext-5-marker-column-not-bool-in-profile` for the same conflict inside the profile alone, each with its `--strict` variant.
+
+### A6. A role bound to no column (settled by analogy with Q16, `order` naming no column)
+
+**Decision:** a structural error on the `roles` line (`unknown-role-column`), and the entry is ignored, as `order` naming no column is an error on the `order` line and is read as `position`. `nest:` naming a missing column is not the analogy: it declares an implicit column, and `roles` declares none.
+**Spec changed:** ext §11, §10 (extensions 0.8).
+**Cases:** `ext-11-roles-unknown-column` (+ `--strict`).
+
+### A7. A role bound twice (settled by analogy with A2)
+
+**Decision:** an invalid entry (`invalid-role`), and the later one is ignored, as a repeated marker name is.
+**Spec changed:** ext §11, §10.
+**Cases:** `ext-11-roles-bound-twice` (+ `--strict`).
+
+### A8. A malformed `roles` entry or role name (settled by analogy with Q16, an invalid `markers` entry)
+
+**Decision:** entries are `ROLE=COLUMN`, separated by whitespace, with no whitespace around the `=`, as `markers` entries are. `ROLE` is a name or a qualified name; `COLUMN` matches the column-name grammar. Any other entry is a structural error (`invalid-role`), ignored, one error per entry, as an invalid marker entry is.
+**Spec changed:** ext §11, §10.
+**Cases:** `ext-11-roles-invalid-entries` (+ `--strict`).
+
+### A9. A profile's role bound to a column the file replaced (settled by analogy with Q42; superseded by Q43)
+
+**Superseded by Q43:** such a binding is now dropped, with no error.
+**Decision:** reported on the file's `columns` or `lead` key, whichever replaced the column the profile declared, as for a profile's `order`.
+**Spec changed:** ext §11, §10.
+**Cases:** `ext-11-roles-profile-column-replaced`, whose strict variant was removed by Q43.
+
+### A10. An empty `roles:` (settled by analogy with A1)
+
+**Decision:** declares nothing, and is not an error, as an empty `markers:` isn't.
+**Spec changed:** ext intro.
+**Cases:** `ext-11-roles-empty`.
+
+### Q43. How a profile's roles and the file's combine
+
+Raised by Task 25, which combined them as `markers:` does: the file's `roles:` replaced the profile's whole, and a profile role on a column the file replaced was an error on the file's `columns` or `lead` (A9). A file that added one role lost all the profile's, and a file that declared its own columns got an error for every profile role it no longer had a column for.
+
+**Decision (spec owner):** they merge per role. Where both bind a role, the file's binding wins, and that is not an error. The bindings keep the profile's entry order, a rebound role keeping its place, and the roles only the file binds follow in its entry order. A profile role whose column the file's `columns` or `lead` replaced is dropped, with no error; this is an exception to base §2.3's rule that such conflicts are reported on the file. A6 is unchanged: a role the file itself binds to a missing column is still `unknown-role-column`, and so is a profile role on a column neither the profile nor the file declares, as an error in the profile (`profile-has-errors`). A role bound twice within one `roles` value is still A7.
+**Spec changed:** ext §11, §10 (extensions 0.9).
+**Cases:** `ext-11-roles-profile-column-replaced` now has no errors and no bound roles, so its strict variant is gone. The former ext-11-roles-file-replaces-profile case is renamed `ext-11-roles-file-rebinds-profile-role`, and now keeps the profile's other role. `ext-11-roles-file-adds-role` and `ext-11-roles-estimate-only` are new.

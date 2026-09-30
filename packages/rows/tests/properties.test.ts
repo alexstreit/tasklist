@@ -110,6 +110,31 @@ describe('tokenizeLine agrees with parseRows', () => {
     }
   });
 
+  it('on every frontmatter key and roles entry', () => {
+    for (const { text, options } of inputs) {
+      const doc = parseRows(text, options);
+      if (!doc.frontmatter) continue;
+      const tokensAt = (line: number) => {
+        const l = doc.lines[line - 1];
+        return tokenizeLine(doc.text.slice(l.from, l.to), { ...contextOf(doc, options), state: 'frontmatter' }).tokens.map(
+          (t): Token => ({ ...t, from: t.from + l.from, to: t.to + l.from }),
+        );
+      };
+      for (const entry of doc.frontmatter.entries) {
+        const key = tokensAt(entry.line).find((t) => t.type === 'fm-key');
+        expect(key && span(key), JSON.stringify(text)).toEqual([entry.keyFrom, entry.keyTo]);
+      }
+      // Every binding the parser made, with spans, is a name token and a value token on its line.
+      for (const role of doc.schema.roles) {
+        if (role.from === undefined) continue;
+        const line = doc.lines.find((l) => l.from <= role.from! && role.from! <= l.to)!;
+        const tokens = tokensAt(line.line).map((t) => [t.type, t.from, t.to]);
+        expect(tokens, JSON.stringify(text)).toContainEqual(['name', role.from, role.to]);
+        expect(tokens, JSON.stringify(text)).toContainEqual(['value', role.columnFrom, role.columnTo]);
+      }
+    }
+  });
+
   it('on every token boundary in every row', () => {
     for (const { text, options } of inputs) {
       const doc = parseRows(text, options);

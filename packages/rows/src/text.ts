@@ -42,3 +42,5 @@ export function splitLines(text: string): PhysicalLine[] {
 }
 
 export const NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+/** A frontmatter key or a role name: a name, or a qualified name with one dot (base §2.1). */
+export const KEY_NAME = /^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)?$/;

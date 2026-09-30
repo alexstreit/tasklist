@@ -1,10 +1,10 @@
 # rows — Extensions
 
-**Version 0.7 (draft)**
+**Version 0.9 (draft)**
 
-This document defines identity, references, includes, markers, nesting, and row order for rows files. It uses the keys and forms reserved by the base format (base §9), and binds the Text Anchors specification to rows. Error classes, recovery, and modes are as in base §6. §10 lists every error this document defines.
+This document defines identity, references, includes, markers, nesting, row order, and roles for rows files. It uses the keys and forms reserved by the base format (base §9), and binds the Text Anchors specification to rows. Error classes, recovery, and modes are as in base §6. §10 lists every error this document defines.
 
-The base rule for keys with a default (base §6) applies to the keys here. An empty `order:` is a structural error, and its default, `position`, applies. An empty `key:` is a structural error, and `key` is treated as unset, so it doesn't make identity apply (§3.1). An empty `nest:`, `markers:` or `include:` declares nothing, and is not an error.
+The base rule for keys with a default (base §6) applies to the keys here. An empty `order:` is a structural error, and its default, `position`, applies. An empty `key:` is a structural error, and `key` is treated as unset, so it doesn't make identity apply (§3.1). An empty `nest:`, `markers:`, `include:` or `roles:` declares nothing, and is not an error.
 
 A file that uses these extensions MUST be read by a parser that implements them. A base-only parser will tokenise it, but in strict mode may reject it, for example because `id=auth` names a column only an extension declares.
 
@@ -12,7 +12,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY follow RFC 2119.
 
 ## 1. Canonical form
 
-Every extension in this document is sugar. A file using it can be rewritten mechanically into **canonical form**: a set of rows files that use only base syntax, the `key`, `include`, `nest`, and `order` keys, and single-valued `ref` columns without qualifiers. Every row has zero indent. `key` is written explicitly, profiles are resolved, and their keys written out. Each section below states its canonical form.
+Every extension in this document is sugar. A file using it can be rewritten mechanically into **canonical form**: a set of rows files that use only base syntax, the `key`, `include`, `nest`, `order`, and `roles` keys, and single-valued `ref` columns without qualifiers. Every row has zero indent. `key` is written explicitly, profiles are resolved, and their keys written out. Each section below states its canonical form.
 
 A conforming tool MUST be able to produce canonical form, and MUST read it back to the same data. Import and export to other stores SHOULD go through canonical form.
 
@@ -201,6 +201,7 @@ A parser implementing these extensions, beyond base conformance:
 - removes anchors and markers from lead values, and exposes each row's ID, aliases, and marker values;
 - resolves every reference and exposes its target table, target row, and qualifier;
 - builds the parent relation when `nest` is set, applying tolerant recovery in tolerant mode;
+- exposes each role binding, with its role name and column;
 - reports the errors listed in §10 with their classes.
 
 A writer, beyond base conformance:
@@ -299,3 +300,31 @@ Every error this document defines. Recovery follows base §6: recovery comes fir
 | Parent chain forming a cycle (§6.2)                                    | Validation | Reported on every row in the cycle. Those rows have no parent.                                       |
 | `order` naming no column (§7)                                          | Structural | Reported on the `order` line, or on the file's `columns` or `lead` when they replaced the profile's column. Read as `position`. |
 | Row out of order (§7)                                                  | Validation | Row kept where it is.                                                                                |
+| Invalid `roles` entry, or a role bound twice (§11)                     | Structural | Entry ignored. One error per entry.                                                                  |
+| Role bound to no column (§11)                                          | Structural | Reported on the `roles` line. Entry ignored. A profile's role on a column the file's `columns` or `lead` replaced is dropped, with no error. |
+
+## 11. Roles
+
+A **role** is what a column means to a tool, separate from the column's name and type. `roles` binds role names to columns:
+
+```
+roles: effort=est duration=dur propricer.labour-category=owner
+```
+
+- Entries are `ROLE=COLUMN`, separated by whitespace, with no whitespace around the `=`, as for `markers` (§5). `ROLE` is a name or a qualified name, in the grammar of frontmatter keys (base §2.1). `COLUMN` matches the column-name grammar (base §4). An entry that breaks this is a structural error, and is ignored.
+- This specification gives no role a meaning. Any valid role name is accepted; which roles exist, and what they mean, is for the tools that read them.
+- `COLUMN` is any column of the resolved schema, including the lead and implicit columns (§2). A `COLUMN` naming no column is a structural error on the `roles` line, and the entry is ignored. The exception is a profile's role on a column the profile declares itself, which the file's `columns` or `lead` replaced: that binding is dropped, with no error. Unlike other conflicts between a profile and the file (base §2.3), this one is not reported, so a file can declare its own columns without restating or clearing the profile's roles.
+- One column may carry several roles. Within one `roles` value, a role may be bound only once: as with a repeated marker name (§5), a later entry for a role already bound is a structural error, and is ignored.
+- The profile's `roles` and the file's merge per role, instead of the file's replacing the profile's as other keys do (base §2.3). Where both bind a role, the file's binding wins, and is not an error. The bindings are in the profile's entry order, a role the file rebinds keeping its place, followed by the roles only the file binds, in the file's entry order.
+
+```
+---
+nest: parent
+columns: est:duration | owner
+roles: title=name effort=est assignee=owner propricer.labour-category=owner up=parent
+---
+```
+
+`title` is on the lead, `up` on the implicit `parent` column, and `owner` carries two roles.
+
+**Canonical form.** `roles` is kept, with the merged bindings written out.

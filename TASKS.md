@@ -2,7 +2,7 @@
 
 Work these in order. Each task is one Claude Code session. A task is done only when every acceptance criterion is met and the human has reviewed.
 
-**Status:** Tasks 1–23 complete. Task 24 awaiting review.
+**Status:** Tasks 1–23 complete. Tasks 24 and 25 awaiting review.
 
 ---
 
@@ -785,7 +785,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
   - A role name is a NAME or a qualified name. rows gives no role a meaning and accepts any valid name.
   - The column is any column of the resolved schema, including the lead and implicit columns.
   - One column may carry several roles. One role may be bound only once.
-  - Profile and file `roles:` combine the way `markers:` does.
+  - Profile and file `roles:` combine the way `markers:` does. (Changed by Q43: merged per role.)
 - **Errors**, each settled by analogy wherever an existing rule fits (record it under Resolved in `QUESTIONS.md`, "settled by analogy with Qn", and list it in your end-of-task summary):
   - a role bound to a column that doesn't exist: as `nest:` or `order:` naming a missing column;
   - a role bound twice: as a repeated marker name (A2);
@@ -801,7 +801,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 
 **Acceptance criteria**
 
-- [ ] Conformance cases, written by hand from the spec, for:
+- [x] Conformance cases, written by hand from the spec, for:
   - a valid qualified key;
   - each kind of invalid qualified key;
   - `my.notes` still unnamable as a column and as a cell name;
@@ -810,12 +810,19 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
   - a profile and file `roles:` combining;
   - a profile's role on a replaced column.
 
-  Every case with a syntax or structural error has its strict variant.
+  Every case with a syntax or structural error has its strict variant. — `base-2.1-qualified-key`, `base-2.1-invalid-qualified-key`, `base-4-dot-not-in-names`, and the `ext-11-roles*` cases (valid; unknown column; bound twice; invalid entries; empty; from a profile; file adds a role; file rebinds a profile role; profile column replaced; estimate-only file with its own columns). `base-9-reserved-base-only` gained a `roles:` line. Expected files gained an optional `roles` field.
 
-- [ ] Every conformance case passes, with no stage skipped.
-- [ ] The property tests' generators include qualified keys and `roles:` blocks, valid and broken, and every existing property still holds. `tokenizeLine` agrees with `parseRows` on every token boundary.
-- [ ] No app code changes. The app's tests pass unchanged. Until Task 26, a qualified key in a plan file still gets the plan's `unknown-key` info; that is expected.
-- [ ] `npm test` is green at the root.
+- [x] Every conformance case passes, with no stage skipped.
+- [x] The property tests' generators include qualified keys and `roles:` blocks, valid and broken, and every existing property still holds. `tokenizeLine` agrees with `parseRows` on every token boundary. — a new property checks every frontmatter key token and every bound role's name and column tokens.
+- [x] No app code changes. The app's tests pass unchanged. Until Task 26, a qualified key in a plan file still gets the plan's `unknown-key` info; that is expected.
+- [x] `npm test` is green at the root.
+
+**Notes**
+
+- Base 0.11, extensions 0.9 (0.8 for the task, 0.9 for Q43). Roles are a new ext §11, so §8–§10 and the case names citing them keep their numbers; the errors are also in §10. `roles` joins the keys reserved in base §9 and `KNOWN_KEYS`, so the plan's `unknown-key` info no longer fires on `roles:` (it still fires on qualified keys).
+- Settled by analogy (QUESTIONS.md A6–A10): no column → as `order` (Q16); bound twice → as a repeated marker (A2); malformed entry → as an invalid marker entry; empty `roles:` → A1. A9 (profile role on a replaced column → Q42) is superseded by Q43. New codes `invalid-role` and `unknown-role-column`.
+- **Changed by Q43 (spec owner):** profile and file `roles:` merge per role, the file's binding winning, instead of the file's replacing the profile's as `markers:` does. A profile role whose column the file's `columns:` or `lead:` replaced is dropped with no error, so an estimate-only file with its own `columns:` gets no role errors.
+- `tokenizeLine` splits unquoted `markers:` and `roles:` values into `name`, `equals` and `value` tokens. Markers were a single `fm-value` before; they now match, as this task assumed they already did.
 
 **Human review:** read the new `expected.json` files and the Resolved entries. Each analogy is a claim about what the spec means.
 

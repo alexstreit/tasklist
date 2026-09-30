@@ -34,6 +34,7 @@ interface Expected {
   errors: ExpectedError[];
   table?: string;
   columns?: { name: string; type: string; implicit?: boolean }[];
+  roles?: { role: string; column: string }[];
   rows?: ExpectedRow[];
 }
 interface Options {
@@ -89,7 +90,7 @@ describe('conformance suite shape', () => {
     expect(name.endsWith(STRICT)).toBe(o.mode === 'strict');
 
     const e = c.expected;
-    expect(Object.keys(e).filter((k) => !['spec', 'stage', 'disputed', 'failed', 'errors', 'table', 'columns', 'rows'].includes(k))).toEqual([]);
+    expect(Object.keys(e).filter((k) => !['spec', 'stage', 'disputed', 'failed', 'errors', 'table', 'columns', 'roles', 'rows'].includes(k))).toEqual([]);
     expect(e.spec.length).toBeGreaterThan(0);
     expect(typeof e.failed).toBe('boolean');
     expect(['base', 'types', 'extensions']).toContain(e.stage);
@@ -153,6 +154,7 @@ describe('conformance cases', () => {
     if (e.columns) {
       expect(columns.map((col) => ({ name: col.name, type: col.type, ...(col.implicit ? { implicit: true } : {}) }))).toEqual(e.columns);
     }
+    if (e.roles) expect(doc.schema.roles.map((r) => ({ role: r.name, column: r.column.name }))).toEqual(e.roles);
     if (!e.rows) return;
 
     // A column whose name an earlier column already has is keyed name@index (README).

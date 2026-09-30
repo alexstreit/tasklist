@@ -1,0 +1,84 @@
+{
+  "spec": [
+    "ext §11, §10: an entry is ROLE=COLUMN with no whitespace around the =, ROLE a name or qualified name and COLUMN a column name; any other entry is a structural error, ignored, one per entry (by analogy with Q16, an invalid markers entry)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    },
+    {
+      "class": "structural",
+      "code": "invalid-role",
+      "line": 3
+    }
+  ],
+  "roles": [
+    {
+      "role": "ok",
+      "column": "est"
+    }
+  ],
+  "rows": [
+    {
+      "line": 5,
+      "lead": "A",
+      "values": {
+        "est": "2"
+      }
+    }
+  ]
+}

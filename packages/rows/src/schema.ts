@@ -2,8 +2,8 @@
 import { parseDeclaration, splitDeclarations, type Declaration, type Piece } from './declarations';
 import { rowsError } from './errors';
 import { readFrontmatter } from './frontmatter';
-import { isWs, NAME, normalise, splitLines } from './text';
-import type { ExtensionContext } from './tokenize';
+import { isWs, KEY_NAME, NAME, normalise, splitLines } from './text';
+import { listEntries, type ExtensionContext } from './tokenize';
 import type { Column, Frontmatter, FrontmatterEntry, ParseOptions, RowsError, Schema } from './types';
 import { parseType, positiveNumber, readValue } from './values';
 
@@ -12,7 +12,7 @@ const DEFAULT_COMMENT = '//';
 const DEFAULT_LEAD = 'name:text';
 const FORBIDDEN_IN_PROFILE = new Set(['format', 'table', 'profile', 'sep', 'comment', 'include']);
 /** The keys rows reads: the base keys (base §2.2), then the extension keys. Any other key is ignored. */
-export const KNOWN_KEYS = ['format', 'table', 'profile', 'sep', 'comment', 'lead', 'columns', 'key', 'include', 'markers', 'nest', 'order'] as const;
+export const KNOWN_KEYS = ['format', 'table', 'profile', 'sep', 'comment', 'lead', 'columns', 'key', 'include', 'markers', 'nest', 'order', 'roles'] as const;
 
 /** Where a key's value came from: an entry in this file, or the profile. */
 type Source = { entry: FrontmatterEntry } | { profile: true };
@@ -312,6 +312,7 @@ export function resolveSchema(
     markers: [],
     order: 'position',
     includes: [],
+    roles: [],
   };
   if (options.extensions !== false) readExtensionKeys(schema, keys, profileKeys, declaredBy, report, anyAnchors);
 
@@ -453,6 +454,16 @@ function readExtensionKeys(
     schema.markers.push({ name: p.name, char: p.char, column });
   }
 
+  // A key from the profile naming a column the profile declares itself, which the file's lead or
+  // columns replaced: the conflict goes on that file key (base §2.3).
+  const replacedBy = (key: Key, name: string): Key | undefined => {
+    if (!('profile' in key.source)) return undefined;
+    const own = (k: 'lead' | 'columns') =>
+      profileKeys.has(k) && splitDeclarations(profileKeys.get(k)!, sep).some((p) => parseDeclaration(p.text).name === name);
+    const replaced = (['lead', 'columns'] as const).find((k) => own(k) && 'entry' in (keys.get(k)?.source ?? {}));
+    return replaced && keys.get(replaced);
+  };
+
   // order (ext §7)
   if (orderKey && orderKey.value !== '') {
     const v = orderKey.value;
@@ -462,13 +473,46 @@ function readExtensionKeys(
       const column = byName(descending ? v.slice(1) : v);
       if (column) schema.order = { column, descending };
       else {
-        // With order from a profile that declares the column itself, the file's lead or columns replaced it.
-        const name = descending ? v.slice(1) : v;
-        const own = (key: 'lead' | 'columns') =>
-          profileKeys.has(key) && splitDeclarations(profileKeys.get(key)!, sep).some((p) => parseDeclaration(p.text).name === name);
-        const replaced = 'profile' in orderKey.source ? (['lead', 'columns'] as const).find((k) => own(k) && 'entry' in (keys.get(k)?.source ?? {})) : undefined;
-        report(replaced ? keys.get(replaced)! : orderKey, 'unknown-order-column', `order names no column ${v}; read as position.`);
+        report(replacedBy(orderKey, descending ? v.slice(1) : v) ?? orderKey, 'unknown-order-column', `order names no column ${v}; read as position.`);
       }
     }
   }
+
+  // roles (ext §11): ROLE=COLUMN entries, as for markers. A role bound twice by one source is an invalid
+  // entry, as a repeated marker name is (ext §5). The profile's bindings and the file's merge per role,
+  // the file's winning (Q43).
+  const bindRoles = (key: Key, fromFile: boolean) => {
+    const bound = new Set<string>();
+    for (const e of listEntries(key.value)) {
+      const entry = key.value.slice(e.from, e.to);
+      const span = spanOf(key, { text: entry, from: e.from, to: e.to });
+      const role = entry.slice(0, e.eq);
+      const name = entry.slice(e.eq + 1);
+      if (e.eq === -1 || !KEY_NAME.test(role) || !NAME.test(name)) {
+        report(key, 'invalid-role', `Invalid roles entry ${entry}; ignored.`, span);
+        continue;
+      }
+      if (bound.has(role)) {
+        report(key, 'invalid-role', `Role ${role} is already bound; ${entry} is ignored.`, span);
+        continue;
+      }
+      const column = byName(name);
+      if (!column) {
+        // A profile's role on a column the file's lead or columns replaced is dropped, with no error.
+        if (!replacedBy(key, name)) report(key, 'unknown-role-column', `Role ${role} names no column ${name}; ignored.`, span);
+        continue;
+      }
+      bound.add(role);
+      const binding = span
+        ? { name: role, column, from: span.from, to: span.from + e.eq, columnFrom: span.from + e.eq + 1, columnTo: span.to }
+        : { name: role, column };
+      // A file's rebinding of a profile role keeps the profile's place.
+      const at = fromFile ? schema.roles.findIndex((r) => r.name === role) : -1;
+      if (at === -1) schema.roles.push(binding);
+      else schema.roles[at] = binding;
+    }
+  };
+  const rolesKey = keys.get('roles');
+  if (profileKeys.has('roles')) bindRoles({ value: profileKeys.get('roles')!, source: { profile: true } }, false);
+  if (rolesKey && 'entry' in rolesKey.source) bindRoles(rolesKey, true);
 }

@@ -1,6 +1,6 @@
 # rows — File Format
 
-**Version 0.10 (draft)**
+**Version 0.11 (draft)**
 
 A `.rows` file is a plain-text table: an optional frontmatter block describing the columns, then one delimited row per line. The format is self-contained. Some keys and forms are reserved for extensions (§9).
 
@@ -22,14 +22,19 @@ Each frontmatter line is trimmed, and is then blank, a comment beginning with `#
 
 ```
 entry = key *WSP ":" [ value ]
-key   = [A-Za-z_][A-Za-z0-9_-]*
+key   = name [ "." name ]
+name  = [A-Za-z_][A-Za-z0-9_-]*
 ```
+
+A key with a dot is a **qualified name**, such as `propricer.rate-table`. This specification gives the part before the dot no meaning. A key with more than one dot, an empty part, or a leading or trailing dot, such as `a.b.c`, `a..b`, `.a` or `a.`, does not match `entry`, so its line is malformed (§6).
+
+The dot is for keys only. Column names (§4) and cell names (§3) keep the grammar `name`, so `my.notes` is not a valid column name, and `my.notes=x` is an unnamed cell.
 
 The value is the rest of the line, trimmed. If it begins and ends with `"`, the quotes are removed and `\"` and `\\` are unescaped. Frontmatter is not YAML, but is readable by most YAML parsers when values are quoted.
 
 ### 2.2 Keys
 
-All keys are optional. Unknown keys are ignored. Keys beginning `x-` are for private extensions.
+All keys are optional. Unknown keys, qualified or not, are ignored. Keys beginning `x-` are for private extensions.
 
 | Key       | Default       | Meaning                                                                      |
 | --------- | ------------- | ---------------------------------------------------------------------------- |
@@ -293,7 +298,7 @@ The declarations are separated by `,` too, because they follow the file's own de
 
 | Reserved                                                                                             | Treatment in this specification                               |
 | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Keys `key`, `include`, `nest`, `order`, `markers`                                                    | Ignored.                                                      |
+| Keys `key`, `include`, `nest`, `order`, `markers`, `roles`                                           | Ignored.                                                      |
 | Type `ref` (and `ref[...]`)                                                                          | Read as `text`.                                               |
 | Heading line: first non-whitespace characters are one or more `#` followed by a space or end of line | Structural error. Quote the lead value to write it literally. |
 | One or more `{...}` groups at the end of an unquoted lead cell                                       | Part of the lead value.                                       |

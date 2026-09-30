@@ -1,0 +1,14 @@
+{
+  "spec": [
+    "ext §11, §10: a role bound to no column is a structural error on the roles line, and the entry is ignored (by analogy with Q16, order naming no column)"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "unknown-role-column",
+      "line": 3
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+---
+columns: est | dur
+roles: effort=est effort=dur span=dur
+---
+A | 2 | 3

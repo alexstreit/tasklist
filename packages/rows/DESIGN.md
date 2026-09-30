@@ -1,13 +1,13 @@
 # rows — Library Design
 
-Lives at `packages/rows/DESIGN.md`. Implements rows base 0.10 and rows extensions 0.7 (which binds Text Anchors 0.2). The specs sit beside it in `packages/rows/spec/`.
+Lives at `packages/rows/DESIGN.md`. Implements rows base 0.11 and rows extensions 0.9 (which binds Text Anchors 0.2). The specs sit beside it in `packages/rows/spec/`.
 
 ## 1. Scope
 
 **v1**
 
-- Base 0.10 in full: frontmatter grammar, profiles, column declarations, every type, quoting, named cells, overflow, both error tables, strict and tolerant modes.
-- Extensions: implicit columns, key and anchors (including aliases), markers, nesting, `ref` columns within the file (`many`, `qualifier`), `order`.
+- Base 0.11 in full: frontmatter grammar, profiles, column declarations, every type, quoting, named cells, overflow, both error tables, strict and tolerant modes.
+- Extensions: implicit columns, key and anchors (including aliases), markers, nesting, `ref` columns within the file (`many`, `qualifier`), `order`, `roles`.
 - Format-preserving edits (§6).
 - A language-neutral conformance suite (§8).
 
@@ -133,6 +133,18 @@ type Value =
       }[];
     };
 
+interface Schema {
+  // …resolved sep, comment, lead, columns, key, nest, markers, order, includes
+  keys: Record<string, string>; // every key, the file's then the profile's; qualified keys as written
+  roles: {                       // ext §11: the profile's and the file's merged per role, the file's winning;
+                                 // profile order, rebinds in place, then the file's new roles
+    name: string;                // the role name, qualified or not
+    column: Column;
+    from?: number; to?: number;              // the role name, when written unquoted in this file
+    columnFrom?: number; columnTo?: number;  // the column name, likewise
+  }[];
+}
+
 interface RowsError {
   class: "syntax" | "structural" | "validation";
   code: string; // stable, e.g. 'unterminated-quote'; listed in errors.ts
@@ -235,7 +247,7 @@ The only refusals:
 
 ## 7. Highlighting
 
-`tokenizeLine` returns token spans: indent, marker, lead, anchor, delimiter, cell name, `=`, quoted value, escape, plain value, and comment. It also returns a frontmatter-state transition, so a line-at-a-time highlighter (CodeMirror's `StreamLanguage`) can carry state across lines. Value types come from the schema, which the tokenizer doesn't need. A highlighter that wants per-type colours (durations, signs) reads the columns from the latest parsed document. It resolves cells with the parser's rules, because tokens are syntactic: a `name` token whose name no settable column has is read by the parser as part of an unnamed cell (base §6), and an unnamed cell after a named one, or past the declared columns, is overflow with no type. The tokenizer can't know that a frontmatter block is never closed, so carried on its own it shows such a file as frontmatter to the end. A highlighter with a parsed document takes the frontmatter extent from the document's lines instead.
+`tokenizeLine` returns token spans: indent, marker, lead, anchor, delimiter, cell name, `=`, quoted value, escape, plain value, and comment. In frontmatter it returns the key, the colon and the value; a qualified key is one key token. An unquoted `markers:` or `roles:` value is split into its entries instead, each as name, `=` and value, like a named cell, with `schema.roles` spans matching them. It also returns a frontmatter-state transition, so a line-at-a-time highlighter (CodeMirror's `StreamLanguage`) can carry state across lines. Value types come from the schema, which the tokenizer doesn't need. A highlighter that wants per-type colours (durations, signs) reads the columns from the latest parsed document. It resolves cells with the parser's rules, because tokens are syntactic: a `name` token whose name no settable column has is read by the parser as part of an unnamed cell (base §6), and an unnamed cell after a named one, or past the declared columns, is overflow with no type. The tokenizer can't know that a frontmatter block is never closed, so carried on its own it shows such a file as frontmatter to the end. A highlighter with a parsed document takes the frontmatter extent from the document's lines instead.
 
 ## 8. Conformance suite
 
