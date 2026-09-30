@@ -3,16 +3,13 @@
 // it to whichever editor is active (spec §3.7).
 
 import { CodeMirrorBuffer } from '../buffer';
-import { analyze } from '../core';
+import { unmetReason } from '../core';
 import type { Exporter, Model, Renderer } from '../core';
 import { mountTextEditor } from '../editor';
 import { mountGrid } from '../grid';
 import { cursorItemFor, itemLines } from './cursor';
 import { createFileStore } from './files';
-import { tsvExporter } from '../exporters/tsv';
-import { ganttRenderer } from '../renderers/gantt';
-import { tableRenderer } from '../renderers/table';
-import { treeRenderer } from '../renderers/tree';
+import { analyze, exporters, registry, renderers } from './registry';
 import example from '../../examples/example.plan?raw';
 import './theme.css';
 import './style.css';
@@ -26,8 +23,6 @@ interface PlanEditor {
   destroy(): void;
 }
 
-const renderers: Renderer[] = [treeRenderer, tableRenderer, ganttRenderer];
-const exporters: Exporter[] = [tsvExporter];
 let active = renderers[0];
 const host = document.getElementById('host')!;
 const editorHost = document.getElementById('editor')!;
@@ -57,11 +52,9 @@ function onCursorLine(line: number, fromApi: boolean): void {
   schedule();
 }
 
-/** Why a renderer cannot show this document; empty when it can. */
-function unmet(renderer: Renderer, model: Model): string[] {
-  return renderer.requires
-    .filter((req) => !model.columns.some((c) => c.type === req.type))
-    .map((req) => `needs a ${req.type} column`);
+/** Why a renderer or exporter cannot use this model; null when it can. */
+function unmet(view: Renderer | Exporter, model: Model): string | null {
+  return unmetReason(registry, model, view.requires);
 }
 
 function renderTabs(): void {
@@ -71,9 +64,9 @@ function renderTabs(): void {
       button.type = 'button';
       button.textContent = renderer.label;
       button.classList.toggle('active', renderer === active);
-      const reasons = unmet(renderer, model);
-      button.disabled = reasons.length > 0;
-      button.title = reasons.join('; ');
+      const reason = unmet(renderer, model);
+      button.disabled = reason !== null;
+      button.title = reason ?? '';
       button.addEventListener('click', () => {
         active = renderer;
         render();
@@ -97,16 +90,21 @@ async function copyExport(exporter: Exporter, button: HTMLButtonElement): Promis
   setTimeout(() => (button.textContent = exporter.label), 1500);
 }
 
+const exportButtons = exporters.map((exporter) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = exporter.label;
+  button.addEventListener('click', () => void copyExport(exporter, button));
+  return button;
+});
+
+/** The buttons are made once, so a "Copied" confirmation survives a re-render; only whether each can run changes. */
 function renderExporters(): void {
-  exportBar.replaceChildren(
-    ...exporters.map((exporter) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = exporter.label;
-      button.addEventListener('click', () => void copyExport(exporter, button));
-      return button;
-    }),
-  );
+  exporters.forEach((exporter, i) => {
+    const reason = unmet(exporter, model);
+    exportButtons[i].disabled = reason !== null;
+    exportButtons[i].title = reason ?? '';
+  });
 }
 
 function render(): void {
@@ -115,10 +113,11 @@ function render(): void {
     lines = itemLines(model);
     dirty = false;
     editor?.update(model);
+    renderExporters();
   }
-  if (unmet(active, model).length > 0) {
+  if (unmet(active, model) !== null) {
     // The document changed under the active renderer; fall back to one that can show it.
-    const fallback = renderers.find((r) => unmet(r, model).length === 0);
+    const fallback = renderers.find((r) => unmet(r, model) === null);
     if (!fallback) {
       renderTabs();
       host.replaceChildren();
@@ -249,8 +248,8 @@ buffer.onChange(() => {
 });
 
 savedText = buffer.text();
+exportBar.replaceChildren(...exportButtons);
 render();
-renderExporters();
 updateTitle();
 
 document.getElementById('open')!.addEventListener('click', () => void open());

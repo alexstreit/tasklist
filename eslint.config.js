@@ -3,8 +3,8 @@ import tseslint from 'typescript-eslint';
 // Outside core, analyze() is the only entry point (spec §3.2).
 const analyzeOnly = {
   regex: '(^|/)core(/|$)',
-  importNames: ['parsePlan', 'readPlan', 'compute'],
-  message: 'Call analyze() from core; parsePlan, readPlan and compute are not entry points.',
+  importNames: ['parsePlan', 'readTree'],
+  message: 'Call analyze() from core; parsePlan and readTree are not entry points.',
 };
 
 // Outside core, nothing reads a plan with the rows parser directly (spec §3.2).
@@ -32,6 +32,32 @@ const rowsEntryOnly = {
   message: "Import the rows library as 'rows', its entry point.",
 };
 
+// The shell special-cases no plugin: it reaches plugins/ only through app/registry.ts (PLUGINS.md §8).
+const noPlugins = {
+  regex: '(^|/)plugins(/|$)',
+  message: 'Only src/app/registry.ts may import from src/plugins/.',
+};
+
+// Views belong to no plugin and read only core fields (PLUGINS.md §8).
+const viewsCoreOnly = {
+  regex: '^(?!\\./|(\\.\\./)+core$)',
+  message: 'src/views may only import core.',
+};
+
+// Analysis never reads the clock (PLUGINS.md §5): the same text gives the same model on any day.
+const noClock = {
+  files: ['src/core/**/*.ts', 'src/plugins/**/*.ts'],
+  ignores: ['src/plugins/*/renderers/**', 'src/plugins/*/exporters/**'],
+  languageOptions: { parser: tseslint.parser },
+  rules: {
+    'no-restricted-syntax': [
+      'error',
+      { selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']", message: 'Analysis never reads the clock.' },
+      { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: 'Analysis never reads the clock.' },
+    ],
+  },
+};
+
 const restrict = (files, patterns, ignores) => ({
   files,
   ...(ignores ? { ignores } : {}),
@@ -51,8 +77,12 @@ export default [
       },
     ],
   ),
-  restrict(['src/app/**/*.ts', 'src/editing/**/*.ts', 'src/buffer/**/*.ts'], [analyzeOnly, noParseRows, noCodeMirror, rowsEntryOnly]),
-  restrict(['src/renderers/**/*.ts', 'src/exporters/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows]),
+  restrict(['src/app/**/*.ts'], [analyzeOnly, noParseRows, noCodeMirror, rowsEntryOnly, noPlugins], ['src/app/registry.ts']),
+  restrict(['src/app/registry.ts', 'src/editing/**/*.ts', 'src/buffer/**/*.ts'], [analyzeOnly, noParseRows, noCodeMirror, rowsEntryOnly]),
+  restrict(['src/plugins/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly], ['src/plugins/*/renderers/**', 'src/plugins/*/exporters/**']),
+  restrict(['src/plugins/*/renderers/**/*.ts', 'src/plugins/*/exporters/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows]),
+  restrict(['src/views/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows, viewsCoreOnly]),
+  noClock,
   restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['src/grid/**/*.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['tests/**/*.ts'], [rowsEntryOnly]),

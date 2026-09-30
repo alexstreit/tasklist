@@ -49,7 +49,7 @@ function freeName(doc: RowsDocument, name: string): string {
   return `${base}${n}`;
 }
 
-/** Each fix is also added to `made`, since what a settings fix does depends on the whole file, and readPlan checks it. */
+/** Each fix is also added to `made`, since what a settings fix does depends on the whole file, and readTree checks it. */
 export function settingsFixes(doc: RowsDocument, diagnosticOf: (e: RowsError) => Diagnostic, made: Set<Fix>): void {
   const { text } = doc;
   const add = (e: RowsError, fix: Fix) => {

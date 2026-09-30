@@ -2,9 +2,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { applyEdits } from 'rows';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import type { Model } from '../../src/core';
-import { load } from './helpers';
+import { est, load, total } from './helpers';
 
 function only(model: Model) {
   expect(model.diagnostics).toHaveLength(1);
@@ -31,7 +31,7 @@ describe('spec §2.9 diagnostics', () => {
     const { model } = load('A | 4h | bob | note | extra | more');
     const d = only(model);
     expect(d).toMatchObject({ line: 1, severity: 'error', code: 'too-many-cells' });
-    expect(model.roots[0].cells).toHaveLength(3);
+    expect(model.roots[0].fields).toHaveLength(3);
   });
 
   it('unparseable duration → warning, treated as empty (derived)', () => {
@@ -39,8 +39,7 @@ describe('spec §2.9 diagnostics', () => {
     const d = only(model);
     expect(d.line).toBe(1);
     expect(d.severity).toBe('warning');
-    const cell = model.roots[0].cells[0];
-    expect(cell).toMatchObject({ mode: 'derived', effective: 4 });
+    expect(est(model, model.roots[0])).toMatchObject({ mode: 'derived', effective: 4 });
   });
 
   it('invalid compound duration → warning, treated as empty (derived)', () => {
@@ -49,7 +48,7 @@ describe('spec §2.9 diagnostics', () => {
     expect(d.line).toBe(1);
     expect(d.severity).toBe('warning');
     expect(d.code).toBe('invalid-value');
-    expect(model.roots[0].cells[0]).toMatchObject({ mode: 'derived', effective: 20 });
+    expect(est(model, model.roots[0])).toMatchObject({ mode: 'derived', effective: 20 });
   });
 
   it('bare number in compound duration → warning (rows validation)', () => {
@@ -58,7 +57,7 @@ describe('spec §2.9 diagnostics', () => {
     expect(d.line).toBe(1);
     expect(d.severity).toBe('warning');
     expect(d.code).toBe('invalid-value');
-    expect(model.roots[0].cells[0]).toMatchObject({ mode: 'derived', hasValue: false });
+    expect(est(model, model.roots[0])).toMatchObject({ mode: 'derived', hasValue: false });
   });
 
   it('unparseable number → warning', () => {
@@ -81,7 +80,8 @@ describe('spec §2.9 diagnostics', () => {
     expect(d.severity).toBe('warning');
     expect(model.columns).toEqual([{ name: 'est', type: 'text' }]);
     // treated as text: no unparseable-value warning for "whatever"
-    expect(model.roots[0].cells[0]).toMatchObject({ kind: 'text', value: 'whatever' });
+    expect(model.roots[0].fields[0]?.text).toBe('whatever');
+    expect(total(model)).toBeUndefined();
   });
 
   it('duplicate column name → error (rows structural)', () => {
@@ -95,7 +95,7 @@ describe('spec §2.9 diagnostics', () => {
     expect(model.diagnostics).toMatchObject([{ line: 1, severity: 'error', code: 'unclosed-frontmatter' }]);
     expect(tree.nodes.map((n) => n.kind)).toEqual(['front-matter', 'item', 'item', 'item', 'comment']);
     expect(model.roots.map((r) => r.title)).toEqual(['columns: est:duration', 'A', 'B']);
-    expect(model.totals[0]).toEqual({ effective: 6, doneSum: 0 });
+    expect(total(model)).toEqual({ effective: 6, doneSum: 0 });
   });
 
   it('a line beginning <!-- → info, with a fix that turns it into a // comment', () => {
@@ -114,7 +114,7 @@ describe('spec §2.9 diagnostics', () => {
     const { model } = load('A | -4h\n    B | 1h');
     const d = only(model);
     expect(d).toMatchObject({ line: 1, severity: 'warning', code: 'negative-value' });
-    expect(model.roots[0].cells[0]).toMatchObject({ mode: 'derived', effective: 1 });
+    expect(est(model, model.roots[0])).toMatchObject({ mode: 'derived', effective: 1 });
   });
 
   it('a legacy file opened as .plan: conversion warnings, whose fix clears them and brings the totals', () => {
@@ -125,7 +125,7 @@ describe('spec §2.9 diagnostics', () => {
       { line: 4, severity: 'warning', code: 'unconvertible-duration' },
       { line: 5, severity: 'warning', code: 'invalid-value' },
     ]);
-    expect(model.totals[0]).toEqual({ effective: 0, doneSum: 0 });
+    expect(total(model)).toEqual({ effective: 0, doneSum: 0 });
     const [fix] = model.diagnostics[0].fixes!;
     expect(model.diagnostics[1].fixes).toEqual([fix]);
     expect(fix).toMatchObject({ label: 'Add unit=h hpd=8 dpw=5', tier: 'click' });
@@ -133,7 +133,7 @@ describe('spec §2.9 diagnostics', () => {
     expect(fixed.split('\n')[1]).toBe('columns: est:duration unit=h hpd=8 dpw=5 | owner:text');
     const after = analyze(fixed, 'legacy.plan');
     expect(after.diagnostics).toEqual([]);
-    expect(after.totals[0]).toEqual({ effective: 20, doneSum: 0 });
+    expect(total(after)).toEqual({ effective: 20, doneSum: 0 });
   });
 
   it('the conversion fix adds only the options a column is missing', () => {

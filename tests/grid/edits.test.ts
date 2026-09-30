@@ -5,19 +5,19 @@
 import { applyEdits } from 'rows';
 import type { EditResult } from 'rows';
 import { describe, expect, it } from 'vitest';
-import { analyze } from '../../src/core';
-import type { Model, ModelNode } from '../../src/core';
+import { analyze } from '../../src/app/registry';
+import type { ItemNode, Model } from '../../src/core';
 import { canMarkDone, insertItem, setDone, setField, setTitle } from '../../src/grid/edits';
 
-function flat(model: Model): ModelNode[] {
-  const out: ModelNode[] = [];
-  const visit = (n: ModelNode): void => void (out.push(n), n.children.forEach(visit));
+function flat(model: Model): ItemNode[] {
+  const out: ItemNode[] = [];
+  const visit = (n: ItemNode): void => void (out.push(n), n.children.forEach(visit));
   model.roots.forEach(visit);
   return out;
 }
 
 /** The model of `text` and its node on `line`. */
-function at(text: string, line: number): { model: Model; node: ModelNode } {
+function at(text: string, line: number): { model: Model; node: ItemNode } {
   const model = analyze(text);
   const node = flat(model).find((n) => n.line === line);
   if (!node) throw new Error(`no item on line ${line}`);

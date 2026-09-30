@@ -4,12 +4,13 @@
 import { readFlag } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, EditResult } from 'rows';
 import { formatDuration } from '../core';
-import type { Cell, Column, Diagnostic, Model, ModelNode, Node, Span } from '../core';
+import type { Column, Diagnostic, ItemNode, Model, Node, Pinnable, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
 import { canMarkDone, columnOf, deleteItem, insertIndent, insertItem, levels, moveItem, setDone, setField, setFlag, setLine, setTitle, shiftItem, withRepairs } from './edits';
 import { plainRefusal } from './messages';
+import { hasValue, rollup, totals } from '../plugins/estimate/fields';
 import { mountProblems } from './problems';
 import './grid.css';
 
@@ -22,7 +23,7 @@ const DECLARED = 2;
 /** An item line, or any other line shown as one editable full-width cell. */
 type Row =
   // `depth` is the level the row is shown at, `level` the one rows' structure edits use (edits.ts `levels`).
-  | { kind: 'item'; line: number; span: Span; indent: number; node: ModelNode; depth: number; level: number }
+  | { kind: 'item'; line: number; span: Span; indent: number; node: ItemNode; depth: number; level: number }
   | { kind: 'line'; line: number; span: Span; indent: number; text: string; blank: boolean };
 
 export interface GridHooks {
@@ -206,12 +207,19 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function rawOf(row: Row, column: number): string | null {
     if (row.kind === 'line') return column === TITLE ? row.text : null;
     if (column === TITLE) return row.node.title;
-    const cell = row.node.cells[column - DECLARED] as Cell | undefined;
-    if (!cell) return null;
+    const index = column - DECLARED;
+    if (!model?.columns[index]) return null;
+    const text = row.node.fields[index]?.text ?? '';
+    const cell = rollupOf(row.node, index);
     // A bool the checkbox shows is toggled, not typed; any other text is edited as text.
-    if (cell.kind === 'text') return boolColumn(column) && isFlag(cell.value) ? null : cell.value;
+    if (!cell) return boolColumn(column) && isFlag(text) ? null : text;
     // An additive value rolls its children in; editing it in place would be a lie.
-    return cell.mode === 'additive' ? null : cell.raw;
+    return cell.mode === 'additive' ? null : text;
+  }
+
+  /** The roll-up of a summable cell; undefined for any other. */
+  function rollupOf(node: ItemNode, index: number): Pinnable<number> | undefined {
+    return model!.get(node, rollup)?.get(model!.columns[index].name);
   }
 
   /** The rows column behind a grid column when it is bool, whose cells show a checkbox; null otherwise. */
@@ -223,37 +231,40 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
   const isFlag = (text: string) => text === '' || text === 'true' || text === 'false';
 
-  function fill(td: HTMLTableCellElement, column: Column, cell: Cell, node?: ModelNode, index?: number): void {
+  function fill(td: HTMLTableCellElement, node: ItemNode, index: number): void {
     td.replaceChildren();
-    if (cell.kind === 'text') {
-      const bool = index === undefined ? null : boolColumn(DECLARED + index);
+    const column = model!.columns[index];
+    const text = node.fields[index]?.text ?? '';
+    const cell = rollupOf(node, index);
+    if (!cell) {
+      const bool = boolColumn(DECLARED + index);
       // A bool is a checkbox (spec §4b.6.5), unless its text is no bool; then it shows as written.
-      if (bool && node && isFlag(cell.value)) {
+      if (bool && isFlag(text)) {
         const box = document.createElement('input');
         box.type = 'checkbox';
         box.tabIndex = -1;
-        box.checked = readFlag(model!.doc, node.source.row, bool) === true;
+        box.checked = readFlag(model!.doc, node.row, bool) === true;
         box.addEventListener('change', () => {
-          if (!write(td, (current) => withRepairs(current, setFlag(current, node, index!, box.checked), [node]))) box.checked = !box.checked;
+          if (!write(td, (current) => withRepairs(current, setFlag(current, node, index, box.checked), [node]))) box.checked = !box.checked;
         });
         td.classList.add('check');
         td.append(box);
         return;
       }
-      td.textContent = cell.value;
+      td.textContent = text;
       return;
     }
     if (cell.mode === 'additive') {
       td.classList.add('additive');
-      td.title = `additive value "${cell.raw}" — edit it in the text editor`;
+      td.title = `additive value "${text}" — edit it in the text editor`;
       td.append(muted('+'));
     }
     // An unestimated subtree shows nothing rather than "0h".
-    if (!cell.hasValue) return;
+    if (!model!.get(node, hasValue)?.get(column.name)) return;
     td.append(format(column, cell.effective));
     if (cell.mode === 'derived') td.classList.add('derived');
     // Derived cells render bare: effective already is the child sum.
-    else if (cell.childrenHaveValue) td.append(muted(`⟨Σ ${format(column, cell.childSum)}⟩`));
+    else if (cell.derived !== undefined) td.append(muted(`⟨Σ ${format(column, cell.derived)}⟩`));
   }
 
   /** `className` is passed in rather than set by the caller, so it cannot wipe the diagnostic class. */
@@ -271,8 +282,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   }
 
   /** What a row's WBS badge lists: its extra values, and each column it sets twice with both values. */
-  function extraValues(node: ModelNode): string {
-    const row = node.source.row;
+  function extraValues(node: ItemNode): string {
+    const row = node.row;
     const repeated = (c: RowsCell) => row.errors.some((e) => e.code === 'column-set-twice' && e.from! >= c.from && e.from! < c.to);
     const shown = (c: RowsCell) => (c.name ? `${c.name.text}=` : '') + (c.text ?? '');
     const parts: string[] = [];
@@ -325,7 +336,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     // would make Tab walk the checkbox column instead of the grid.
     box.tabIndex = -1;
     // Done through an ancestor: shown, but only the ancestor's marker can clear it.
-    box.disabled = !canMarkDone(model!) || (node.done && !node.source.done);
+    box.disabled = !canMarkDone(model!) || (node.done && !node.ownDone);
     box.addEventListener('change', () => {
       if (!write(check, (current) => withRepairs(current, setDone(current, node, box.checked), [node]))) box.checked = !box.checked;
     });
@@ -335,7 +346,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     title.textContent = node.title;
     title.style.paddingLeft = `${0.5 + row.depth * 1.25}em`;
 
-    node.cells.forEach((cell, i) => fill(addCell(tr, node.line, DECLARED + i), columns[i], cell, node, i));
+    columns.forEach((_, i) => fill(addCell(tr, node.line, DECLARED + i), node, i));
   }
 
   /** A comment or blank line: one full-width cell holding the raw text. */
@@ -395,9 +406,9 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     total.insertCell();
     total.insertCell();
     total.insertCell().textContent = 'Total';
-    columns.forEach((column, i) => {
+    columns.forEach((column) => {
       const td = total.insertCell();
-      const sum = model?.totals[i];
+      const sum = model?.value(totals)?.get(column.name);
       if (!sum) return;
       td.append(format(column, sum.effective), muted(`done ${format(column, sum.doneSum)}`));
     });
@@ -491,7 +502,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     // Shows the model as it stands; the rebuild after the edit corrects it.
     if (row.kind === 'line') td.textContent = row.text;
     else if (column === TITLE) td.textContent = row.node.title;
-    else if (model) fill(td, model.columns[column - DECLARED], row.node.cells[column - DECLARED], row.node, column - DECLARED);
+    else if (model) fill(td, row.node, column - DECLARED);
     td.focus();
   }
 
@@ -759,7 +770,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       label: 'Toggle done',
       run: (row) => row.kind === 'item' && write(cellFor(row.line, DONE), (current) => withRepairs(current, setDone(current, row.node, !row.node.done), [row.node])),
       // A row done through an ancestor has no marker of its own to clear.
-      enabled: (row) => row.kind === 'item' && canMarkDone(model!) && (!row.node.done || row.node.source.done),
+      enabled: (row) => row.kind === 'item' && canMarkDone(model!) && (!row.node.done || row.node.ownDone),
     },
   ];
 
@@ -918,8 +929,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function readModel(next: Model): void {
     const text = buffer.text();
     const level = levels(next);
-    const items = new Map<number, ModelNode>();
-    const collect = (node: ModelNode): void => void (items.set(node.line, node), node.children.forEach(collect));
+    const items = new Map<number, ItemNode>();
+    const collect = (node: ItemNode): void => void (items.set(node.line, node), node.children.forEach(collect));
     next.roots.forEach(collect);
 
     rows = [];
@@ -962,7 +973,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (!diagnostic.span) return WBS;
     if (row.kind === 'line') return TITLE;
     if (within(row.node.titleSpan, diagnostic.span)) return TITLE;
-    const i = row.node.cells.findIndex((cell) => cell.span && within(cell.span, diagnostic.span as Span));
+    const i = row.node.fields.findIndex((field) => field && within(field.span, diagnostic.span as Span));
     return i >= 0 ? DECLARED + i : WBS;
   }
 

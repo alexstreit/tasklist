@@ -7,7 +7,7 @@ import type { Diagnostic } from '@codemirror/lint';
 import { EditorView } from '@codemirror/view';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CodeMirrorBuffer } from '../../src/buffer';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { mountTextEditor } from '../../src/editor';
 import type { TextEditor } from '../../src/editor';
 

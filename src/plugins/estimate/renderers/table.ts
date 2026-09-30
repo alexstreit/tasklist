@@ -1,16 +1,16 @@
 // Flat table renderer. One row per item with a level column, no nesting.
 
-import type { Model, ModelNode, RenderContext, Renderer } from '../../core';
-import { addItemRow, addTotalRow, addValueCells, createGrid, mount } from '../grid';
+import type { ItemNode, Model, RenderContext, Renderer } from '../../../core';
+import { addItemRow, addTotalRow, addValueCells, createGrid, mount, requires } from './shared';
 
 export const tableRenderer: Renderer = {
   id: 'table',
   label: 'Table',
-  requires: [],
+  requires,
 
   render(model: Model, host: HTMLElement, ctx: RenderContext): void {
     const table = createGrid('plan-table', ['#', 'level', ''], model);
-    const visit = (node: ModelNode, level: number): void => {
+    const visit = (node: ItemNode, level: number): void => {
       const row = addItemRow(table, node, ctx);
       const levelCell = row.insertCell();
       levelCell.className = 'level';

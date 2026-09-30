@@ -1,7 +1,7 @@
 // Line operations, spec §3.8. Plain strings in, text edits out.
 
 import { describe, expect, it } from 'vitest';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { deleteLines, indent, moveDown, moveUp, outdent, toggleComment } from '../../src/editing';
 import type { LineRange } from '../../src/editing';
 import type { TextEdit } from '../../src/buffer';

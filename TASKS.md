@@ -2,7 +2,7 @@
 
 Work these in order. Each task is one Claude Code session. A task is done only when every acceptance criterion is met and the human has reviewed.
 
-**Status:** Tasks 1–23 complete. Tasks 24 and 25 awaiting review.
+**Status:** Tasks 1–23 complete. Tasks 24, 25 and 26 awaiting review.
 
 ---
 
@@ -857,17 +857,55 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 
 **Acceptance criteria**
 
-- [ ] Every existing test passes. A test is rewritten only where it read a moved value, and each rewrite is listed in the task notes with the reason.
-- [ ] The §2.10 example gives exactly the table in the spec, read through `rollup`, `doneSum` and the totals field, including `Auth`'s override with `derived` 23h.
-- [ ] A leaf estimate has `mode: 'pinned'` and no `derived`. A parent with estimated children has `derived`. A parent whose children have no estimates has no `derived` and no diagnostic.
-- [ ] One test per registry check, each asserting the plugin's name in the message.
-- [ ] The runner's order is the same across repeated registrations. A stage reading a field whose stage was skipped is recorded in `inactive`. `set` with an undeclared key, and `set` with a document-scope key, both throw.
-- [ ] With an empty registry, `analyze` returns the tree, lines and `readTree`'s diagnostics without error, and the tree renderer is greyed out with "needs the estimate plugin".
-- [ ] The import test fails on a planted import of an undeclared plugin. Each new lint rule fails on a planted probe.
-- [ ] `analyze` on the 500-line plan is at most twice Task 21's 1.33 ms median.
-- [ ] Nothing visible changes in the browser. **Manual pass pending review.**
+- [x] Every existing test passes. A test is rewritten only where it read a moved value, and each rewrite is listed in the task notes with the reason. — see "Rewritten tests" below.
+- [x] The §2.10 example gives exactly the table in the spec, read through `rollup`, `doneSum` and the totals field, including `Auth`'s override with `derived` 23h. — `tests/core/example.test.ts`. The table's `—` is `derived` absent, and its `override` is `pinned`.
+- [x] A leaf estimate has `mode: 'pinned'` and no `derived`. A parent with estimated children has `derived`. A parent whose children have no estimates has no `derived` and no diagnostic. — `tests/core/compute.test.ts`, "the rollup field".
+- [x] One test per registry check, each asserting the plugin's name in the message. — `tests/core/plugins.test.ts`: repeated id, unregistered `requires`, `requires` cycle, a field with two owners, a stage writing a field its plugin doesn't own, a read from a plugin not required, a stage cycle (and a stage reading its own write).
+- [x] The runner's order is the same across repeated registrations. A stage reading a field whose stage was skipped is recorded in `inactive`. `set` with an undeclared key, and `set` with a document-scope key, both throw. — `tests/core/plugins.test.ts`; also `setValue` with a node-scope key.
+- [x] With an empty registry, `analyze` returns the tree, lines and `readTree`'s diagnostics without error, and the tree renderer is greyed out with "needs the estimate plugin". — `tests/core/plugins.test.ts`.
+- [x] The import test fails on a planted import of an undeclared plugin. Each new lint rule fails on a planted probe. — `tests/plugins/imports.test.ts` and `tests/plugins/lint.test.ts` (ESLint's API on probe text, with a passing counterpart for each rule).
+- [x] `analyze` on the 500-line plan is at most twice Task 21's 1.33 ms median. — 1.01 ms median (p99 1.65 ms) on a 500-line plan with 445 items, against 0.94 ms (p99 1.60 ms) for HEAD on the same machine and file, median of 1,000 runs after warm-up. Measured once; there is no timing test.
+- [ ] Nothing visible changes in the browser. **Manual pass pending review.** One known change: the Gantt tab's tooltip reads "needs the schedule plugin" instead of "needs a date column" (see Decisions).
 
 **Human review:** read `src/core/fields.ts`, the `Stage` and `StageContext` types, and the estimate plugin's manifest before the rest. They are the contract every later plugin follows.
+
+**How it's built:**
+
+- `src/core/fields.ts`: `FieldKey`, `Pinnable`, `defineField`, `definePinnable`, `definePinnableByColumn`. Keys are frozen objects compared by identity.
+- `src/core/plugin.ts`: `Plugin`, `Stage`, `StageContext`, `Registry`, `createRegistry` and `unmetReason`. The order is computed once in `createRegistry`.
+- `src/core/analyze.ts`: `createAnalyzer(registry)` runs `parsePlan`, `readTree`, then the stages. Node fields are a `Map` per key, keyed by node. `hours(node, column)` returns the field's `amount`. `set` and `setValue` check `writes` and scope, and a diagnostic from `diagnose` is sorted by line with the rest, as `compute` did.
+- `readTree` (`src/core/read.ts`) is `readPlan` renamed. It also sets inherited done: `ItemNode.done` is own or inherited, and the new `ItemNode.ownDone` is the item's own marker (the old `ItemNode.done`). `Model.roots` is `ItemNode[]`: `ModelNode`, `Cell`, `SummableCell`, `TextCell`, `DocumentTotal`, `RollupMode` and `ColumnRequirement` are gone. Text cells are read from `node.fields[i].text`.
+- `src/plugins/estimate/`: `fields.ts` (`rollup`, `hasValue`, `doneSum` as `has-value` and `done-sum`, `totals`), `rollup.ts` (one stage, `estimate.rollup`, which is `compute` with the new shapes), `renderers/` (tree, table, `shared.ts` and `shared.css`, moved from `src/renderers/`), `exporters/tsv.ts`, and `index.ts`, the manifest.
+- `src/app/registry.ts` builds the registry, `analyze`, and the renderer and exporter lists, which add the views' renderers after the plugins'. The shell asks `unmetReason` for every renderer and exporter. Exporter buttons are now made once and greyed out like renderer tabs. They are never greyed out with estimate registered.
+- Grid (`src/grid/index.ts`, `edits.ts`): reads `rollup`, `hasValue` and `totals` through the keys. A column counts as summable when it has a roll-up. `node.source.*` became `node.*`.
+- Lint (`eslint.config.js`): `app/` may import `plugins/` only in `registry.ts`; `views/` import only core; renderers and exporters in `plugins/*/renderers`, `plugins/*/exporters` and `views/` may not import `rows`; no `Date.now()` or argument-less `new Date()` in `core/` or `plugins/` outside renderers and exporters. The core rule already forbade everything but `./` and `rows`, so it is unchanged. `parsePlan` and `readTree` are the core names forbidden outside core.
+
+**Decisions taken:**
+
+- **Gantt stub:** it can't require "a date column" any more, so it moved to `src/views/gantt/` and requires a stand-in for the schedule plugin's `start` field, defined in the stub. Its tooltip is now "needs the schedule plugin". This also fixes a latent crash: before, a file with a `date` column enabled the tab, and clicking it threw. Task 28 replaces the stub.
+- **A skipped stage's reason passes on.** A stage skipped because an input's writer was skipped gets that writer's reason, so `inactive` and a greyed-out view name the cause ("needs project-start"), not the chain. In this task nothing can skip a stage in the app: roles and keys arrive in Task 27. The only way to skip one now is a field that a plugin owns but no stage writes, whose readers get "needs estimate.x, which no stage writes". The tests use that.
+- **An extra registry check:** a stage may write only fields its own plugin owns. Without it, "one owner per field" didn't stop another plugin writing the field.
+- **Field names are kebab-case** (`has-value`, `done-sum`), like rows names. The exported constants are `hasValue` and `doneSum`.
+- **`Diagnostic.source`** (PLUGINS.md §5) is not added. The task says `override-differs` is unchanged, and nothing groups by plugin yet.
+- **Tests import `analyze` from `src/app/registry`**, so they run the app's own registry.
+
+**Rewritten tests:**
+
+- Every test that imported `analyze` from `src/core` now imports it from `src/app/registry`, and the renderer and exporter tests import from their new paths. These are import lines only.
+- `tests/core/helpers.ts`: `est(model, node, column?)` returns the node's `rollup` entry with `hasValue` and `doneSum`, read through the keys (it took only the node and returned `cells[0]`). `total(model, column?)` reads `totals`. `flatten` and `byTitle` return `ItemNode`s.
+- `tests/core/compute.test.ts`: `est` takes the model. `childSum` became `derived`, and "childrenHaveValue reflects the children only" became "derived reflects the children only" (`derived` present or absent).
+- `tests/core/example.test.ts`: the table's `childSum` column is `derived` (`undefined` on leaves, which the spec shows as `—`) and `override` is `pinned`. Totals come from `totals`, with no entry for text columns (they were `null`). Text cells come from `fields[i].text`, and an unset one is `null` (it was `''`).
+- `tests/core/duration.test.ts`: reads through `est`; `override` is `pinned`.
+- `tests/core/diagnostics.test.ts`, `columns.test.ts`, `parse.test.ts`, `messy.test.ts`: `cells[i]` became `est(...)` or `fields[i]`, and `totals[i]` became `total(...)`. "every rows type is a column" asserts an empty `rollup` map and empty `totals` in place of `null` totals.
+- `tests/renderers/tree.test.ts`, `table.test.ts`: "declares no requirements" became "requires estimate's roll-ups and totals". The Gantt test asserts a schedule-plugin requirement in place of `{ type: 'date' }`.
+- `tests/app/shell.test.ts`: the Gantt tooltip is "needs the schedule plugin".
+- `tests/exporters/tsv.test.ts`: the forged tab-and-newline value is set on `fields[1].text` (it was set on `cells[1].value`).
+- `tests/grid/repair.test.ts`: the rejoined notes value is read from `fields[2].text`.
+- `tests/grid/edits.test.ts`: `ModelNode` became `ItemNode` in its helper types.
+
+**Follow-up (Task 28):** move the Gantt renderer into `src/plugins/schedule/` and delete the placeholder `schedule.start` key in `src/views/gantt/index.ts`. The renderer then requires the schedule plugin's own field.
+
+**Spec:** plan-format-spec §3.1 (`readTree`, `ownDone` and inherited `done`), §3.2 (stages, field keys, the estimate fields and how they map to §2.7's terms, `createAnalyzer`), §3.3 and §3.6 (`requires: FieldKey[]`, greying reasons, where renderers and exporters live), and the §5.2 path. CLAUDE.md non-negotiable 5 names the estimate fields by key, and non-negotiable 10 and the repo layout have the new paths. §2.7 keeps its terms (`childSum`, `override`), since its semantics are unchanged. No rows spec is touched, and there are no spec questions.
 
 ---
 

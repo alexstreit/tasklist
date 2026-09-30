@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { CodeMirrorBuffer, InMemoryBuffer } from '../../src/buffer';
 import type { PlanBuffer } from '../../src/buffer';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { mountGrid } from '../../src/grid';
 import type { GridEditor } from '../../src/grid';
 import cases from '../fixtures/repair-cases.plan?raw';
@@ -131,7 +131,7 @@ describe('auto repairs go with the grid edit that touches the row (spec §4b.6.1
     open(broken);
     edit(1, EST, '5h');
     expect(buffer.text()).toBe('Login | 5h | alice | "call Bob | then Alice"\n');
-    expect(analyze(buffer.text()).roots[0].cells[2]).toMatchObject({ value: 'call Bob | then Alice' });
+    expect(analyze(buffer.text()).roots[0].fields[2]).toMatchObject({ text: 'call Bob | then Alice' });
     valid();
   });
 

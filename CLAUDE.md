@@ -18,10 +18,11 @@ Read `PLUGINS.md` before touching `src/core/`, `src/plugins/` or `src/views/`.
 
 ```
 src/
-  core/        parse + compute. Pure TypeScript. NO imports from dom, codemirror, or src/ui.
+  core/        parse, readTree, fields, registry and stage runner. Pure TypeScript. NO imports from dom, codemirror, or src/ui.
   editor/      CodeMirror 6 language mode, folding, keymap
-  renderers/   one folder per renderer, each exporting a Renderer
-  app/         shell: wires buffer -> parse -> compute -> active renderer
+  plugins/     one folder per plugin: its manifest, stages, fields, renderers and exporters (PLUGINS.md)
+  views/       renderers that belong to no plugin
+  app/         shell: wires buffer -> analyze -> active renderer; registry.ts builds the registry
 tests/
   core/        unit tests for parse and compute
 packages/
@@ -47,12 +48,12 @@ Enforce the `core/` boundary with an ESLint `no-restricted-imports` rule or equi
 2. **`parse` and `compute` are pure functions** with no DOM or CodeMirror dependency. They must be unit-testable in isolation.
 3. **Every tree node carries its source range** (line, and character span per field). The preview and diagnostics depend on this; a future grid editor depends on this.
 4. **Parsing is lossless.** Comments and blank lines are retained as nodes. Round-tripping a file through parse must not lose anything.
-5. **Renderers never do arithmetic.** They read `effective`, `childSum`, `doneSum`, `mode`, `done` and `diagnostics` from the model. If a renderer needs a number that isn't on the model, add it in `compute`.
+5. **Renderers never do arithmetic.** They read fields through their keys — estimate's `rollup` (`effective`, `derived`, `mode`), `hasValue`, `doneSum` and `totals` — plus `done` and `diagnostics` from the model. If a renderer needs a number that isn't on the model, add a field in the owning plugin's stage.
 6. **Renderers implement the `Renderer` interface** from spec §3.3 and declare `requires`. The app shell must not special-case any renderer.
 7. **One editor at a time.** Switching editors re-parses the buffer.
 8. **Units are fixed in the MVP**: bare number = hours, `1d = 8h`, `1w = 5d`. Store durations internally as hours.
 9. **Defaults must work with no front matter**: `columns: est:duration | owner:text | notes:text`.
-10. **`Model.doc` is for editors only.** Renderers and exporters read computed fields, never `doc`. `src/renderers/` and `src/exporters/` may not import `rows` (lint-enforced).
+10. **`Model.doc` is for editors only.** Renderers and exporters read computed fields, never `doc`. Renderers and exporters (`src/plugins/*/renderers/`, `src/plugins/*/exporters/`, `src/views/`) may not import `rows` (lint-enforced).
 
 ## Conventions
 

@@ -1,28 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { analyze, formatDuration } from '../../src/core';
-import type { SummableCell } from '../../src/core';
+import { analyze } from '../../src/app/registry';
+import { formatDuration } from '../../src/core';
+import { est } from './helpers';
 
 // The duration grammar is rows' (base §5, tested by the conformance suite). The plan reads values as hours.
 describe('reading summable values (§2.6)', () => {
   const read = (value: string, columns = 'est:duration unit=h hpd=8 dpw=5') => {
     const model = analyze(`---\ncolumns: ${columns}\n---\nA | ${value}\n`);
-    const cell = model.roots[0].cells[0] as SummableCell;
+    const cell = est(model, model.roots[0], model.columns[0].name);
     return { hours: cell.hasValue ? cell.effective : null, mode: cell.mode, diagnostics: model.diagnostics.map((d) => d.code) };
   };
 
   it.each([
-    ['4', 4, 'override'],
-    ['4h', 4, 'override'],
-    ['2d', 16, 'override'],
-    ['1.5w', 60, 'override'],
+    ['4', 4, 'pinned'],
+    ['4h', 4, 'pinned'],
+    ['2d', 16, 'pinned'],
+    ['1.5w', 60, 'pinned'],
     ['+1d', 8, 'additive'],
-    ['2d 4h', 20, 'override'],
-    ['4h 2d', 20, 'override'],
-    ['1w 2d 4h', 60, 'override'],
+    ['2d 4h', 20, 'pinned'],
+    ['4h 2d', 20, 'pinned'],
+    ['1w 2d 4h', 60, 'pinned'],
     ['+2d 4h', 20, 'additive'],
-    ['2 d 4 h', 20, 'override'],
+    ['2 d 4 h', 20, 'pinned'],
     ['+ 2 d 4 h', 20, 'additive'],
-    ['90m', 1.5, 'override'],
+    ['90m', 1.5, 'pinned'],
   ])('reads %s as %ih', (value, hours, mode) => {
     expect(read(value)).toEqual({ hours, mode, diagnostics: [] });
   });
@@ -32,7 +33,7 @@ describe('reading summable values (§2.6)', () => {
   });
 
   it('a number column reads numbers, with + additive', () => {
-    expect(read('2.5', 'n:number')).toEqual({ hours: 2.5, mode: 'override', diagnostics: [] });
+    expect(read('2.5', 'n:number')).toEqual({ hours: 2.5, mode: 'pinned', diagnostics: [] });
     expect(read('+2', 'n:number')).toEqual({ hours: 2, mode: 'additive', diagnostics: [] });
     expect(read('-2', 'n:number')).toEqual({ hours: null, mode: 'derived', diagnostics: ['negative-value'] });
   });

@@ -1,4 +1,4 @@
-// Duration formatting. Spec §2.6. Values are read as hours by readPlan;
+// Duration formatting. Spec §2.6. Values are read as hours by readTree;
 // formatting uses the MVP's fixed units: 1d = 8h, 1w = 5d.
 
 /** Mixed units, largest first: 60 -> "1w 2d 4h". 0 -> "0h". */

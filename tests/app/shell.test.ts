@@ -231,7 +231,7 @@ describe('renderer switcher', () => {
     expect(tab('Tree').classList.contains('active')).toBe(true);
     expect(tab('Table').disabled).toBe(false);
     expect(tab('Gantt').disabled).toBe(true);
-    expect(tab('Gantt').title).toBe('needs a date column');
+    expect(tab('Gantt').title).toBe('needs the schedule plugin');
   });
 
   it('switches to the table renderer and back', () => {

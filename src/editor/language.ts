@@ -9,7 +9,7 @@ import { Decoration, EditorView, ViewPlugin } from '@codemirror/view';
 import type { DecorationSet, ViewUpdate } from '@codemirror/view';
 import { tokenizeLine } from 'rows';
 import type { LineState } from 'rows';
-import type { Model, ModelNode } from '../core';
+import type { ItemNode, Model } from '../core';
 import { FALLBACK_SYNTAX, lineState, styleLine, syntaxOf } from './syntax';
 import type { Syntax } from './syntax';
 
@@ -45,7 +45,7 @@ export function commentOf(state: EditorState): string {
 export function showSyntax(view: EditorView, model: Model): void {
   if (model.doc.text !== view.state.doc.toString()) return;
   const starts: number[] = [];
-  const visit = (node: ModelNode): void => {
+  const visit = (node: ItemNode): void => {
     if (node.done) starts.push(node.span.from);
     node.children.forEach(visit);
   };

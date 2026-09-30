@@ -1,4 +1,4 @@
-// readPlan: a rows document read as a plan. Spec §2.3–2.6 and §3.1. Items
+// readTree: a rows document read as a plan. Spec §2.3–2.6, §2.8 and §3.1. Items
 // carry the rows spans through unchanged; summable cells are read as hours.
 
 import { applyEdits, durationToMinutes, KNOWN_KEYS, parseDuration, readFlag } from 'rows';
@@ -56,7 +56,7 @@ function resolves(before: RowsDocument, d: Diagnostic, fix: Fix, after: Tree): b
  * only when it resolves its diagnostic (spec §4b.6.1): what one does depends on the whole file, such
  * as which profile applies once a `profile:` line is gone.
  */
-export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocument): Tree {
+export function readTree(doc: RowsDocument, reparse?: (text: string) => RowsDocument): Tree {
   const { schema, text } = doc;
   const diagnostics: Diagnostic[] = [];
   const byError = new Map<RowsError, Diagnostic>();
@@ -77,7 +77,7 @@ export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocu
     });
   }
 
-  // Fixes to the settings, which readPlan checks before offering (see `reparse`).
+  // Fixes to the settings, which readTree checks before offering (see `reparse`).
   const settings = new Set<Fix>();
   const declared = schema.columns.filter((c) => c.index > 0 && !c.implicit);
   const columns: Column[] = declared.map((c) => ({ name: c.name, type: c.kind }));
@@ -156,7 +156,8 @@ export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocu
       span: { from: row.from, to: row.to },
       row,
       indent: row.indent.width,
-      done: isDone(row),
+      ownDone: isDone(row),
+      done: false,
       title: row.lead.text ?? '',
       titleSpan: { from: row.lead.valueFrom, to: row.lead.valueTo },
       fields,
@@ -183,15 +184,17 @@ export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocu
     return { kind: 'front-matter', line: line.line, span };
   });
 
-  // The hierarchy and outline numbers come from the rows parent relation (spec §2.4, §3.1).
+  // The hierarchy and outline numbers come from the rows parent relation (spec §2.4, §3.1);
+  // an item is done when it or an ancestor is (spec §2.8).
   for (const [row, item] of items) item.children = row.children.map((child) => items.get(child)!);
   const roots = doc.rows.filter((row) => row.parent === null).map((row) => items.get(row)!);
-  const number = (list: ItemNode[], prefix: string): void =>
+  const number = (list: ItemNode[], prefix: string, inheritedDone: boolean): void =>
     list.forEach((item, i) => {
       item.outlineNumber = `${prefix}${i + 1}`;
-      number(item.children, `${item.outlineNumber}.`);
+      item.done = inheritedDone || item.ownDone;
+      number(item.children, `${item.outlineNumber}.`, item.done);
     });
-  number(roots, '');
+  number(roots, '', false);
 
   if (reparse && settings.size > 0) {
     const after = new Map<string, Tree>(); // one read per distinct fix, which many diagnostics may share
@@ -200,7 +203,7 @@ export function readPlan(doc: RowsDocument, reparse?: (text: string) => RowsDocu
       d.fixes = d.fixes.filter((fix) => {
         if (!settings.has(fix)) return true;
         const key = JSON.stringify(fix.edits);
-        if (!after.has(key)) after.set(key, readPlan(reparse(applyEdits(text, fix.edits))));
+        if (!after.has(key)) after.set(key, readTree(reparse(applyEdits(text, fix.edits))));
         return resolves(doc, d, fix, after.get(key)!);
       });
       if (d.fixes.length === 0) delete d.fixes;

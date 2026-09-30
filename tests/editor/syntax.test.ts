@@ -11,7 +11,7 @@ import type { Cell, LineState, ParseOptions, RowsDocument } from 'rows';
 import { describe, expect, it } from 'vitest';
 import { FALLBACK_SYNTAX, lineState, styleLine, syntaxOf } from '../../src/editor/syntax';
 import type { Styled, Syntax } from '../../src/editor/syntax';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { example } from './helpers';
 
 const conformance = fileURLToPath(new URL('../../packages/rows/conformance/', import.meta.url));

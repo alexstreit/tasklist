@@ -62,6 +62,7 @@ The app builds a **registry** from the plugins it ships. `createRegistry(plugins
 - a bare role, key or marker name a stage declares is in the plan format's **core vocabulary** (`src/core/vocabulary.ts`), which also fixes each core role's column types and each core key's value type;
 - a qualified name a stage declares starts with its own plugin's id, so `propricer` can declare `propricer.labour-category` but not `schedule.lag`;
 - every field has exactly one owning plugin, and every field a stage reads is owned by that plugin or one it `requires`;
+- a stage writes only fields its own plugin owns;
 - stages form no cycle through the fields they read and write.
 
 These are programmer errors, so they throw and a test covers each. What a _file_ gets wrong is a diagnostic instead (§6).

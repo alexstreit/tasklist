@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyEdits } from 'rows';
 import type { TextEdit } from 'rows';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import type { Diagnostic, Fix, Model } from '../../src/core';
 
 const fixtures = import.meta.glob(['../fixtures/*.plan', '../../examples/*.plan'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;

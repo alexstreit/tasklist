@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byTitle, load } from './helpers';
+import { byTitle, load, total } from './helpers';
 
 const parse = (text: string) => load(text).tree;
 
@@ -95,7 +95,7 @@ describe('empty and trivial files', () => {
     const { model } = load(text);
     expect(model.roots).toHaveLength(0);
     expect(model.diagnostics).toHaveLength(0);
-    expect(model.totals[0]).toEqual({ effective: 0, doneSum: 0 });
+    expect(total(model)).toEqual({ effective: 0, doneSum: 0 });
   });
 });
 

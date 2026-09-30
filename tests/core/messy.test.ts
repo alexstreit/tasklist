@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { applyEdits } from 'rows';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import type { Model } from '../../src/core';
 import messyRaw from '../fixtures/messy.plan?raw';
 import settingsRaw from '../fixtures/messy-settings.plan?raw';
@@ -139,7 +139,7 @@ describe('messy-settings.plan', () => {
   });
 
   it('puts dave in the second owner column, which the padding exception writes', () => {
-    const owners = model.roots[0].children.map((n) => [n.title, n.cells[1], n.cells[2]].map((c) => (typeof c === 'string' ? c : c.kind === 'text' ? c.value : c.raw)));
+    const owners = model.roots[0].children.map((n) => [n.title, n.fields[1]?.text ?? '', n.fields[2]?.text ?? '']);
     expect(owners).toEqual([
       ['~Write copy', 'alice', ''],
       ['Design', 'carol', ''],

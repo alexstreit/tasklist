@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { cursorItemFor, itemLines } from '../../src/app/cursor';
 
 const example = readFileSync(new URL('../../examples/example.plan', import.meta.url), 'utf8');

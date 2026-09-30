@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryBuffer } from '../../src/buffer';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { mountGrid } from '../../src/grid';
 import type { GridEditor } from '../../src/grid';
 import example from '../../examples/example.plan?raw';

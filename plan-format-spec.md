@@ -163,8 +163,8 @@ The fixture lives at `examples/example.plan` and is shared by tests and the app.
             │                                                        │
  editors ───┤ apply(edits) / undo / redo            onChange ────────┼──► analyze ──► model ──► renderer(s)
  text, grid │                                                        │    (parseRows →        tree, table
-            └────────────────────────────────────────────────────────┘     readPlan →          (future: gantt)
-                                                                            compute)        ──► exporter(s)
+            └────────────────────────────────────────────────────────┘     readTree →          (future: gantt)
+                                                                            stages)         ──► exporter(s)
    edits come from src/editing (line ops) and the rows edit API (cells)                         TSV
 ```
 
@@ -172,25 +172,34 @@ The fixture lives at `examples/example.plan` and is shared by tests and the app.
 
 `parseRows(text, { profiles: { plan }, defaultProfile })` from the `rows` library (§3.9) returns a lossless `RowsDocument`: every line classified, every row with its indent, markers, anchors, cells and overflow, all as spans into the text, plus the parent relation and every error.
 
-`readPlan(doc) → Tree` is the plan layer. It turns rows into items and reads summable cells as hours (§2.6), carrying the rows spans through unchanged (each item keeps its rows `Row`), so that:
+`readTree(doc) → Tree` is the plan layer. It turns rows into items and reads summable cells as hours (§2.6), carrying the rows spans through unchanged (each item keeps its rows `Row`), so that:
 
 - the preview can highlight the node under the cursor,
 - diagnostics point at the right column,
 - the grid can ask the rows edit API for a precise replacement.
 
-The tree's columns are the declared columns in order. Implicit columns (`parent`, `done`, and `id` when identity is on) are not columns of the tree; `done` is read into each item's done flag (§2.5).
+The tree's columns are the declared columns in order. Implicit columns (`parent`, `done`, and `id` when identity is on) are not columns of the tree; `done` is read into each item's own done flag (`ownDone`, §2.5), and `done` is set when the item or an ancestor is done (§2.8). Inheritance is structure, not arithmetic, so it is read here, not computed by a plugin.
 
 Each item carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`), computed from the rows parent relation. Only rows are counted. Outline numbers are structural references and shift when lines are inserted above them. They are not stable IDs; anchors are.
 
 ### 3.2 Compute
 
-`compute(tree, columns) → Model`. Pure function. Walks the tree bottom-up and attaches `effective`, `childSum`, `mode`, `hasValue`, `childrenHaveValue`, `done`, `doneSum` and diagnostics to each node, plus document totals. No renderer or exporter performs arithmetic.
+Computation is done by **plugins** (`PLUGINS.md`). A plugin's **stages** are pure functions that each declare the fields they read and write. A field is a typed key, `FieldKey<T>`, that one plugin owns and exports (`src/core/fields.ts`); a value is read with `model.get(node, key)` for a node-scope field or `model.value(key)` for a document-scope one, never as a property. `createRegistry(plugins)` checks the manifests at startup and orders the stages once, topologically by reads and writes, ties by registration order and then stage id. The app builds its registry in `src/app/registry.ts` and nowhere else.
 
-The model carries the rows document it was read from (`doc`), so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
+The **estimate** plugin (`src/plugins/estimate/`) computes §2.7–§2.8 for every summable column, in one stage, `estimate.rollup`:
 
-The model also carries `lines`: every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
+- `rollup`, a by-column `Pinnable`: per column name, `{ derived?, pin?, effective, mode }`. `derived` is §2.7's `childSum`, present only when a child has a value (§2.7's `childrenHaveValue`); `pin` is the node's own value; `mode` is `derived`, `pinned` (§2.7's `override`) or `additive`.
+- `hasValue` and `doneSum`, per column name, beside it.
+- `totals`, a document-scope field: per column name, the document's `effective` and `doneSum`.
+- the `override-differs` info.
 
-`analyze(text, filename?) → Model` composes `parseRows`, `readPlan` and `compute` and is the single entry point the app shell and any tooling call. The shell passes the current file name, or none for a new document (§2.1). A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `readPlan` or `compute` directly (lint-enforced).
+No renderer or exporter performs arithmetic: they read these fields.
+
+The model carries a fixed core: the rows document it was read from (`doc`), `lines`, `roots` (the tree's items), `columns`, `diagnostics`, and `inactive`, the stages that were skipped with the reason for each. The model carries `doc` so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
+
+`lines` is every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
+
+`createAnalyzer(registry)` returns `analyze(text, filename?) → Model`, which composes `parseRows`, `readTree` and the stages, and is the single entry point the app shell and any tooling call. It is synchronous and pure, and never reads the clock (lint-enforced in `src/core/` and in plugins outside their renderers and exporters). The shell passes the current file name, or none for a new document (§2.1). A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `parsePlan` or `readTree` directly (lint-enforced). With no plugins registered, `analyze` still returns the tree, the lines and `readTree`'s diagnostics.
 
 `src/core/` imports nothing outside itself, the standard library and the `rows` package (lint-enforced).
 
@@ -200,12 +209,14 @@ The model also carries `lines`: every line of the file in order, exactly as rows
 interface Renderer {
   id: string;
   label: string;
-  requires: ColumnRequirement[]; // empty for tree and table
+  requires: FieldKey<unknown>[]; // tree and table: estimate's rollup, hasValue and totals
   render(model: Model, host: HTMLElement, ctx: RenderContext): void;
 }
 ```
 
-`requires` lets the app grey out a renderer whose needs aren't met ("add a `date` column to enable Gantt") instead of rendering nonsense; an unsatisfied renderer is never called.
+`requires` lets the app grey out a renderer whose needs aren't met instead of rendering nonsense; an unsatisfied renderer is never called. When the plugin that owns a required field isn't registered, the reason is "needs the estimate plugin"; when a stage that writes a required field was skipped, it is the reason of the first such stage in stage order. The app asks core for the reason (`unmetReason`) and special-cases no renderer.
+
+Renderers that read a plugin's fields belong to that plugin: tree and table are in `src/plugins/estimate/renderers/`. A renderer that reads only core fields goes in `src/views/`, as does the Gantt placeholder until the schedule plugin exists.
 
 `RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), and `setCursorLine(line)` for click-to-line. It is renderer-agnostic.
 
@@ -233,11 +244,12 @@ The shared thing is the text buffer, not the model. A CRDT over the text (e.g. Y
 interface Exporter {
   id: string;
   label: string; // e.g. "Copy for Excel"
+  requires: FieldKey<unknown>[]; // TSV: estimate's rollup and hasValue
   export(model: Model): { mime: string; data: string };
 }
 ```
 
-Exporters live in `src/exporters/`, are registered in the app shell exactly like renderers, and appear as buttons on the preview toolbar. Failures (clipboard permission, framed contexts) are shown visibly.
+Exporters belong to the plugin whose fields they read, as renderers do (the TSV exporter is in `src/plugins/estimate/exporters/`), are registered through its manifest, and appear as buttons on the preview toolbar, greyed out by `requires` as renderers are. Failures (clipboard permission, framed contexts) are shown visibly.
 
 **TSV exporter ("Copy for Excel").** Tab-separated text, one header row then one row per item in document order:
 
@@ -530,7 +542,7 @@ The extra values are the overflow cells other than a column's repeat, and any ce
 
 ### 5.2 Table renderer
 
-Same data as the tree, flat: `#`, `level`, title, declared columns. Same cell, highlight and click rules via `RenderContext`. Tree and table share a row builder in `src/renderers/shared/`.
+Same data as the tree, flat: `#`, `level`, title, declared columns. Same cell, highlight and click rules via `RenderContext`. Tree and table share a row builder in `src/plugins/estimate/renderers/shared.ts`.
 
 ### 5.3 Theming
 

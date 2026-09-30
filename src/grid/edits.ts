@@ -8,7 +8,7 @@
 
 import { deleteRow, insertRow, levelIndent, moveRow, repairs, rowLevels, setCell, setLead, setLevel, setMarker } from 'rows';
 import type { EditResult } from 'rows';
-import type { Model, ModelNode, Span } from '../core';
+import type { ItemNode, Model, Span } from '../core';
 import type { TextEdit } from '../buffer';
 import { normaliseDuration } from './typed';
 
@@ -26,10 +26,10 @@ export function canMarkDone(model: Model): boolean {
   return markers.some((m) => m.name === 'done') || columns.some((c) => c.name === 'done' && c.kind === 'bool');
 }
 
-export function setTitle(model: Model, node: ModelNode, typed: string): EditResult {
+export function setTitle(model: Model, node: ItemNode, typed: string): EditResult {
   const title = written(typed) ?? '';
   if (typed === node.title || title === node.title) return NOTHING;
-  return setLead(model.doc, node.source.row, title);
+  return setLead(model.doc, node.row, title);
 }
 
 /** The rows column for the declared column `index`. */
@@ -38,23 +38,23 @@ export function columnOf(model: Model, index: number) {
 }
 
 /** Write the declared column `index`; an empty value clears the cell. Typed durations are normalised (spec §4b.6.5). */
-export function setField(model: Model, node: ModelNode, index: number, typed: string): EditResult {
-  const current = node.source.fields[index]?.text ?? null;
+export function setField(model: Model, node: ItemNode, index: number, typed: string): EditResult {
+  const current = node.fields[index]?.text ?? null;
   const column = columnOf(model, index);
   const value = written(column.kind === 'duration' ? normaliseDuration(typed) : typed);
   if (typed === current || value === current) return NOTHING;
-  return setCell(model.doc, node.source.row, column, value);
+  return setCell(model.doc, node.row, column, value);
 }
 
 /** Tick or clear a bool cell (spec §4b.6.5), as rows writes a flag. */
-export function setFlag(model: Model, node: ModelNode, index: number, on: boolean): EditResult {
-  return setMarker(model.doc, node.source.row, columnOf(model, index).name, on);
+export function setFlag(model: Model, node: ItemNode, index: number, on: boolean): EditResult {
+  return setMarker(model.doc, node.row, columnOf(model, index).name, on);
 }
 
 /** Turn the node's own done flag on or off. A node done through an ancestor has none of its own. */
-export function setDone(model: Model, node: ModelNode, done: boolean): EditResult {
-  if (done === node.source.done) return NOTHING;
-  return setMarker(model.doc, node.source.row, 'done', done);
+export function setDone(model: Model, node: ItemNode, done: boolean): EditResult {
+  if (done === node.ownDone) return NOTHING;
+  return setMarker(model.doc, node.row, 'done', done);
 }
 
 /** A new item with this title, before a line or at the end, at `indent` spaces. Nothing when no title was typed. */
@@ -76,8 +76,8 @@ export function insertItem(model: Model, at: { beforeLine: number } | 'end', ind
 export function levels(model: Model): Map<number, { shown: number; indent: number }> {
   const indent = rowLevels(model.doc);
   const out = new Map<number, { shown: number; indent: number }>();
-  const visit = (node: ModelNode, depth: number): void => {
-    out.set(node.line, { shown: depth, indent: indent.get(node.source.row) ?? 0 });
+  const visit = (node: ItemNode, depth: number): void => {
+    out.set(node.line, { shown: depth, indent: indent.get(node.row) ?? 0 });
     node.children.forEach((child) => visit(child, depth + 1));
   };
   model.roots.forEach((root) => visit(root, 0));
@@ -85,23 +85,23 @@ export function levels(model: Model): Map<number, { shown: number; indent: numbe
 }
 
 /** The indent of a row inserted above `node`: the node's level, snapped to a valid indent (spec §4b.6.4). */
-export function insertIndent(model: Model, node: ModelNode, depth: number): number {
+export function insertIndent(model: Model, node: ItemNode, depth: number): number {
   return levelIndent(model.doc, { beforeLine: node.line }, depth) ?? node.indent;
 }
 
 /** Indent makes the row the last child of its previous sibling; outdent the next sibling of its parent. */
-export function shiftItem(model: Model, node: ModelNode, depth: number, by: 1 | -1): EditResult {
-  return setLevel(model.doc, node.source.row, depth + by);
+export function shiftItem(model: Model, node: ItemNode, depth: number, by: 1 | -1): EditResult {
+  return setLevel(model.doc, node.row, depth + by);
 }
 
 /** Swap the row and its subtree with its previous or next sibling's. */
-export function moveItem(model: Model, node: ModelNode, dir: 'up' | 'down'): EditResult {
-  return moveRow(model.doc, node.source.row, dir);
+export function moveItem(model: Model, node: ItemNode, dir: 'up' | 'down'): EditResult {
+  return moveRow(model.doc, node.row, dir);
 }
 
 /** Delete the row; its descendants move up one level. */
-export function deleteItem(model: Model, node: ModelNode): EditResult {
-  return deleteRow(model.doc, node.source.row);
+export function deleteItem(model: Model, node: ItemNode): EditResult {
+  return deleteRow(model.doc, node.row);
 }
 
 /** Two edits that can't go in one change: they overlap, or both insert at one place. */
@@ -115,11 +115,11 @@ const touch = (a: TextEdit, b: TextEdit) => a.from <= b.to && b.from <= a.to;
  * out: the edit is what the user asked for. A row's indent repairs go together,
  * and structure operations, which set levels themselves, take none.
  */
-export function withRepairs(model: Model, result: EditResult, touched: ModelNode[], indents = true): EditResult {
+export function withRepairs(model: Model, result: EditResult, touched: ItemNode[], indents = true): EditResult {
   if ('refused' in result || result.edits.length === 0) return result;
   const edits = [...result.edits];
-  for (const { source } of touched) {
-    const labelled = repairs(model.doc, source.row);
+  for (const { row } of touched) {
+    const labelled = repairs(model.doc, row);
     const indent = labelled.find((r) => r.kind === 'indent')?.edits ?? [];
     if (indents && indent.length > 0 && !indent.some((r) => edits.some((e) => overlap(e, r)))) edits.push(...indent);
     for (const r of labelled.filter((r) => r.kind !== 'indent').flatMap((r) => r.edits)) if (!edits.some((e) => touch(e, r))) edits.push(r);

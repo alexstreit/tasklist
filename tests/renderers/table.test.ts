@@ -2,12 +2,13 @@
 // Flat table renderer: one row per item with a level column, numbers identical to the tree.
 
 import { describe, expect, it, vi } from 'vitest';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import type { RenderContext, Renderer } from '../../src/core';
 import { cursorItemFor, itemLines } from '../../src/app/cursor';
-import { ganttRenderer } from '../../src/renderers/gantt';
-import { tableRenderer } from '../../src/renderers/table';
-import { treeRenderer } from '../../src/renderers/tree';
+import { ganttRenderer } from '../../src/views/gantt';
+import { tableRenderer } from '../../src/plugins/estimate/renderers/table';
+import { treeRenderer } from '../../src/plugins/estimate/renderers/tree';
+import { hasValue, rollup, totals } from '../../src/plugins/estimate/fields';
 import example from '../../examples/example.plan?raw';
 
 function render(renderer: Renderer, text: string, cursorLine: number | null = null, setCursorLine = (_line: number) => {}) {
@@ -19,8 +20,8 @@ function render(renderer: Renderer, text: string, cursorLine: number | null = nu
 }
 
 describe('table renderer', () => {
-  it('declares no requirements', () => {
-    expect(tableRenderer.requires).toEqual([]);
+  it("requires estimate's roll-ups and totals", () => {
+    expect(tableRenderer.requires).toEqual([rollup, hasValue, totals]);
   });
 
   it('renders one flat row per item with its level', () => {
@@ -53,8 +54,8 @@ describe('table renderer', () => {
 });
 
 describe('gantt stub', () => {
-  it('requires a date column and refuses to render', () => {
-    expect(ganttRenderer.requires).toEqual([{ type: 'date' }]);
+  it('requires a field of the schedule plugin and refuses to render', () => {
+    expect(ganttRenderer.requires.map((key) => key.plugin)).toEqual(['schedule']);
     expect(() => ganttRenderer.render(analyze(''), document.createElement('div'), {} as RenderContext)).toThrow();
   });
 });

@@ -1,6 +1,7 @@
 // Core data types. Spec §2 and §3. This module imports only the rows library's types.
 
 import type { Row, RowsDocument, TextEdit, TypeKind } from 'rows';
+import type { FieldKey } from './fields';
 
 export type Severity = 'error' | 'warning' | 'info';
 
@@ -77,7 +78,9 @@ export interface ItemNode extends NodeBase {
   /** The rows row, with every span. */
   row: Row;
   indent: number;
-  /** Own `done` marker or `done=true`; inherited done-ness is computed. */
+  /** Own `done` marker or `done=true` (spec §2.5). */
+  ownDone: boolean;
+  /** Own, or inherited from an ancestor (spec §2.8). */
   done: boolean;
   title: string;
   /** The lead value as written, quotes included; markers and anchors excluded. */
@@ -103,72 +106,38 @@ export interface Tree {
   diagnostics: Diagnostic[];
 }
 
-export type RollupMode = 'derived' | 'override' | 'additive';
-
-/** Computed cell for a `duration` or `number` column. Spec §2.7–2.8. */
-export interface SummableCell {
-  kind: 'duration' | 'number';
-  effective: number;
-  childSum: number;
-  mode: RollupMode;
-  doneSum: number;
-  /** Own field non-empty, or any child has a value. False means there is nothing to display. */
-  hasValue: boolean;
-  /** True when any child has `hasValue`; renderers show the child sum only then. */
-  childrenHaveValue: boolean;
-  /** The field text as entered, '' when empty. */
-  raw: string;
-  span: Span | null;
+/** A stage the runner skipped, and why, in plain words (PLUGINS.md §5). */
+export interface Inactive {
+  stage: string;
+  reason: string;
 }
 
-/** A column that isn't summed (text, bool, date, enum, ref…): its decoded text, as written. */
-export interface TextCell {
-  kind: 'text';
-  value: string;
-  span: Span | null;
+/** What a stage may read of the model: the tree and the fields written so far. */
+export interface ModelReader {
+  readonly roots: readonly ItemNode[];
+  readonly columns: readonly Column[];
+  /** A node-scope field's value; undefined when its stage didn't set it on this node. */
+  get<T>(node: ItemNode, key: FieldKey<T>): T | undefined;
+  /** A document-scope field's value. */
+  value<T>(key: FieldKey<T>): T | undefined;
 }
 
-export type Cell = SummableCell | TextCell;
-
-export interface ModelNode {
-  line: number;
-  span: Span;
-  indent: number;
-  title: string;
-  titleSpan: Span;
-  /** Own done flag or inherited from an ancestor. */
-  done: boolean;
-  outlineNumber: string;
-  /** One cell per declared column, in order. */
-  cells: Cell[];
-  children: ModelNode[];
-  source: ItemNode;
-}
-
-export interface DocumentTotal {
-  effective: number;
-  doneSum: number;
-}
-
-export interface Model {
+/** The fixed core, plus the plugin fields behind `get` and `value` (PLUGINS.md §4). */
+export interface Model extends ModelReader {
   /** The rows document the model was read from: its text, schema and spans. Editors ask the rows edit API and tokenizer for edits and tokens against it. */
   doc: RowsDocument;
   columns: Column[];
-  roots: ModelNode[];
+  roots: ItemNode[];
   /** Every line of the file in order, as parsed. Lossless, like the tree: an
    *  editor showing the file needs the comment, blank and front matter lines
    *  too, and must not classify them again for itself. */
   lines: readonly Node[];
-  /** Aligned with `columns`; null for text columns. */
-  totals: (DocumentTotal | null)[];
   diagnostics: Diagnostic[];
+  /** Stages that were skipped, in stage order. */
+  inactive: Inactive[];
 }
 
 // Renderer seam. Spec §3.3.
-
-export interface ColumnRequirement {
-  type: string;
-}
 
 /** The item a renderer should highlight for the editor cursor. */
 export interface CursorItem {
@@ -191,7 +160,8 @@ export interface RenderContext {
 export interface Renderer {
   id: string;
   label: string;
-  requires: ColumnRequirement[];
+  /** The fields it reads; greyed out when one wasn't computed (PLUGINS.md §5). */
+  requires: FieldKey<unknown>[];
   render(model: Model, host: HTMLElement, ctx: RenderContext): void;
 }
 
@@ -200,5 +170,6 @@ export interface Renderer {
 export interface Exporter {
   id: string;
   label: string; // e.g. "Copy for Excel"
+  requires: FieldKey<unknown>[];
   export(model: Model): { mime: string; data: string };
 }

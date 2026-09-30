@@ -2,7 +2,7 @@
 
 import { EditorState } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { toLintDiagnostics } from '../../src/editor';
 
 function lint(text: string) {

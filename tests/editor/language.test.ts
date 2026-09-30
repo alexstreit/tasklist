@@ -6,7 +6,7 @@
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { planEditor, showSyntax, toggleCommentLines } from '../../src/editor';
 import example from '../../examples/example.plan?raw';
 

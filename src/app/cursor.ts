@@ -1,11 +1,11 @@
 // Resolve the editor cursor to the item a renderer should highlight.
 
-import type { CursorItem, Model, ModelNode } from '../core';
+import type { CursorItem, ItemNode, Model } from '../core';
 
 /** Item line numbers in document order. */
 export function itemLines(model: Model): number[] {
   const out: number[] = [];
-  const visit = (n: ModelNode): void => {
+  const visit = (n: ItemNode): void => {
     out.push(n.line);
     n.children.forEach(visit);
   };

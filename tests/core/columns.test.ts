@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { analyze, PLAN_PROFILE } from '../../src/core';
+import { analyze } from '../../src/app/registry';
+import { PLAN_PROFILE } from '../../src/core';
+import { rollup, totals } from '../../src/plugins/estimate/fields';
 
 const DEFAULTS = [
   { name: 'est', type: 'duration' },
@@ -36,12 +38,9 @@ describe('columns (§2.1, §2.6)', () => {
   it('every rows type is a column; only duration and number are summed', () => {
     const model = analyze('---\ncolumns: due:date | ok:bool | size:enum[s, m]\n---\nA | 2026-01-02 | true | m\n');
     expect(model.columns.map((c) => c.type)).toEqual(['date', 'bool', 'enum']);
-    expect(model.roots[0].cells).toEqual([
-      expect.objectContaining({ kind: 'text', value: '2026-01-02' }),
-      expect.objectContaining({ kind: 'text', value: 'true' }),
-      expect.objectContaining({ kind: 'text', value: 'm' }),
-    ]);
-    expect(model.totals).toEqual([null, null, null]);
+    expect(model.roots[0].fields.map((f) => f?.text)).toEqual(['2026-01-02', 'true', 'm']);
+    expect(model.get(model.roots[0], rollup)).toEqual(new Map());
+    expect(model.value(totals)).toEqual(new Map());
   });
 
   it('duplicate names are an error (rows structural)', () => {
