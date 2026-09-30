@@ -2,6 +2,8 @@
 
 Text-driven project estimating tool. Read `plan-format-spec.md` before touching the parser, compute layer, or file format. Work through `TASKS.md` one task at a time; do not start the next task until the current one's acceptance criteria are met.
 
+Read `VISION.md` for where the project is going. Each task names the milestone it serves; don't build ahead of it.
+
 ## Stack
 
 - Vite + TypeScript (`strict: true`)

@@ -433,6 +433,7 @@ Each property test was checked by planting a bug (an off-by-one in value spans, 
 **Open spec questions:** Q24–Q30 in `packages/rows/conformance/QUESTIONS.md`, raised by implementing the base stage: delimiter lines and whitespace, quoted option values, empty declarations, how many errors for several unnamed cells after a named one, profile files without frontmatter or with an unclosed one, what counts as whitespace, and trailing whitespace in an unterminated quote. Each has a disputed base case, and the parser implements the used reading.
 
 **Decisions taken (DESIGN-level, not spec):**
+
 - `Row.cells` includes the lead at index 0, so `cells[i]` lines up with `schema.columns[i]`.
 - `Schema` is `{ table, format, sep, comment, keys, lead, columns }`. `Column.type` is the type string as written until Task 18, except that `ref` reads as `text` in a base-only parse (base §9). `Column.from`/`to` exist only for a declaration written unquoted in this file.
 - An unclosed opening `---` is a line of kind `fm-malformed`, since DESIGN's kinds have none for "ignored".
@@ -483,6 +484,7 @@ Real calendar dates (Q12) apply: `2026-02-30` is invalid, `2028-02-29` valid. `d
 **How it's built:** markers and anchors are part of the lead cell, so `scanRow` reads them, and `tokenizeLine` gains `marker` and `anchor` tokens. Its context takes the document's markers, and `extensions: false` for a base-only parse. Whether identity applies depends on whether any lead has an anchor, so `parseRows` scans every row before it adds the implicit columns. `src/extensions.ts` then handles marker conflicts, IDs, references, nesting and order. Ordering uses `compareValues` in `values.ts`, next to `equalityKey`, so `order` and `unique` share one definition of values.
 
 **Settled by analogy** (Resolved in `QUESTIONS.md`, each with spec text and cases):
+
 - A1: an empty `order:` takes its default, an empty `key:` is treated as unset, and empty `nest:`/`markers:`/`include:` declare nothing (Q31; adjusted after review so that an empty `key:` doesn't make identity apply).
 - A2: a repeated marker name or character is an invalid entry (Q38).
 - A3: `many` and `qualifier` misused as the base options are, and a qualifier written `NAME[:TYPE]` like a declaration (Q36, base §4).
@@ -513,6 +515,7 @@ The extensions spec is at 0.6, after the analogies and the Q40/Q41 settlement. T
 - [x] `setMarker(done, false)` on `~Login` removes the `~`; on a row with `done=true` by name removes the named cell.
 
 **Decisions taken:** in DESIGN §6, under "Details the rules above leave open". Every edit function returns `EditResult = { edits: TextEdit[] } | { refused: string }`: `{ edits: [] }` when there is nothing to change, `{ refused }` with the reason when the edit can't be made. They throw on host mistakes (an unknown column or marker name) and refuse on document states. The only refusals:
+
 - `setCell` on the key of an anchored row, set to null or a non-ID, since a valid ID renames the anchor instead (the anchor only; in-file references aren't rewritten, `renameId` is deferred in plan spec §7).
 - `setCell` on a column that can't be named when it isn't the next slot, since writing it would need padding. `setMarker` refuses in the same case for a column without a marker, and when a contradicting cell can't be corrected.
 - `insertRow` at an indent that nesting doesn't allow there, for the new row or a row after it. The check uses the parser's own indent walk, `indentLevels` in `extensions.ts`.
@@ -550,6 +553,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 **Timing** (`analyze` on a 500-line plan with 444 items, Node, median of 1,000 runs after warm-up): before 0.32 ms (p99 0.75 ms), after 1.33 ms (p99 2.1 ms). About 4× slower, and well inside the 50 ms debounce.
 
 **Decisions taken:**
+
 - Model columns are the declared columns only. `done` is read as each item's own done flag: the `done` marker, or `done=true` by name. Every type other than `duration` and `number` is a text cell showing its decoded text.
 - A negative value is checked from the text, for `number` as well as `duration` columns.
 - The conversion fix adds only the options the declaration lacks. It is offered only when the declaration is in the file (spec §2.6 updated).
@@ -558,6 +562,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - Items follow `row.children` from rows. Roots are the rows with no parent, in file order.
 
 **Rewritten tests:**
+
 - `tests/core/helpers.ts`: `load` builds the tree with `parsePlan` and `readPlan`, since `parse` is deleted. It takes an optional filename.
 - `tests/core/parse.test.ts`:
   - "0 / 8 / 4 … no diagnostic" now expects one `bad-indent` error (§2.4).
@@ -614,6 +619,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - [x] Manual, both themes: error, warning and info are distinguishable in the text editor and the grid. — checked in the browser, with the rest of the Task 22 manual checklist (token colours, done dimming, unclosed frontmatter, lint fix undo, `comment:` toggling, named/quoted/anchored grid edits, refusal notes, a refused insert kept as a draft, Open/Save As file types).
 
 **How it's built:**
+
 - `Model` gained `doc`, the rows document it was read from (spec §3.2). The grid needs it for the edit API and the highlighter for its context. Renderers ignore it.
 - Highlighting: the `StreamLanguage` is gone, since it can't see the parsed document. `src/editor/syntax.ts` is a pure `styleLine(text, state, syntax)` over `tokenizeLine`. `src/editor/language.ts` keeps the latest model's syntax (sep, comment, markers, column types, frontmatter end) and done lines in a state field, mapped through edits until the next model. A view plugin decorates the visible lines. Done lines, own or inherited, come from the model as line decorations.
 - Lint: `error` has its own underline and gutter marker. Fixes are lint actions that apply through `buffer.apply(…, 'text-editor')`, and do nothing if the text changed since the diagnostic was made.
@@ -623,12 +629,14 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - Theme: `--tok-done-marker` is now `--tok-marker` (every marker gets it). New `--tok-anchor`, `--tok-name`, `--tok-quoted`, `--tok-escape`, `--diag-error`.
 
 **Decisions taken:**
+
 - The highlighter resolves cells with the parser's rules, not just token positions. The tokenizer marks `ratio=` as a cell name, but the parser reads an undeclared name as part of an unnamed cell, and an unnamed cell after a named one, or past the declared columns, as overflow. The conformance test caught this, and DESIGN §7 now says so.
 - The grid refuses an edit while its model trails the buffer (the shell's 50 ms debounce), with the same note. Before this task that case silently wrote at stale offsets.
 - Typed values are trimmed and tabs become spaces before they go to rows. A title that is unchanged after trimming is a no-op.
 - "New documents start with `profile: plan`": the only document the app creates is the startup one, `examples/example.plan`, which already says `profile: plan`. There is no New command, so nothing else changed.
 
 **Rewritten tests:**
+
 - `tests/editor/language.test.ts`: rewritten for the decoration highlighter in a jsdom view. The token-class checks moved to `tests/editor/syntax.test.ts`. `~` is `cm-plan-marker` (was `cm-plan-done-marker`), and done is a line class. "leaves reserved `#` lines to the diagnostics layer" is gone: a `#` line is a row.
 - `tests/grid/edits.test.ts`: rewritten for `EditResult` and the rows rules: named rather than padded cells, quoting, anchors kept, `done=true` removed, `insertItem` refusals.
 - `tests/grid/grid.test.ts`: "pads a title-only line…" now expects `Auth | notes=later`. "turns a comment row into an item row…, and back again" drops the "back again": `// Audit log` typed into a title is quoted.
@@ -661,12 +669,14 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - [x] A grid edit plus its `auto` fixes undo with one Ctrl+Z. — over a `CodeMirrorBuffer`: one buffer change with origin `grid`, and one Ctrl+Z in the grid restores the text.
 
 **How it's built:**
+
 - rows (`packages/rows/src/edit.ts`): `setLevel`, `moveRow`, `deleteRow`, `repairRow` and `levelIndent`, all on the parser's `indentLevels`. `setCell` pads up to a column that can't be named. `formatValue`'s quoting is shared with `repairRow` for overflow cells.
 - core: `Fix` has a `tier` and an optional `preview` (spec §4b.6.2). `src/core/fixes.ts` adds the tree and title fixes to the diagnostics of the rows errors they resolve: `Rewrite the indent` or `Indent 0`, `Quote the title` and `Rewrite the cell` (auto, from `repairRow`), `Use indentation` and `Remove extra marker` (click). The hpd fix is `click`; the `<!--` fix is `confirm`, with a preview of the lines before and after.
 - grid (`src/grid/edits.ts`): `insertIndent`, `shiftItem`, `moveItem` and `deleteItem` over the rows functions, and `withRepairs`, which adds the repairs of the touched rows to an edit as one change. Cell, done and fix edits touch their row. "Insert above" touches the row it goes above, and structure operations touch the row they act on, taking only its cell repairs. Refusals show in the usual note. Comment and blank rows keep the `src/editing/` line operations.
 - grid (`src/grid/index.ts`): the problems list is a `<details>` between the toolbar and the sheet, `Problems (n)` in its summary, closed by default. Each entry shows the severity, the row's title (or `Line n`), the message and a button per fix. A `confirm` fix shows its preview with Apply and Cancel first.
 
 **Decisions taken** (spec §4b.5, §4b.6.1 and §4b.6.4, and DESIGN §6):
+
 - Indent and outdent move the row's descendants with it, as MS Project does. Moving only the row would hand its children to another parent or leave them at no level. Rows after the subtree keep their indent, so outdenting a row makes its later siblings its children.
 - Move up and down move the row alone, as the spec says, and refuse when no indent for it avoids a new indent error. The common case is a parent moved below its first child. The snapped indent is the valid one nearest the row's old level, then nearest its old indent. (Changed by Task 24: they move the row's subtree past its sibling's, and never refuse for the indentation. A first child moves above its parent by outdent, then Move up.)
 - The indent repair moves the rows the parser put at the repaired row's level, or below it, by the same amount. Snapping only the row would give those rows a bad indent, or new parents: in `A / B(8) / C(4) / D(4)`, `D` must move to 8 with `C`. When that would still change a parent, there is no indent repair.
@@ -677,11 +687,13 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - The cell `auto` repairs are already offered in the problems list (`Rewrite the cell`), since `repairRow` makes them for this task anyway. The other cell fixes, and the settings and identity fixes, are Task 24's.
 
 **Bugs the new generator found in existing rows code:**
+
 - `parseDuration` threw on a quoted duration containing an escaped newline. `(.*)$` doesn't match across `\n`, and the regex is now `[\s\S]*`. The value is invalid, as it should be (`tests/values.test.ts`).
 - `setCell(null)` on a named cell before an overflow cell wrote `NAME= |`. The space after `=` unnamed the cell (base §3), so one structural error turned into another. It now writes `NAME=|`.
 - `setCell(null)` on a cell whose column is set again later removed it, and the repeat became the value. It now empties the cell.
 
 **Rewritten tests:**
+
 - `tests/grid/grid.test.ts`:
   - "deletes a row and re-attaches its children…" now expects the children promoted one level (`Auth / Deep`).
   - "moves a row with children by itself…" is now two tests: a leaf moved up and back with the selection following it, and a parent moved below its first child being refused with a note.
@@ -713,11 +725,12 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - [x] Every `confirm` fix shows its preview, and cancelling writes nothing. — in the grid, every confirm fix of the three messy fixtures, with no buffer change at all; in the text editor, a panel with the preview, where Cancel, Escape and any text edit write nothing (`tests/editor/confirm.test.ts`).
 - [x] "Close settings" on an unclosed block inserts `---` after the last `key: value` line, and the settings lines leave the grid. — `messy-unclosed.plan`: `---` after line 3, the two settings rows become the front matter row, and the banner goes.
 - [x] "Rename the later one" on a duplicate ID warns when the ID is referenced. — `A row refers to #login. It isn't clear which task it meant, so check it after renaming.`, in the grid and the text editor; no warning when nothing refers to it.
-- [ ] Manual, both themes: the problems list, the banner, the badges and the previews are readable, and every fixture case can be fixed without leaving the grid. — **browser pass pending review.** Automated in part: `tests/grid/fixes.test.ts` applies the first fix in the problems list, confirming previews, until none is left, on each messy fixture; what remains is only what the spec gives no fix (values to edit, a title to type, an unknown key, an override that differs) and the profile error below. The colour-token test still passes; the new CSS uses only tokens.
+- [x] Manual, both themes: the problems list, the banner, the badges and the previews are readable, and every fixture case can be fixed without leaving the grid. — **browser pass pending review.** Automated in part: `tests/grid/fixes.test.ts` applies the first fix in the problems list, confirming previews, until none is left, on each messy fixture; what remains is only what the spec gives no fix (values to edit, a title to type, an unknown key, an override that differs) and the profile error below. The colour-token test still passes; the new CSS uses only tokens.
 
 **Changed first, at the start of this task** (see the Task 13 and Task 23 notes): Move up and Move down move a row with its subtree past its previous or next sibling's, enabled only when that sibling exists. rows `moveRow` swaps the two subtrees, keeping the lines between them in place, and gives each subtree the indent the other's first row had, so the tree and its errors stay as they were and it never refuses for the indentation. Its property test now checks the swapped line order and that every row keeps its parent (over 2,000 of the 5,000 generated files move; a planted bug that skips the indent swap fails it). Grid refusals are shown in plain words, mapped from rows' reasons in `src/grid/messages.ts`; a test produces each reason from rows itself, so a change of wording there fails it.
 
 **How it's built:**
+
 - Typed editors (`src/grid/index.ts`, `src/grid/typed.ts`): `setField` normalises typed durations; enum cells open a `<select>`, date cells a text input with a calendar button beside it that opens the browser's picker from a hidden date input (leaving the input for the button isn't a commit; the visible date input showed its own date fields squeezed under its icon), bool cells show a checkbox that a click or Space toggles through `setMarker`.
 - Fixes (`src/core/fixes.ts`, `src/core/settings.ts`): overflow ("Rejoin into NOTES", "Delete extra values"), column set twice ("Keep owner=sam", "Keep owner=priya"), identity ("Rename the later one", with a `warning` when anything refers to the ID), and the settings fixes ("Close settings", "Rename column…", "Remove this setting", "Remove this option"). `Fix` gained `warning` and `input` (spec §4b.6.2): a rename takes a typed name, starting from a free one, and the preview follows it.
 - rows: an error in a column declaration now spans the `:TYPE` or the option it is about (DESIGN §4), so "Remove this option" removes exactly that. The text editor underlines it too.
@@ -725,6 +738,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - Text editor: a `confirm` lint action opens a panel with the preview, warning and input instead of applying.
 
 **Decisions taken** (spec §4.4, §4b.6.2, §4b.6.5 and §4b.6.6 updated):
+
 - "Rejoin into NOTES" starts at the notes cell. It is offered only when nothing but extra values follows, so it never absorbs another column's value. A trailing delimiter isn't part of the text. (Changed after review: no longer offered without a notes cell.)
 - A cell named after an undeclared column (`priority=high`) counts as an extra value where rows put it, so rejoining a notes value quotes it.
 - The two "Keep this value" buttons are labelled with their values.
@@ -736,6 +750,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 **The messy fixtures:** `tests/core/messy.test.ts` is their reference: what each line reports and which fixes it offers. The answer key they came with was compared line by line in review and then deleted.
 
 **Changed after review:**
+
 - Q42 (rows): a conflict between a profile's key and the file's own declarations is reported on the file's declaration, not as `profile-has-errors`, which is only for errors in the profile's frontmatter taken alone. Base 0.10 §2.3 and §6, extensions 0.7 §5, §6.1, §7 and §10; six new conformance cases, each with a strict variant, all failing before the change. It covers a marker or nest column the file declares with the wrong type, a profile's marker character that the file's `sep` or `comment` uses, a profile's `order` naming a column the file's `columns` or `lead` replaced, and a profile column repeating the name of the file's `lead`. The plan offers "Make done a checkbox column" (`done:text` → `done:bool`, confirm) for the marker case.
 - The fix invariant (spec §4b.6.1): every fix removes the diagnostic it is offered on and adds no syntax or structural error. `tests/core/fix-invariant.test.ts` checks every fix on every fixture and on every conformance input, read as a plan and as a plain rows file. It found two problems. The conversion fix was offered when `unit`, `hpd` or `dpw` was written but invalid, where it repeated the option or didn't help; it isn't offered then. "Remove this setting" on an unresolvable `profile:` in a plan document let the plan profile apply, which could conflict with the file's keys. Since what a settings fix does depends on the whole file, `readPlan` now checks each settings fix by reading the edited text, and offers it only when it holds; `analyze` passes the reader. That also covers removing `profile: plan` from a `.plan` file.
 - Unknown types: "Change type to X" when a known type other than `enum` is within edit distance 2, then "Remove the type"; both click.
@@ -745,12 +760,64 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - Fixed: the grid passed a row's shown level (its depth in the tree, which follows `parent=`) to rows' structure edits, which work in indentation levels. On an indent-0 row placed under another by `parent=`, and on its descendants, Indent was off when it should apply, Outdent did nothing, and Insert above wrote the new row one level too deep. The grid now passes the indentation level to Indent, Outdent and Insert above, and enables Indent and Outdent by it; titles are still shown at the tree depth (`tests/grid/levels.test.ts`).
 
 **Rewritten tests:**
+
 - `packages/rows/tests/edit.test.ts`: the `moveRow` examples and property, for the subtree swap.
 - `tests/grid/grid.test.ts`: "moves a row by itself…" now also moves a parent with its subtree; "refuses to move a parent below its first child…" became "enables move up and move down only when there is a sibling on that side"; "Alt+Up/Down move the row line" moves Admin past Auth's subtree; the three refusal notes expect the plain wording.
 - `tests/grid/repair.test.ts`: "moving a first child above its parent…" does it by Outdent then Move up.
 - `tests/editor/diagnostics.test.ts`: an unknown type underlines `:money`, not the declaration.
 
 **Spec questions:** none. The rows change is to error spans, which the rows specs don't define; `QUESTIONS.md` is unchanged.
+
+---
+
+## Task 25 — rows: roles and qualified names
+
+**Serves:** M1 (VISION.md §4.1). The mechanism only: rows learns to bind roles to columns and to read qualified key names. It knows no project concepts. Which roles and keys exist, and what they mean, is the plan's business and comes in Task 26.
+
+This is spec first, as in Task 16, but small enough to implement in the same task, so the conformance suite never has skipped stages.
+
+**Deliverables**
+
+- **Base spec, key names (§2.1):** a frontmatter key may be a **qualified name**, a NAME, one dot, a NAME (`propricer.rate-table`). Unknown keys, qualified or not, are ignored as today. A key with more than one dot, an empty part, or a leading or trailing dot is not a valid key, and is reported the way the base spec already reports an invalid key name.
+- **Column names and `name=` cells are unchanged.** A dot is still not allowed in a column name, and `my.notes=x` still reads as it does now. Add a line to the spec saying so, so nobody widens it by accident.
+- **Extensions spec, new section "Roles":** the `roles:` key binds role names to columns, `roles: effort=est, duration=dur`.
+  - Entry syntax, list syntax and whitespace follow `markers:`.
+  - A role name is a NAME or a qualified name. rows gives no role a meaning and accepts any valid name.
+  - The column is any column of the resolved schema, including the lead and implicit columns.
+  - One column may carry several roles. One role may be bound only once.
+  - Profile and file `roles:` combine the way `markers:` does.
+- **Errors**, each settled by analogy wherever an existing rule fits (record it under Resolved in `QUESTIONS.md`, "settled by analogy with Qn", and list it in your end-of-task summary):
+  - a role bound to a column that doesn't exist: as `nest:` or `order:` naming a missing column;
+  - a role bound twice: as a repeated marker name (A2);
+  - a malformed entry or role name: as an invalid `markers:` entry;
+  - a profile's role bound to a column the file's `columns:` or `lead:` replaced: reported on the file's declaration (Q42);
+  - an empty `roles:`: declares nothing (A1).
+
+  Open a question only if a case needs a genuinely new rule.
+
+- **DESIGN §4:** `Schema.roles`, each entry with its role name, column name, and the spans of both. `Schema.keys` carries qualified keys as written.
+- **`tokenizeLine`:** qualified keys tokenise as keys, and `roles:` entries tokenise like `markers:` entries (name, `=`, value).
+- **Versions:** base and extensions each get a draft version bump. Update the "Depends on" line in `plan-format-spec.md`, and the version references in DESIGN and the conformance README (Task 19 missed these once).
+
+**Acceptance criteria**
+
+- [ ] Conformance cases, written by hand from the spec, for:
+  - a valid qualified key;
+  - each kind of invalid qualified key;
+  - `my.notes` still unnamable as a column and as a cell name;
+  - a valid `roles:`, including a qualified role, a role on the lead, and two roles on one column;
+  - each error above;
+  - a profile and file `roles:` combining;
+  - a profile's role on a replaced column.
+
+  Every case with a syntax or structural error has its strict variant.
+
+- [ ] Every conformance case passes, with no stage skipped.
+- [ ] The property tests' generators include qualified keys and `roles:` blocks, valid and broken, and every existing property still holds. `tokenizeLine` agrees with `parseRows` on every token boundary.
+- [ ] No app code changes. The app's tests pass unchanged. Until Task 26, a qualified key in a plan file still gets the plan's `unknown-key` info; that is expected.
+- [ ] `npm test` is green at the root.
+
+**Human review:** read the new `expected.json` files and the Resolved entries. Each analogy is a claim about what the spec means.
 
 ---
 
