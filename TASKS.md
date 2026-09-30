@@ -828,6 +828,95 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 
 ---
 
-## Later (not scheduled)
+## Task 26 — Plugin seams
 
-See spec §7. When any of these start, add a task here first and update the spec before writing code.
+**Serves:** M1 (VISION §4; `PLUGINS.md` §3–§5 and §8). A refactor with no visible change: the plugin machinery goes in, and today's roll-ups move out of core into the **estimate** plugin. Reading the format stays in core. The vocabulary, the workspace and the calendar are Task 27.
+
+**Deliverables**
+
+- **Fields** (`src/core/fields.ts`): `FieldKey`, `defineField`, `definePinnable`, `definePinnableByColumn` and `Pinnable`, per `PLUGINS.md` §4.
+- **Model:** the fixed core (`doc`, `lines`, `roots`, `columns`, `diagnostics`, `inactive`) plus `get` and `value`. `bindings` and `calendar` arrive in Task 27.
+- **Plugin, Stage, StageContext and the registry**, per §3 and §5, without what needs the vocabulary. In this task:
+  - `StageContext` has `model`, `hours`, `set`, `setValue` and `diagnose`. `bindings`, `cell`, `marked` and `calendar` come in Task 27.
+  - `createRegistry` checks unique ids, that `requires` names registered plugins with no cycles, one owner per field, that a stage's reads are owned by its plugin or one it requires, and no stage cycles. It throws with the plugin's name. The vocabulary and qualified-name checks come in Task 27.
+- **The stage runner:** a topological order computed once, with ties broken by registration order and then stage id. A stage whose read field was never written is skipped, and the skip is recorded in `inactive` with a plain reason. `set` and `setValue` throw on a key that isn't in `writes`, or that has the other scope.
+- **`createAnalyzer(registry)`** replaces `analyze`. The app builds its registry in `src/app/registry.ts` and nowhere else.
+- **Reading:** `readPlan` is renamed `readTree` and otherwise keeps its reading, including hours per summable cell and the plan spec §2.6 diagnostics. Inherited `done` moves into it from `compute`. `hours(node, column)` is a lookup of its result.
+- **The estimate plugin** (`src/plugins/estimate/`), with no roles:
+  - `rollup` is a by-column `Pinnable` holding each column's `effective`, `childSum` (as `derived`) and `mode`. `derived` is absent when no child has a value. `childrenHaveValue` goes; it is `derived !== undefined`.
+  - `hasValue` and `doneSum` are estimate fields beside it.
+  - The document totals are a document-scope field.
+  - `override-differs` is emitted by its stage, unchanged.
+  - `compute` is deleted.
+- **Renderers and exporters:** tree, table, `renderers/shared` and the TSV exporter move into the estimate plugin and read through keys. `Renderer.requires` and `Exporter.requires` become `FieldKey[]`, replacing `ColumnRequirement`. A renderer or exporter is greyed out with the reason of the first skipped stage in stage order, or "needs the estimate plugin" when the owning plugin isn't registered.
+- **Grid:** reads roll-ups through the keys. Accessors change and behaviour doesn't.
+- **Enforcement,** per `PLUGINS.md` §8:
+  - ESLint: `core/` imports nothing from `plugins/`, `views/`, `app/` or the editors; `app/` imports `plugins/` only in `registry.ts`; renderers and exporters don't import `rows` (new paths); no `Date.now()` or argument-less `new Date()` in `core/` or a plugin's stages.
+  - A test compares each plugin folder's imports with its `requires`.
+- **Spec:** update plan-format-spec §3.2, §3.3 and §3.6 for stages, field keys and `requires`. Non-negotiable 5 now names the estimate fields by key.
+
+**Acceptance criteria**
+
+- [ ] Every existing test passes. A test is rewritten only where it read a moved value, and each rewrite is listed in the task notes with the reason.
+- [ ] The §2.10 example gives exactly the table in the spec, read through `rollup`, `doneSum` and the totals field, including `Auth`'s override with `derived` 23h.
+- [ ] A leaf estimate has `mode: 'pinned'` and no `derived`. A parent with estimated children has `derived`. A parent whose children have no estimates has no `derived` and no diagnostic.
+- [ ] One test per registry check, each asserting the plugin's name in the message.
+- [ ] The runner's order is the same across repeated registrations. A stage reading a field whose stage was skipped is recorded in `inactive`. `set` with an undeclared key, and `set` with a document-scope key, both throw.
+- [ ] With an empty registry, `analyze` returns the tree, lines and `readTree`'s diagnostics without error, and the tree renderer is greyed out with "needs the estimate plugin".
+- [ ] The import test fails on a planted import of an undeclared plugin. Each new lint rule fails on a planted probe.
+- [ ] `analyze` on the 500-line plan is at most twice Task 21's 1.33 ms median.
+- [ ] Nothing visible changes in the browser. **Manual pass pending review.**
+
+**Human review:** read `src/core/fields.ts`, the `Stage` and `StageContext` types, and the estimate plugin's manifest before the rest. They are the contract every later plugin follows.
+
+---
+
+## Task 27 — Vocabulary, workspace and calendar
+
+**Serves:** M1 (`PLUGINS.md` §3, §5–§7). Completes the plugin seams. Scheduling code comes in Task 28.
+
+**Deliverables**
+
+- **Core vocabulary** (`src/core/vocabulary.ts`):
+  - roles `effort` (duration or number), `duration` (duration), `start` (date), `deps` (ref) and `deadline` (date);
+  - the key `project-start` (date);
+  - the markers `done` and `milestone`.
+- **Registry:** a bare role, key or marker name a stage declares must be in the vocabulary, and a qualified one must start with the plugin's id. The plugin's read sets are the union of its stages' declarations.
+- **`bindVocabulary`** runs after `readTree` and produces `Model.bindings` (roles to columns, keys to values, marker names), with the diagnostics in `PLUGINS.md` §6:
+  - a bare name outside the vocabulary: info, `unknown-key`, `unknown-role` or `unknown-marker`;
+  - a qualified name whose plugin isn't registered: info, `missing-plugin`, "needs the propricer plugin";
+  - a role on a column of the wrong type: warning, `role-type`, and the role is left unbound.
+
+  These replace the plan's current `unknown-key` check for frontmatter keys.
+
+- **Stages:** `roles`, `keys` and `markers` declarations. The runner skips a stage with a missing required role or key, with the reason. `StageContext` gains `bindings`, `cell`, `marked` and `calendar`.
+- **Plan profile:** gains `roles: effort=est`, in both `profiles/plan.rows` and the built-in copy, which a test keeps identical. The `milestone=^` marker waits for Task 28.
+- **`project-start`:** an invalid date is a warning, and the key counts as absent. When the key is valid, `Model.calendar` is set.
+- **Calendar** (`src/core/calendar.ts`): the interface in `PLUGINS.md` §7.2, and the naive calendar, which works Monday to Friday, takes `hpd` from the column bound to `effort` (8 if unset) and ignores `dpw`.
+- **`includesOf(text)`:** returns the include paths rows reports, and `[]` when there are none.
+- **Workspace:** the interface in `PLUGINS.md` §7.1, with `can` and `WriteResult`. The single-file implementation wraps Task 4's open and save code. The shell uses only the interface, checks `can` rather than the kind, and runs the `includesOf` loop before `analyze`, which is a no-op until M3.
+- **Spec:** plan-format-spec §2.1 (`roles: effort=est` in the profile; `project-start`), §2.9 (the new codes) and §3.
+
+**Acceptance criteria**
+
+- [ ] Each `bindVocabulary` diagnostic has a test asserting its line, severity and code. A qualified key whose plugin is registered gets no diagnostic.
+- [ ] A test stage requiring `effort` runs on the §2.10 example and is skipped, with "needs a column with the effort role", on a file whose own `columns:` has no `est`. `cell` returns `undefined` for an optional role that isn't bound.
+- [ ] Registry tests: a bare undeclared name throws, and so does another plugin's prefix.
+- [ ] Calendar tests:
+  - `add` across a weekend, and from a weekend `project-start`;
+  - negative `add` for the backward pass;
+  - `fromDate` at `'start'` and at `'end'`;
+  - a task finishing at the end of a deadline day is not late (`add(start, d) <= fromDate(deadline, 'end')`);
+  - an 8-hour task starting Monday shows Monday for both `toDate(start, 'start')` and `toDate(finish, 'end')`;
+  - `hpd=6` on the effort column gives 6-hour days.
+- [ ] Nothing in `core/` or a plugin's stages reads the clock (lint). `analyze` on the same text gives the same model on different days (a test with the clock faked).
+- [ ] The Task 4 criteria still pass through the workspace. In the download fallback, `write` returns `downloaded` and the unsaved-changes indicator stays on. **Browser pass pending review**, in Chrome and Firefox.
+- [ ] The app's other tests pass unchanged, apart from the unknown-key diagnostics, which are listed.
+
+**Visible changes:**
+
+- After saving by download, the unsaved-changes indicator stays on.
+- Qualified keys get `missing-plugin` in place of `unknown-key`.
+- Unknown roles and markers are now reported.
+
+**Human review:** read the vocabulary file and the calendar tests first. They fix what a day and a deadline mean for everything after.

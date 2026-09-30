@@ -4,6 +4,8 @@ Text-driven project estimating tool. Read `plan-format-spec.md` before touching 
 
 Read `VISION.md` for where the project is going. Each task names the milestone it serves; don't build ahead of it.
 
+Read `PLUGINS.md` before touching `src/core/`, `src/plugins/` or `src/views/`.
+
 ## Stack
 
 - Vite + TypeScript (`strict: true`)
