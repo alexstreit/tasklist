@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../../src/app/registry';
-import { createAnalyzer, createRegistry, defineField, parsePlan, readTree, unmetReason } from '../../src/core';
+import { createAnalyzer, createRegistry, defineField, parsePlan, pluginReads, readTree, unmetReason } from '../../src/core';
 import type { FieldKey, Plugin, Stage } from '../../src/core';
 import { estimatePlugin } from '../../src/plugins/estimate';
 import { treeRenderer } from '../../src/plugins/estimate/renderers/tree';
@@ -52,6 +52,29 @@ describe('createRegistry', () => {
       'plugin "alpha": stage "alpha.one" is in a cycle through the fields it reads and writes',
     );
     expect(() => createRegistry([plugin('alpha', [a], [stage('alpha.self', [a], [a])])])).toThrow('plugin "alpha": stage "alpha.self" is in a cycle');
+  });
+
+  it('throws when a stage reads a bare role, key or marker outside the core vocabulary, naming the plugin', () => {
+    const reading = (declares: Partial<Stage>) => createRegistry([plugin('alpha', [], [{ ...stage('alpha.one', [], []), ...declares }])]);
+    expect(() => reading({ roles: { optional: ['size'] } })).toThrow('plugin "alpha": reads role "size", which is not in the core vocabulary');
+    expect(() => reading({ keys: { required: ['rate-table'] } })).toThrow('plugin "alpha": reads key "rate-table", which is not in the core vocabulary');
+    expect(() => reading({ markers: ['blocked'] })).toThrow('plugin "alpha": reads marker "blocked", which is not in the core vocabulary');
+    expect(() => reading({ roles: { required: ['effort'], optional: ['start'] }, keys: { required: ['project-start'] }, markers: ['done', 'milestone'] })).not.toThrow();
+  });
+
+  it("throws when a stage reads a qualified name with another plugin's prefix, naming the plugin", () => {
+    const reading = (declares: Partial<Stage>) => createRegistry([plugin('alpha', [], [{ ...stage('alpha.one', [], []), ...declares }])]);
+    expect(() => reading({ keys: { optional: ['beta.rate'] } })).toThrow('plugin "alpha": reads key "beta.rate", which belongs to plugin "beta"');
+    expect(() => reading({ roles: { optional: ['beta.labour'] } })).toThrow('plugin "alpha": reads role "beta.labour", which belongs to plugin "beta"');
+    expect(() => reading({ keys: { optional: ['alpha.rate'] }, roles: { required: ['alpha.labour'] } })).not.toThrow();
+  });
+
+  it("gives a plugin's read sets as the union of its stages' declarations", () => {
+    const two = plugin('alpha', [], [
+      { ...stage('alpha.one', [], []), roles: { required: ['effort'] }, markers: ['done'] },
+      { ...stage('alpha.two', [], []), roles: { optional: ['effort', 'start'] }, keys: { required: ['project-start'] } },
+    ]);
+    expect(pluginReads(two)).toEqual({ roles: new Set(['effort', 'start']), keys: new Set(['project-start']), markers: new Set(['done']) });
   });
 
   it('accepts the app plugins', () => {

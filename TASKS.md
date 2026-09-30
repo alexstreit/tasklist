@@ -105,7 +105,7 @@ Implement `src/renderers/tree/` per spec §5, replacing the JSON dump.
 - [x] Open a file with comments, blank lines, trailing whitespace on some lines, a trailing `|` on one item, and a front matter block; save it unchanged; the file on disk is byte-identical except tab-to-space and CRLF-to-LF normalisation.
 - [x] Open a CRLF file, save it; the file on disk now has LF endings.
 - [x] `Ctrl+S` on a new document prompts for a location; subsequent saves don't prompt.
-- [x] Closing the tab with unsaved changes prompts (via `beforeunload`).
+- [x] Closing the tab with unsaved changes prompts (via `beforeunload`). (Changed by Task 27: after a download, the indicator stays on, and leaving prompts only once the buffer differs from what was downloaded.)
 - [x] Works in Chrome and in a browser without File System Access (Firefox) via the fallback.
 - [x] In a framed context (VS Code Simple Browser) failure is reported visibly.
 
@@ -814,12 +814,12 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 
 - [x] Every conformance case passes, with no stage skipped.
 - [x] The property tests' generators include qualified keys and `roles:` blocks, valid and broken, and every existing property still holds. `tokenizeLine` agrees with `parseRows` on every token boundary. — a new property checks every frontmatter key token and every bound role's name and column tokens.
-- [x] No app code changes. The app's tests pass unchanged. Until Task 26, a qualified key in a plan file still gets the plan's `unknown-key` info; that is expected.
+- [x] No app code changes. The app's tests pass unchanged. Until Task 27, a qualified key in a plan file still gets the plan's `unknown-key` info; that is expected. (Task 27: it gets `missing-plugin` when its plugin isn't registered, and nothing when it is.)
 - [x] `npm test` is green at the root.
 
 **Notes**
 
-- Base 0.11, extensions 0.9 (0.8 for the task, 0.9 for Q43). Roles are a new ext §11, so §8–§10 and the case names citing them keep their numbers; the errors are also in §10. `roles` joins the keys reserved in base §9 and `KNOWN_KEYS`, so the plan's `unknown-key` info no longer fires on `roles:` (it still fires on qualified keys).
+- Base 0.11, extensions 0.9 (0.8 for the task, 0.9 for Q43). Roles are a new ext §11, so §8–§10 and the case names citing them keep their numbers; the errors are also in §10. `roles` joins the keys reserved in base §9 and `KNOWN_KEYS`, so the plan's `unknown-key` info no longer fires on `roles:` (it still fired on qualified keys until Task 27's `missing-plugin`).
 - Settled by analogy (QUESTIONS.md A6–A10): no column → as `order` (Q16); bound twice → as a repeated marker (A2); malformed entry → as an invalid marker entry; empty `roles:` → A1. A9 (profile role on a replaced column → Q42) is superseded by Q43. New codes `invalid-role` and `unknown-role-column`.
 - **Changed by Q43 (spec owner):** profile and file `roles:` merge per role, the file's binding winning, instead of the file's replacing the profile's as `markers:` does. A profile role whose column the file's `columns:` or `lead:` replaced is dropped with no error, so an estimate-only file with its own `columns:` gets no role errors.
 - `tokenizeLine` splits unquoted `markers:` and `roles:` values into `name`, `equals` and `value` tokens. Markers were a single `fm-value` before; they now match, as this task assumed they already did.
@@ -937,24 +937,65 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 
 **Acceptance criteria**
 
-- [ ] Each `bindVocabulary` diagnostic has a test asserting its line, severity and code. A qualified key whose plugin is registered gets no diagnostic.
-- [ ] A test stage requiring `effort` runs on the §2.10 example and is skipped, with "needs a column with the effort role", on a file whose own `columns:` has no `est`. `cell` returns `undefined` for an optional role that isn't bound.
-- [ ] Registry tests: a bare undeclared name throws, and so does another plugin's prefix.
-- [ ] Calendar tests:
+- [x] Each `bindVocabulary` diagnostic has a test asserting its line, severity and code. A qualified key whose plugin is registered gets no diagnostic. — `tests/core/vocabulary.test.ts`, "bindVocabulary": `unknown-key`, `unknown-role`, `unknown-marker`, `missing-plugin` (key and role), `role-type`, `key-type`; `probe.setting` and `probe.who` get nothing with the probe plugin registered.
+- [x] A test stage requiring `effort` runs on the §2.10 example and is skipped, with "needs a column with the effort role", on a file whose own `columns:` has no `est`. `cell` returns `undefined` for an optional role that isn't bound. — `tests/core/vocabulary.test.ts`, "required roles and keys" and "the stage context". A mistyped `est` gives the column's type as the reason (see Decisions).
+- [x] Registry tests: a bare undeclared name throws, and so does another plugin's prefix. — `tests/core/plugins.test.ts`, for a role, a key and a marker, and for another plugin's key and role.
+- [x] Calendar tests: — `tests/core/calendar.test.ts`, plus a year end and a leap day.
   - `add` across a weekend, and from a weekend `project-start`;
   - negative `add` for the backward pass;
   - `fromDate` at `'start'` and at `'end'`;
   - a task finishing at the end of a deadline day is not late (`add(start, d) <= fromDate(deadline, 'end')`);
   - an 8-hour task starting Monday shows Monday for both `toDate(start, 'start')` and `toDate(finish, 'end')`;
-  - `hpd=6` on the effort column gives 6-hour days.
-- [ ] Nothing in `core/` or a plugin's stages reads the clock (lint). `analyze` on the same text gives the same model on different days (a test with the clock faked).
-- [ ] The Task 4 criteria still pass through the workspace. In the download fallback, `write` returns `downloaded` and the unsaved-changes indicator stays on. **Browser pass pending review**, in Chrome and Firefox.
-- [ ] The app's other tests pass unchanged, apart from the unknown-key diagnostics, which are listed.
+  - `hpd=6` on the effort column gives 6-hour days. — also through `analyze`, in `tests/core/vocabulary.test.ts`.
+- [x] Nothing in `core/` or a plugin's stages reads the clock (lint). `analyze` on the same text gives the same model on different days (a test with the clock faked). — Task 26's lint rule and its probe test cover `calendar.ts`; "analysis never reads the clock" in `tests/core/vocabulary.test.ts`.
+- [ ] The Task 4 criteria still pass through the workspace. In the download fallback, `write` returns `downloaded` and the unsaved-changes indicator stays on. **Browser pass pending review**, in Chrome and Firefox. — jsdom: `tests/app/workspace.test.ts`, `tests/app/shell.test.ts` (unchanged) and `tests/app/shell-download.test.ts`. In the Firefox pass, also check the leave-page prompt after a download (see Visible changes).
+- [x] The app's other tests pass unchanged, apart from the unknown-key diagnostics, which are listed. — no `unknown-key` expectation changed: the existing ones are bare keys outside the vocabulary. The one rewritten test file is listed below.
 
 **Visible changes:**
 
 - After saving by download, the unsaved-changes indicator stays on.
-- Qualified keys get `missing-plugin` in place of `unknown-key`.
-- Unknown roles and markers are now reported.
+- Leaving the page after a download doesn't prompt; it prompts again once the buffer is edited. The prompt now compares the buffer with the text last opened, saved or downloaded, and the indicator with the text last opened or saved in place.
+- Qualified keys get `missing-plugin` in place of `unknown-key`: `propricer.rate-table` is "frontmatter key "propricer.rate-table" needs the propricer plugin".
+- Unknown roles and markers are now reported: `markers: done=~ blocked=!` gets `unknown-marker` on `blocked`.
+- A role the file binds to a column of the wrong type gets a `role-type` warning, and `project-start` that isn't a date gets `key-type`.
+- The plan profile binds `roles: effort=est`. Nothing shows it yet.
 
 **Human review:** read the vocabulary file and the calendar tests first. They fix what a day and a deadline mean for everything after.
+
+**How it's built:**
+
+- `src/core/vocabulary.ts`: `CORE_ROLES` (each with its column types), `CORE_KEYS` (with its value type), `CORE_MARKERS`, and `pluginOf(name)`, the part before the dot.
+- `src/core/bindings.ts`: `Bindings` (`roles`, role → column name; `mistyped`, role → reason; `keys`, key → value; `markers`) and `bindVocabulary(doc, plugins)`. Key diagnostics go on the key's span, role diagnostics on the whole `role=column` entry, and marker diagnostics on the marker name, which it finds with rows' `tokenizeLine`, since `Schema.markers` has no spans. `keys` holds the core keys whose values read as their type, and the qualified keys of registered plugins, as written.
+- `src/core/calendar.ts`: `Calendar`, `IsoDate`, `WorkHours`, `Edge` and `naiveCalendar(start, hoursPerDay)`. It counts working days from a fixed Monday, so a weekend day counts as the Monday after it. Hour 0 is the first working hour on or after `project-start`. `toDate(t, 'end')` takes the day of the instant just before `t` (`ceil(t / hpd) - 1`), which is PLUGINS.md's "hour t − 1" for whole hours, and keeps a part-day finish on its own day.
+- `src/core/plugin.ts`: `Stage` gains `roles`, `keys` and `markers`. `StageContext` gains `bindings`, `calendar`, `cell` and `marked`. `pluginReads(plugin)` is the union of the plugin's stages' declarations, and `createRegistry` checks it against the vocabulary and the plugin's id.
+- `src/core/analyze.ts`: after `readTree`, `bindVocabulary`, then the calendar when `project-start` is bound, with `hpd` from the effort column (8 if unset). The runner checks required roles, then required keys, then reads. `cell` returns the rows `Value` in the role's column. `marked` is rows' `readFlag` on the marker's column, so `done=true` counts, as for `ownDone`. `includesOf(text)` returns rows' include paths. `analyze` takes `files`, which is unused until M3.
+- `readTree` no longer reports `unknown-key`, which moved to `bindVocabulary`. Vocabulary diagnostics are listed after `readTree`'s and before the tab infos, then sorted by line as before.
+- `src/core/workspace.ts`: `Workspace`, `OpenedFile` (`path`, `text`) and `WriteResult`. `src/app/workspace.ts` (`createSingleFileWorkspace`) replaces `src/app/files.ts`. A native write that fails returns `failed` with the browser's message. `read` or `write` of any path other than the open file's fails, saying a folder workspace is needed. `resolve` joins a relative path to the file's folder.
+- `src/app/includes.ts`: `createIncludes(workspace, onGathered)`, the cached include loop (see Decisions). The shell calls `snapshot(path, text)` before every `analyze`.
+- `src/app/main.ts`: the shell tracks the open file's `path`, and saves with `write(path)` or `saveAs(text, path ?? 'untitled.plan')`. It reports `failed` in the status line, as it reported a thrown error before, and it checks `can.saveInPlace`, not the kind of workspace.
+- rows: `readValue(text, type)` is exported, with `ValueType = Pick<Column, 'kind' | 'enumValues' | 'unit'>`. A `Column` is one, so cells call it as before, and a key passes `{ kind: 'date' }`. It is listed among DESIGN §4's helpers, with unit tests in `packages/rows/tests/values.test.ts`.
+- Timing, measured once: `analyze` on a 500-line plan has a 0.79 ms median (p99 1.37 ms), and the shell's extra `includesOf` adds 0.55 ms (p99 0.99 ms).
+
+**Decisions taken** (by the spec owner, when asked):
+
+- **`project-start` is read by rows (an API change, not a spec change).** rows exports `readValue`, the function cells use, so frontmatter values of a declared type go through the same code: `project-start` now, plugin keys of date, number and text type later. There is no spec text, no conformance case and no version bump, since no rule changes. Date arithmetic (weekdays, adding days) stays in core's calendar. It is calendar logic, not grammar. `readValue` takes a type as `{ kind, enumValues?, unit? }`, because an enum needs its values and a duration its unit, so a `Column` passes as is.
+- **`role-type` only for a binding written in the file.** A profile's binding on the file's column of the wrong type is left unbound with no diagnostic, following rows' Q43. `Bindings.mistyped` records the reason, and a stage requiring the role is skipped with it: "the effort role's column est is text, not a duration or number". "needs a column with the effort role" is only for a role that isn't bound at all. PLUGINS.md §6 says so.
+- **Includes: a cached snapshot, and render stays synchronous.** The shell gathers only when the set of include paths differs from the last set gathered, and failures are cached with it. Each gather has a generation number, and a gather overtaken by a newer one is dropped. A finished gather re-analyzes the current buffer text. The loop follows includes of included files, never reads a path twice (so a cycle stops), and never reads the open file. With the single-file workspace every read fails, so it does nothing until M3. PLUGINS.md §6 says so.
+- **Leave-page prompt after a download:** the indicator stays on, but leaving prompts only when the buffer differs from the text last saved or downloaded. The shell keeps that text beside the last text saved in place.
+
+**Decisions taken** (by me, within the task):
+
+- **Code `key-type`** for a core key whose value isn't its type, parallel to `role-type`, since plugin keys will declare types too.
+- **`Bindings.roles` maps a role to its column's name**, the name `hours` takes, rather than to a column object.
+- **Unknown names from the profile get no diagnostic**, as they have no line in the file. The built-in plan profile has none.
+- **No `Diagnostic.source` yet**, as in Task 26.
+
+**Rewritten tests:**
+
+- `tests/app/files.test.ts` became `tests/app/workspace.test.ts`: the same cases through the `Workspace` interface. `open` returns `path` in place of `name`. `save` and `saveAs` returning `true` or `false` became `write` and `saveAs` returning a `WriteResult` (`saved` with the path, `downloaded`, `cancelled`). `store.name` and `store.inPlace` became `list()` and `can.saveInPlace`. New cases cover a failed write, a path other than the open file, and `resolve`.
+
+**New tests:** `tests/core/vocabulary.test.ts`, `tests/core/calendar.test.ts`, `tests/app/includes.test.ts`, `tests/app/shell-download.test.ts`, the vocabulary and read-set cases in `tests/core/plugins.test.ts`, and `readValue` in `packages/rows/tests/values.test.ts`.
+
+**Noticed, not changed:** VISION §4.1 says a plugin's own marker names are qualified, but a rows marker name is a column name, and column names can't contain a dot (rows base §4), so no file can use a qualified marker. The registry accepts one a plugin declares. It needs a rows spec change once a plugin wants its own marker.
+
+**Spec:** plan-format-spec §2.1 (`roles: effort=est`, the vocabulary, `project-start`), §2.9 (`unknown-role`, `unknown-marker`, `missing-plugin`, `role-type`, `key-type`), §3.1–§3.2 (the diagram, `bindVocabulary`, bindings, stage declarations, the calendar, `analyze`'s `files` and `includesOf`), §3.9 (`readValue`) and §6 (the workspace, the indicator and the leave-page prompt). PLUGINS.md §6 records the `role-type` and include decisions. rows DESIGN §4 lists `readValue`. No spec version changes.

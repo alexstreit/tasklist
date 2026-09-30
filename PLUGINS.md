@@ -194,7 +194,11 @@ parsePlan(text)                           // tabs, parseRows with the plan profi
 
 - a bare role, key or marker name that isn't in the core vocabulary: info, as today's unknown key;
 - a qualified name whose plugin isn't registered: info, "needs the propricer plugin";
-- a role bound to a column of the wrong type (`effort` on a text column): warning, and the role counts as unbound, so its stages turn off with a reason.
+- a role bound to a column of the wrong type (`effort` on a text column): warning, `role-type`, and the role counts as unbound, so its stages turn off with a reason.
+
+Only a binding written in the file gets `role-type`. A profile's binding that doesn't fit the file's own column (the plan profile's `effort=est` in a file whose `columns:` makes `est` text) is left unbound with no diagnostic, following rows' Q43, which drops a profile's role whose column the file replaced. Either way the bindings record why the role is unbound, and a stage that requires it is skipped with that reason: "the effort role's column est is text, not a duration or number". "needs a column with the effort role" is only for a role that isn't bound at all.
+
+A core key's value is read with rows' `readValue`, the function cells use, as the vocabulary's type. A value that doesn't read (`project-start: 2026-02-30`) is a warning, `key-type`, and the key counts as absent.
 
 Markers are resolved before this step: rows turns each glyph into its marker name while parsing, which is why `readTree` can read `done` before `bindVocabulary` runs. For markers, `bindVocabulary` only checks the names against the vocabulary; it binds nothing.
 
@@ -205,6 +209,8 @@ Markers are resolved before this step: rows turns each glyph into its marker nam
 **No `project-start`, no schedule.** When the key is absent, no calendar is built and every stage that requires it is skipped with "needs project-start". The schedule plugin's diagnostic offers a click fix that writes today's date into the frontmatter. The fix is an edit, so it may read the clock; `analyze` never does, so two clients either side of midnight compute the same schedule from the same text.
 
 **Includes are gathered before analysis.** The shell calls `includesOf` on the open file, reads what it names, calls `includesOf` on those, and repeats until no new file appears; then it calls `analyze` with the snapshot. A file that can't be read is left out of the snapshot, and the reference to it is the rows validation error it already is.
+
+`analyze` stays synchronous, so the shell keeps the last snapshot and analyzes with it (`src/app/includes.ts`). It gathers again only when the set of paths `includesOf` gives for the open file differs from the last set gathered, so a failed read is retried only when that set changes (and, in M3, when the file watcher reports a change), not on every keystroke. Each gather has a generation number; one that finishes after a newer one started is dropped. Otherwise the shell stores its snapshot and re-analyzes the current buffer text with it, not the text that started the gather. A path already read isn't read again, so a cycle of includes stops, and the open file is never read, since the buffer is its text.
 
 ## 7. Workspace and calendar
 

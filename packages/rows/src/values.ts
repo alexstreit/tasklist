@@ -97,8 +97,11 @@ export function parseDuration(text: string, unit: DurationUnit | undefined): Val
   return { type: 'duration', sign, terms, bare: false };
 }
 
-/** The typed value of a cell's text, or null when it doesn't match the column. */
-export function readValue(text: string, column: Column): Value | null {
+/** What reading a value needs of its type: the kind, an enum's values, a duration's `unit=`. A column is one. */
+export type ValueType = Pick<Column, 'kind' | 'enumValues' | 'unit'>;
+
+/** The typed value of a cell's text, or null when it doesn't match the type. */
+export function readValue(text: string, column: ValueType): Value | null {
   switch (column.kind) {
     case 'text':
       return { type: 'text', text };

@@ -1,15 +1,26 @@
 // Plugins, stages and the registry (PLUGINS.md §3 and §5). A plugin is a
 // manifest the app checks at startup; its stages add typed fields to the model.
 
+import type { Value } from 'rows';
+import type { Bindings } from './bindings';
+import type { Calendar } from './calendar';
 import { fieldName } from './fields';
 import type { FieldKey } from './fields';
 import type { Diagnostic, Exporter, ItemNode, Model, ModelReader, Renderer } from './types';
+import { CORE_KEYS, CORE_MARKERS, CORE_ROLES, pluginOf } from './vocabulary';
 
 export interface StageContext {
   /** Read-only: the tree and the fields earlier stages wrote. */
   model: ModelReader;
+  bindings: Bindings;
+  /** Present when project-start is set, so always for a stage that requires it. */
+  calendar?: Calendar;
+  /** The typed value of the row's cell in the column bound to `role`; undefined when unbound, empty or unreadable. */
+  cell(node: ItemNode, role: string): Value | undefined;
   /** A summable cell as `readTree` read it, in hours (duration) or as the number, without its sign; undefined when empty or unreadable. */
   hours(node: ItemNode, column: string): number | undefined;
+  /** The row's own marker, or its `NAME=true` cell; false for a marker the file doesn't use. */
+  marked(node: ItemNode, marker: string): boolean;
   /** Node-scope keys in the stage's `writes` only; throws otherwise. */
   set<T>(node: ItemNode, key: FieldKey<T>, value: T): void;
   /** Document-scope keys in the stage's `writes` only; throws otherwise. */
@@ -21,6 +32,12 @@ export interface StageContext {
 export interface Stage {
   /** `estimate.rollup`, `schedule.forward`. */
   id: string;
+  /** A stage is skipped when a required role is unbound. */
+  roles?: { required?: string[]; optional?: string[] };
+  /** A stage is skipped when a required key is absent. */
+  keys?: { required?: string[]; optional?: string[] };
+  /** Always optional: an unbound marker is never set. */
+  markers?: string[];
   reads: FieldKey<unknown>[];
   writes: FieldKey<unknown>[];
   run(ctx: StageContext): void;
@@ -49,11 +66,22 @@ export interface Registry {
   owner(key: FieldKey<unknown>): Plugin | undefined;
 }
 
+/** The roles, keys and markers a plugin reads: the union of its stages' declarations. */
+export function pluginReads(plugin: Plugin): { roles: Set<string>; keys: Set<string>; markers: Set<string> } {
+  const all = (pick: (s: Stage) => string[] | undefined) => new Set(plugin.stages.flatMap((s) => pick(s) ?? []));
+  return {
+    roles: all((s) => [...(s.roles?.required ?? []), ...(s.roles?.optional ?? [])]),
+    keys: all((s) => [...(s.keys?.required ?? []), ...(s.keys?.optional ?? [])]),
+    markers: all((s) => s.markers),
+  };
+}
+
 /**
  * Checks the manifests and orders the stages once. Throws, naming the plugin, when an id repeats,
- * a `requires` names no registered plugin or forms a cycle, a field has two owners, a stage writes
- * a field its plugin doesn't own or reads one from a plugin it doesn't require, or stages form a
- * cycle through the fields they read and write.
+ * a `requires` names no registered plugin or forms a cycle, a bare role, key or marker name it reads
+ * isn't in the core vocabulary or a qualified one isn't its own, a field has two owners, a stage
+ * writes a field its plugin doesn't own or reads one from a plugin it doesn't require, or stages
+ * form a cycle through the fields they read and write.
  */
 export function createRegistry(plugins: Plugin[]): Registry {
   const fail = (plugin: Plugin, problem: string): never => {
@@ -78,6 +106,22 @@ export function createRegistry(plugins: Plugin[]): Registry {
       return reaches(next, target, seen);
     });
   for (const plugin of plugins) if (reaches(plugin, plugin)) fail(plugin, 'requires itself through a cycle');
+
+  for (const plugin of plugins) {
+    const reads = pluginReads(plugin);
+    const vocabulary = [
+      ['role', reads.roles, Object.keys(CORE_ROLES)],
+      ['key', reads.keys, Object.keys(CORE_KEYS)],
+      ['marker', reads.markers, CORE_MARKERS],
+    ] as const;
+    for (const [what, names, core] of vocabulary) {
+      for (const name of names) {
+        const owner = pluginOf(name);
+        if (owner === null && !core.includes(name)) fail(plugin, `reads ${what} "${name}", which is not in the core vocabulary`);
+        if (owner !== null && owner !== plugin.id) fail(plugin, `reads ${what} "${name}", which belongs to plugin "${owner}"`);
+      }
+    }
+  }
 
   const owners = new Map<FieldKey<unknown>, Plugin>();
   for (const plugin of plugins) {

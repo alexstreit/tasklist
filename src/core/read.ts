@@ -1,14 +1,12 @@
 // readTree: a rows document read as a plan. Spec §2.3–2.6, §2.8 and §3.1. Items
 // carry the rows spans through unchanged; summable cells are read as hours.
 
-import { applyEdits, durationToMinutes, KNOWN_KEYS, parseDuration, readFlag } from 'rows';
+import { applyEdits, durationToMinutes, parseDuration, readFlag } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, Row, RowsDocument, RowsError } from 'rows';
 import { identityFixes, mapPos, preview, rowFixes } from './fixes';
 import { settingsFixes } from './settings';
 import type { Column, Diagnostic, Field, Fix, ItemNode, Node, Tree } from './types';
 
-/** rows base and extension keys (spec §2.9); any other key that isn't `x-` gets an info. */
-const KNOWN = new Set<string>(KNOWN_KEYS);
 /** What a duration column needs to convert every term to hours (spec §2.6). */
 const CONVERSION = { unit: 'h', hpd: '8', dpw: '5' };
 
@@ -64,17 +62,6 @@ export function readTree(doc: RowsDocument, reparse?: (text: string) => RowsDocu
     const d = fromRowsError(e);
     byError.set(e, d);
     diagnostics.push(d);
-  }
-
-  for (const entry of doc.frontmatter?.entries ?? []) {
-    if (KNOWN.has(entry.key) || entry.key.startsWith('x-')) continue;
-    diagnostics.push({
-      line: entry.line,
-      span: { from: entry.keyFrom, to: entry.keyTo },
-      severity: 'info',
-      code: 'unknown-key',
-      message: `unknown frontmatter key "${entry.key}"`,
-    });
   }
 
   // Fixes to the settings, which readTree checks before offering (see `reparse`).

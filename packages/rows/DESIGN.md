@@ -160,6 +160,7 @@ Helpers:
 ```ts
 durationToMinutes(v, column): { minutes: number } | { error: 'needs-hpd' | 'needs-dpw' }
 parseDuration(text, unit?): Value | null                    // a duration value as a column with that unit reads it
+readValue(text, type): Value | null                         // a value as a cell of that type reads it; a Column is a type ({ kind, enumValues?, unit? })
 tokenizeLine(text: string, ctx: LineContext): LineTokens    // for highlighters
 readFlag(doc, row, column): boolean | null                  // a bool: its marker, then its cell, then its default
 rowLevels(doc): Map<Row, number>                            // each row's depth in the indentation tree (§6)

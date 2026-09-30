@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { durationToMinutes, parseRows } from '../src/index';
+import { durationToMinutes, parseRows, readValue } from '../src/index';
 
 const column = (decl: string) => parseRows(`---\ncolumns: ${decl}\n---\n`).schema.columns[1];
 const duration = (text: string, decl = 'd:duration') => parseRows(`---\ncolumns: ${decl}\n---\nr | ${text}\n`).rows[0].cells[1]!.value;
@@ -94,5 +94,26 @@ describe('typed values', () => {
   it('leaves the value null and keeps the text when it does not match', () => {
     const cell = parseRows('---\ncolumns: n:number\n---\nr | 1e3\n').rows[0].cells[1]!;
     expect(cell).toMatchObject({ text: '1e3', value: null });
+  });
+});
+
+describe('readValue', () => {
+  it('reads a value as a cell of that type reads it', () => {
+    expect(readValue('2028-02-29', { kind: 'date' })).toEqual({ type: 'date', text: '2028-02-29' });
+    expect(readValue('-1.5', { kind: 'number' })).toEqual({ type: 'number', value: -1.5 });
+    expect(readValue('some text', { kind: 'text' })).toEqual({ type: 'text', text: 'some text' });
+    expect(readValue('high', { kind: 'enum', enumValues: ['low', 'high'] })).toEqual({ type: 'enum', text: 'high' });
+    expect(readValue('4', { kind: 'duration', unit: 'h' })).toEqual({ type: 'duration', sign: null, terms: { h: 4 }, bare: true });
+  });
+
+  it.each(['2027-02-29', '2026-13-01', '2026-1-01', '26-10-05', '2026-10-05T09:00:00Z', ''])('%j is not a date', (text) => {
+    expect(readValue(text, { kind: 'date' })).toBeNull();
+  });
+
+  it('agrees with a cell of the same column', () => {
+    const doc = parseRows('---\ncolumns: d:date | e:duration unit=d\n---\nr | 2026-10-05 | 2\n');
+    const [, date, duration] = doc.schema.columns;
+    expect(readValue('2026-10-05', date)).toEqual(doc.rows[0].cells[1]!.value);
+    expect(readValue('2', duration)).toEqual(doc.rows[0].cells[2]!.value);
   });
 });

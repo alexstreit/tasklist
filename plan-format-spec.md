@@ -27,6 +27,7 @@ lead: title:text
 nest: parent
 markers: done=~
 columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text
+roles: effort=est
 ---
 ```
 
@@ -34,6 +35,22 @@ columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text
 - The tool writes `profile: plan` into the frontmatter of every file it creates, so the file says what it is even if it is renamed.
 - Exports, and later canonical form, write the resolved keys out in full.
 - A file may override any key the profile sets. A file's own `columns:` replaces the whole column list, including options, so a duration column declared there needs its own `unit=h hpd=8 dpw=5` (§2.6).
+- `roles: effort=est` marks `est` as the effort column, which scheduling reads. A file's own `roles:` merges with it per role (rows ext §11). A file whose own `columns:` has no `est` loses the binding, with no error; one whose `est` is not a duration or number column keeps it unbound, also with no error, and whatever needs the effort role says why.
+
+**Vocabulary.** The plan format owns a fixed set of bare names (`src/core/vocabulary.ts`, `PLUGINS.md` §3):
+
+| Kind   | Name            | Type                 |
+| ------ | --------------- | -------------------- |
+| role   | `effort`        | duration or number   |
+| role   | `duration`      | duration             |
+| role   | `start`         | date                 |
+| role   | `deps`          | ref                  |
+| role   | `deadline`      | date                 |
+| key    | `project-start` | date                 |
+| marker | `done`          | (every marker: bool) |
+| marker | `milestone`     |                      |
+
+A plugin's own roles and keys are qualified with its id (`propricer.rate-table`). `project-start: 2026-10-05` is the first working day of the schedule; with it, the model has a calendar (§3.2). A value that isn't a date is a warning, and the key counts as absent.
 
 ### 2.2 Normalisation
 
@@ -110,17 +127,21 @@ else:             doneSum = sum(doneSum of children)
 
 Every diagnostic carries a line, a severity, a code, a message, a span where one exists, and optional **fixes**, each a label, a tier and `TextEdit[]` (§4b.6.2). A rows error keeps its rows code and message; the plan's own diagnostics have the codes below.
 
-| Source                                                                                      | Severity | Code                                        |
-| ------------------------------------------------------------------------------------------- | -------- | ------------------------------------------- |
-| rows syntax or structural error (e.g. unterminated quote, overflow cells, bad indent level) | error    | the rows code                               |
-| rows validation error (e.g. `4 hours` in a duration column, a dangling `#ref`)              | warning  | the rows code                               |
-| Duration term the column can't convert, or a negative value (§2.6)                          | warning  | `unconvertible-duration`, `negative-value`  |
-| Unknown frontmatter key that is not rows base, a rows extension key, or `x-`                | info     | `unknown-key`                               |
-| Line beginning `<!--` (§2.3)                                                                | info     | `html-comment`                              |
-| Tabs converted on load                                                                      | info     | `tabs-converted`                            |
-| Override differs from child sum (only when `childrenHaveValue`)                             | info     | `override-differs`                          |
+| Source                                                                                                | Severity | Code                                       |
+| ----------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------ |
+| rows syntax or structural error (e.g. unterminated quote, overflow cells, bad indent level)           | error    | the rows code                              |
+| rows validation error (e.g. `4 hours` in a duration column, a dangling `#ref`)                        | warning  | the rows code                              |
+| Duration term the column can't convert, or a negative value (§2.6)                                    | warning  | `unconvertible-duration`, `negative-value` |
+| Unknown frontmatter key that is not rows base, a rows extension key, `x-` or in the vocabulary (§2.1) | info     | `unknown-key`                              |
+| Unknown bare role or marker name (§2.1)                                                               | info     | `unknown-role`, `unknown-marker`           |
+| Qualified key or role whose plugin isn't registered ("needs the propricer plugin")                    | info     | `missing-plugin`                           |
+| Role the file's `roles:` binds to a column of the wrong type; the role is left unbound                | warning  | `role-type`                                |
+| Core key whose value isn't its type (`project-start` not a date); the key counts as absent            | warning  | `key-type`                                 |
+| Line beginning `<!--` (§2.3)                                                                          | info     | `html-comment`                             |
+| Tabs converted on load                                                                                | info     | `tabs-converted`                           |
+| Override differs from child sum (only when `childrenHaveValue`)                                       | info     | `override-differs`                         |
 
-Rows ignores unknown keys silently. The plan tool reports them as info, because in a hand-edited file an unknown key is usually a typo, such as `colums:`.
+Rows ignores unknown keys silently. The plan tool reports them as info, because in a hand-edited file an unknown key is usually a typo, such as `colums:`. A name that belongs to a plugin the reader doesn't have is only an info, since files move between people with different plugins. The vocabulary diagnostics are reported on the line that binds the name; a binding that comes from the profile gets none.
 
 ### 2.10 Example
 
@@ -164,7 +185,8 @@ The fixture lives at `examples/example.plan` and is shared by tests and the app.
  editors ───┤ apply(edits) / undo / redo            onChange ────────┼──► analyze ──► model ──► renderer(s)
  text, grid │                                                        │    (parseRows →        tree, table
             └────────────────────────────────────────────────────────┘     readTree →          (future: gantt)
-                                                                            stages)         ──► exporter(s)
+                                                                            bindVocabulary →──► exporter(s)
+                                                                            stages)
    edits come from src/editing (line ops) and the rows edit API (cells)                         TSV
 ```
 
@@ -195,11 +217,17 @@ The **estimate** plugin (`src/plugins/estimate/`) computes §2.7–§2.8 for eve
 
 No renderer or exporter performs arithmetic: they read these fields.
 
-The model carries a fixed core: the rows document it was read from (`doc`), `lines`, `roots` (the tree's items), `columns`, `diagnostics`, and `inactive`, the stages that were skipped with the reason for each. The model carries `doc` so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
+The model carries a fixed core: the rows document it was read from (`doc`), `lines`, `roots` (the tree's items), `columns`, `bindings`, `calendar`, `diagnostics`, and `inactive`, the stages that were skipped with the reason for each. The model carries `doc` so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
+
+`bindVocabulary` runs after `readTree`. It reads rows' merged roles, the frontmatter keys and the marker names, checks them against the vocabulary (§2.1) and the registered plugins, and reports §2.9's vocabulary diagnostics. `bindings` holds each bound role's column, each core or registered plugin's key with its value, and the marker names; a core role left unbound for its column's type is kept with the reason. Values are read with rows' `readValue`, as cells are.
+
+A stage declares the roles, keys and markers it reads. It is skipped when a required role is unbound ("needs a column with the effort role", or the column's type when that is why) or a required key is absent ("needs project-start"). Stages read cells through their roles (`cell`), markers through `marked`, and summable cells through `hours`, never through `doc`.
+
+`calendar` is present when `project-start` is set: the naive calendar, Monday to Friday, with the effort column's `hpd` as its day (8 when unset). Scheduling works in working hours from the project start, and every date conversion goes through it (`PLUGINS.md` §7.2).
 
 `lines` is every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
 
-`createAnalyzer(registry)` returns `analyze(text, filename?) → Model`, which composes `parseRows`, `readTree` and the stages, and is the single entry point the app shell and any tooling call. It is synchronous and pure, and never reads the clock (lint-enforced in `src/core/` and in plugins outside their renderers and exporters). The shell passes the current file name, or none for a new document (§2.1). A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `parsePlan` or `readTree` directly (lint-enforced). With no plugins registered, `analyze` still returns the tree, the lines and `readTree`'s diagnostics.
+`createAnalyzer(registry)` returns `analyze(text, filename?, files?) → Model`, which composes `parseRows`, `readTree`, `bindVocabulary`, the calendar and the stages, and is the single entry point the app shell and any tooling call. It is synchronous and pure, and never reads the clock (lint-enforced in `src/core/` and in plugins outside their renderers and exporters). The shell passes the current file name, or none for a new document (§2.1), and a snapshot of included files, which it gathers first through the workspace with `includesOf(text)` (`PLUGINS.md` §6). The snapshot is unused until M3. A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `parsePlan` or `readTree` directly (lint-enforced). With no plugins registered, `analyze` still returns the tree, the lines and `readTree`'s diagnostics.
 
 `src/core/` imports nothing outside itself, the standard library and the `rows` package (lint-enforced).
 
@@ -313,7 +341,7 @@ The text editor keymap calls them, deriving the range from its selection. The gr
 
 What the plan tool uses:
 
-- `parseRows` for reading (§3.1);
+- `parseRows` for reading (§3.1), and `readValue` for frontmatter values of a vocabulary type (§3.2);
 - `tokenizeLine` for highlighting (§4.1);
 - `setLead`, `setCell`, `setMarker` and `insertRow` for every cell-level edit from the grid (§4b.2);
 - `setLevel`, `insertRow`, `moveRow`, `deleteRow` and `repairRow` for the grid's structure operations and `auto` repairs (§4b.6).
@@ -550,7 +578,8 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
 
 ## 6. Persistence and deployment
 
-- Single user, files on disk. Open/save via the File System Access API where available, falling back to file input and download.
+- Single user, files on disk. Open/save go through the workspace (`PLUGINS.md` §7.1): the single-file workspace uses the File System Access API where available, falling back to file input and download.
+- The unsaved-changes indicator goes off only when the file on disk matches the buffer: after opening, or after a save in place. A download leaves it on. Leaving the page prompts only when the buffer differs from the text last opened, saved or downloaded.
 - Open accepts `.plan` and `.rows`. Save As defaults to `.plan`. A new document starts as `---\nprofile: plan\n---\n`.
 - Save writes the buffer as-is. Nothing re-serialises from the tree. A saved file is byte-identical to the opened one except for tab-to-space and CRLF-to-LF normalisation.
 - In contexts where the API is unavailable or blocked (e.g. a cross-origin iframe such as the VS Code Simple Browser), failures are reported visibly, never swallowed.

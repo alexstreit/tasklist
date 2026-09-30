@@ -1,10 +1,13 @@
-// Single entry point: parseRows, readTree, then the registry's stages. Spec §3.2, PLUGINS.md §5–§6.
+// Single entry point: parseRows, readTree, bindVocabulary, the calendar, then the registry's stages.
+// Spec §3.2, PLUGINS.md §5–§6.
 
-import { parseRows } from 'rows';
+import { parseRows, readFlag } from 'rows';
 import type { RowsDocument } from 'rows';
+import { bindVocabulary } from './bindings';
+import { naiveCalendar } from './calendar';
 import { fieldName } from './fields';
 import type { FieldKey } from './fields';
-import type { Registry, StageContext } from './plugin';
+import type { Registry, Stage, StageContext } from './plugin';
 import type { Diagnostic, ItemNode, Model } from './types';
 import { isPlanName, PLAN_PROFILE } from './profile';
 import { readTree } from './read';
@@ -28,12 +31,26 @@ export function parsePlan(text: string, filename?: string): { doc: RowsDocument;
   return { doc, tabs };
 }
 
-/** `analyze` for the registry's plugins. Synchronous and pure: it never reads the clock. */
-export function createAnalyzer(registry: Registry): (text: string, filename?: string) => Model {
+/** The include paths rows reports, as written; `[]` when there are none. Cheap enough to run before every analysis. */
+export function includesOf(text: string): string[] {
+  return parsePlan(text).doc.schema.includes.map((i) => i.path);
+}
+
+/**
+ * `analyze` for the registry's plugins. Synchronous and pure: it never reads the clock or the
+ * workspace. `files` is the shell's snapshot of included files, by path (M3); unused until then.
+ */
+export function createAnalyzer(registry: Registry): (text: string, filename?: string, files?: ReadonlyMap<string, string>) => Model {
+  const plugins = new Set(registry.plugins.map((p) => p.id));
   return (text, filename) => {
     const { doc, tabs } = parsePlan(text, filename);
     const tree = readTree(doc, (edited) => parsePlan(edited, filename).doc);
-    const diagnostics = [...tree.diagnostics, ...tabs];
+    const { bindings, diagnostics: vocabulary } = bindVocabulary(doc, plugins);
+    const diagnostics = [...tree.diagnostics, ...vocabulary, ...tabs];
+    const rowsColumn = (name: string | undefined) => doc.schema.columns.find((c) => c.name === name);
+    const projectStart = bindings.keys.get('project-start');
+    // The naive calendar's day is the effort column's hpd (PLUGINS.md §7.2).
+    const calendar = projectStart === undefined ? undefined : naiveCalendar(projectStart, rowsColumn(bindings.roles.get('effort'))?.hpd ?? 8);
     const nodeFields = new Map<FieldKey<unknown>, Map<ItemNode, unknown>>();
     const documentFields = new Map<FieldKey<unknown>, unknown>();
     const model: Model = {
@@ -41,6 +58,8 @@ export function createAnalyzer(registry: Registry): (text: string, filename?: st
       columns: tree.columns,
       roots: tree.items,
       lines: tree.nodes,
+      bindings,
+      ...(calendar ? { calendar } : {}),
       diagnostics,
       inactive: [],
       get: <T>(node: ItemNode, key: FieldKey<T>) => nodeFields.get(key)?.get(node) as T | undefined,
@@ -51,10 +70,18 @@ export function createAnalyzer(registry: Registry): (text: string, filename?: st
     // A field is written once a stage that writes it has run; a skipped writer passes its reason on.
     const written = new Set<FieldKey<unknown>>();
     const skippedBecause = new Map<FieldKey<unknown>, string>();
+    const skipReason = (stage: Stage): string | null => {
+      const role = stage.roles?.required?.find((r) => !bindings.roles.has(r));
+      if (role) return bindings.mistyped.get(role) ?? `needs a column with the ${role} role`;
+      const key = stage.keys?.required?.find((k) => !bindings.keys.has(k));
+      if (key) return `needs ${key}`;
+      const unread = stage.reads.find((k) => !written.has(k));
+      if (unread) return skippedBecause.get(unread) ?? `needs ${fieldName(unread)}, which no stage writes`;
+      return null;
+    };
     for (const stage of registry.order) {
-      const unread = stage.reads.find((key) => !written.has(key));
-      if (unread) {
-        const reason = skippedBecause.get(unread) ?? `needs ${fieldName(unread)}, which no stage writes`;
+      const reason = skipReason(stage);
+      if (reason !== null) {
         model.inactive.push({ stage: stage.id, reason });
         for (const key of stage.writes) if (!written.has(key) && !skippedBecause.has(key)) skippedBecause.set(key, reason);
         continue;
@@ -65,6 +92,16 @@ export function createAnalyzer(registry: Registry): (text: string, filename?: st
       };
       const ctx: StageContext = {
         model,
+        bindings,
+        ...(calendar ? { calendar } : {}),
+        cell: (node, role) => {
+          const column = rowsColumn(bindings.roles.get(role));
+          return (column && node.row.cells[column.index]?.value) ?? undefined;
+        },
+        marked: (node, marker) => {
+          const column = doc.schema.markers.find((m) => m.name === marker)?.column;
+          return column ? readFlag(doc, node.row, column) === true : false;
+        },
         hours: (node, column) => node.fields[columnIndex.get(column) ?? -1]?.amount ?? undefined,
         set: (node, key, value) => {
           writable(key, 'node');

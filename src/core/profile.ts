@@ -6,6 +6,7 @@ lead: title:text
 nest: parent
 markers: done=~
 columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text
+roles: effort=est
 ---
 `;
 

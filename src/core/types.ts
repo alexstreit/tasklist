@@ -1,6 +1,8 @@
 // Core data types. Spec §2 and §3. This module imports only the rows library's types.
 
 import type { Row, RowsDocument, TextEdit, TypeKind } from 'rows';
+import type { Bindings } from './bindings';
+import type { Calendar } from './calendar';
 import type { FieldKey } from './fields';
 
 export type Severity = 'error' | 'warning' | 'info';
@@ -132,6 +134,10 @@ export interface Model extends ModelReader {
    *  editor showing the file needs the comment, blank and front matter lines
    *  too, and must not classify them again for itself. */
   lines: readonly Node[];
+  /** Roles, keys and markers, after profile and file merge (PLUGINS.md §6). */
+  bindings: Bindings;
+  /** Present when project-start is set; renderers use it for dates. */
+  calendar?: Calendar;
   diagnostics: Diagnostic[];
   /** Stages that were skipped, in stage order. */
   inactive: Inactive[];
