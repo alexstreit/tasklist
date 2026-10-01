@@ -51,6 +51,11 @@ export function setFlag(model: Model, node: ItemNode, index: number, on: boolean
   return setMarker(model.doc, node.row, columnOf(model, index).name, on);
 }
 
+/** Turn a marker other than done on or off, as its toggle column does (spec §4b.1). */
+export function setToggle(model: Model, node: ItemNode, name: string, on: boolean): EditResult {
+  return setMarker(model.doc, node.row, name, on);
+}
+
 /** Turn the node's own done flag on or off. A node done through an ancestor has none of its own. */
 export function setDone(model: Model, node: ItemNode, done: boolean): EditResult {
   if (done === node.ownDone) return NOTHING;
@@ -99,9 +104,9 @@ export function moveItem(model: Model, node: ItemNode, dir: 'up' | 'down'): Edit
   return moveRow(model.doc, node.row, dir);
 }
 
-/** Delete the row; its descendants move up one level. */
-export function deleteItem(model: Model, node: ItemNode): EditResult {
-  return deleteRow(model.doc, node.row);
+/** Delete the row; its descendants move up one level. With `removeReferences`, the references to it go too. */
+export function deleteItem(model: Model, node: ItemNode, removeReferences = false): EditResult {
+  return deleteRow(model.doc, node.row, { removeReferences });
 }
 
 /** Two edits that can't go in one change: they overlap, or both insert at one place. */

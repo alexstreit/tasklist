@@ -65,3 +65,11 @@
 .plan-sheet .date-button:hover { color: var(--fg); }
 /* Rendered, so its picker can open and anchor here, but never seen. */
 .plan-sheet .date-picker { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+/* A confirm the grid asks before a change, such as deleting a row others refer to (spec §4b.4). */
+.sheet-confirm:empty { display: none; }
+.sheet-confirm { border-bottom: 1px solid var(--border-soft); font-size: 13px; padding: 4px 8px; }
+.sheet-confirm .fix-preview { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.sheet-confirm .fix-preview pre { flex-basis: 100%; margin: 2px 0; padding: 4px 6px; font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--hover); border-radius: 3px; white-space: pre-wrap; }
+.sheet-confirm .fix-warning { flex-basis: 100%; color: var(--fg); border-left: 2px solid var(--diag-warning); padding-left: 6px; }
+.sheet-confirm .fix { font: inherit; font-size: 12px; border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 0 8px; cursor: pointer; }
+.sheet-confirm .sheet-notice { flex-basis: 100%; font-size: 12px; color: var(--fg); border-left: 2px solid var(--diag-error); padding-left: 6px; }

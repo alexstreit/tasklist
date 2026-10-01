@@ -12,7 +12,11 @@ const MESSAGES: [RegExp, (m: RegExpExecArray) => string][] = [
   [/^there is no (previous|next) sibling/, (m) => `There's no task at the same level ${m[1] === 'previous' ? 'above' : 'below'} to swap with. Indent and Outdent change a task's level.`],
   [/frontmatter delimiter/, () => 'This would put a line that reads as "---" first in the file, where it would start the settings.'],
   [/^promoting its children would leave a row/, () => "Deleting this task would break the indentation of its sub-tasks, so it can't be deleted yet."],
-  [/^it has the last anchor/, () => "Other rows refer to this task by its ID, so it can't be deleted yet."],
+  [/^it has the last anchor/, () => 'Deleting this task would turn off task IDs in this file, and other tasks still use them. Give another task an ID first.'],
+  [/^it would be the first anchor/, () => 'Another task has a cell written as id=…, which would start to mean a task ID. Change that cell first.'],
+  [/^no task (.+)$/, (m) => `There's no task ${m[1]}.`],
+  [/^column (.+) holds one reference$/, (m) => `The "${m[1]}" column holds only one task.`],
+  [/^column (.+) takes no qualifier$/, (m) => `The "${m[1]}" column takes only task numbers, with nothing after them.`],
   [/^the grid is still reading/, () => 'Still catching up with the last change. Try again in a moment.'],
 ];
 

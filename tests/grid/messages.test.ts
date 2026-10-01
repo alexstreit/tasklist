@@ -2,7 +2,7 @@
 // reasons are produced by rows itself, so a change to its wording fails here.
 
 import { describe, expect, it } from 'vitest';
-import { deleteRow, insertRow, moveRow, parseRows, setCell, setLevel, setMarker } from 'rows';
+import { deleteRow, insertRow, moveRow, parseRows, setAnchor, setCell, setLevel, setMarker } from 'rows';
 import type { EditResult } from 'rows';
 import { plainRefusal } from '../../src/grid/messages';
 
@@ -18,6 +18,7 @@ describe('plainRefusal', () => {
   const flat = parseRows('A\nB\n');
   const unnamable = parseRows('---\ncolumns: est | my.notes | done:bool\nmarkers: x=~\n---\nA | est=1 | 2\n');
   const anchored = parseRows('A {#a}\nB | id=b\n');
+  const unanchored = parseRows('A\nB | id=b\n');
   const cases: [string, string][] = [
     ['anchored key', reason(setCell(anchored, anchored.rows[0], anchored.schema.key!, null))],
     ['unnamable column', reason(setCell(unnamable, unnamable.rows[0], unnamable.schema.columns[2], 'x'))],
@@ -28,6 +29,8 @@ describe('plainRefusal', () => {
     ['no next sibling', reason(moveRow(nested, nested.rows[2], 'down'))],
     ['frontmatter delimiter', reason(moveRow(parseRows('A\n---\n'), parseRows('A\n---\n').rows[1], 'up'))],
     ['last anchor', reason(deleteRow(anchored, anchored.rows[0]))],
+    ['last anchor, removing references', reason(deleteRow(anchored, anchored.rows[0], { removeReferences: true }))],
+    ['first anchor', reason(setAnchor(unanchored, unanchored.rows[0], 'a'))],
     ['grid behind the buffer', 'the grid is still reading the last change; try again'],
   ];
 
@@ -39,7 +42,12 @@ describe('plainRefusal', () => {
   });
 
   it('the example wording', () => {
-    expect(plainRefusal(reason(deleteRow(anchored, anchored.rows[0])))).toBe("Other rows refer to this task by its ID, so it can't be deleted yet.");
+    expect(plainRefusal(reason(deleteRow(anchored, anchored.rows[0])))).toBe(
+      'Deleting this task would turn off task IDs in this file, and other tasks still use them. Give another task an ID first.',
+    );
+    expect(plainRefusal(reason(setAnchor(unanchored, unanchored.rows[0], 'a')))).toBe(
+      'Another task has a cell written as id=…, which would start to mean a task ID. Change that cell first.',
+    );
   });
 
   it('setMarker refuses in the words setCell does', () => {

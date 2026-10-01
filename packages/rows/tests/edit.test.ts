@@ -1,6 +1,6 @@
 // The edit API (DESIGN §6): the Task 20 examples, then the property over generated files.
 import { describe, expect, it } from 'vitest';
-import { applyEdits, deleteRow, formatValue, type EditResult, insertRow, levelIndent, moveRow, parseRows, repairRow, setCell, setLead, setLevel, setMarker, type Column, type ParseOptions, type Row, type RowsDocument } from '../src/index';
+import { applyEdits, deleteRow, formatValue, setAnchor, type EditResult, insertRow, levelIndent, moveRow, parseRows, repairRow, setCell, setLead, setLevel, setMarker, type Column, type ParseOptions, type Row, type RowsDocument } from '../src/index';
 import { indentLevels } from '../src/extensions';
 import { generatedFiles, mulberry32 } from './generators';
 
@@ -182,6 +182,63 @@ describe('insertRow and formatValue', () => {
   });
 });
 
+describe('setAnchor', () => {
+  const SCHED = '---\nnest: parent\ncolumns: est | deps:ref many qualifier=lag:duration\n---\n';
+
+  it('gives a row an anchor after its lead, keeping its padding and cells', () => {
+    const doc = parseRows(`${SCHED}Design\n    Wireframes      | 1d\n`);
+    const after = edited(doc, setAnchor(doc, doc.rows[1], 'wireframes'));
+    expect(lastLine(after.text)).toBe('    Wireframes {#wireframes}      | 1d');
+    expect(after.doc.rows[1]).toMatchObject({ id: 'wireframes', lead: { text: 'Wireframes' } });
+    expect(after.doc.errors).toEqual([]);
+  });
+
+  it('replaces the ID of an anchor, and returns nothing when it already has that ID', () => {
+    const doc = parseRows(`${SCHED}Review {#review #rev}\n`);
+    expect(lastLine(edited(doc, setAnchor(doc, doc.rows[0], 'check')).text)).toBe('Review {#check #rev}');
+    expect(setAnchor(doc, doc.rows[0], 'review')).toEqual({ edits: [] });
+  });
+
+  it('refuses an ID that is invalid, or used in any case; a row may change the case of its own', () => {
+    const doc = parseRows(`${SCHED}Review {#review}\nAPI {#api #ui}\nDocs\n`);
+    expect(setAnchor(doc, doc.rows[2], 'bad id')).toEqual({ refused: '"bad id" isn\'t an ID' });
+    expect(setAnchor(doc, doc.rows[2], '-x')).toEqual({ refused: '"-x" isn\'t an ID' });
+    expect(setAnchor(doc, doc.rows[2], 'REVIEW')).toEqual({ refused: "#REVIEW is already an ID in this file, ignoring case" });
+    expect(setAnchor(doc, doc.rows[2], 'UI')).toEqual({ refused: "#UI is already an ID in this file, ignoring case" });
+    expect(setAnchor(doc, doc.rows[1], 'UI')).toHaveProperty('refused'); // its own alias
+    expect(lastLine(edited(doc, setAnchor(doc, doc.rows[0], 'Review')).text.split('\nAPI')[0])).toBe('Review {#Review}');
+  });
+
+  it('sets a key cell the row writes to the same ID, so anchor and key agree', () => {
+    const doc = parseRows('---\nkey: id\ncolumns: owner\n---\nA | al | id=a\nB | bo\n');
+    const after = edited(doc, setAnchor(doc, doc.rows[0], 'alpha'));
+    expect(after.text.split('\n')[4]).toBe('A {#alpha} | al | id=alpha');
+    expect(after.doc.errors).toEqual([]);
+    expect(lastLine(edited(doc, setAnchor(doc, doc.rows[1], 'b')).text)).toBe('B {#b} | bo');
+  });
+
+  it('refuses the first anchor while a row sets the implicit id by name, which identity would make a key', () => {
+    const doc = parseRows('---\ncolumns: owner\n---\nA\nB | id=x\n');
+    expect(setAnchor(doc, doc.rows[0], 'a')).toEqual({ refused: 'it would be the first anchor, and a row sets id by name' });
+    // Not when identity is already on, or when the cell is quoted.
+    const on = parseRows('---\ncolumns: owner\n---\nA\nB | id=x\nC {#c}\n');
+    expect(setAnchor(on, on.rows[0], 'a')).toHaveProperty('edits');
+    const quoted = parseRows('---\ncolumns: owner\n---\nA\nB | "id=x"\n');
+    expect(setAnchor(quoted, quoted.rows[0], 'a')).toHaveProperty('edits');
+  });
+
+  it('writes an anchor on an empty lead, and after an unterminated quote, which it closes', () => {
+    const empty = parseRows(`${SCHED}~ | 1d\n`.replace('nest: parent', 'nest: parent\nmarkers: done=~'));
+    const a = edited(empty, setAnchor(empty, empty.rows[0], 'x'));
+    expect(a.doc.rows[0]).toMatchObject({ id: 'x', lead: { text: null } });
+    expect(a.doc.errors.map((e) => e.code)).toEqual(empty.errors.map((e) => e.code)); // the empty lead's own
+    const open = parseRows(`${SCHED}"Open\n`);
+    const b = edited(open, setAnchor(open, open.rows[0], 'o'));
+    expect(lastLine(b.text)).toBe('"Open" {#o}');
+    expect(b.doc.rows[0]).toMatchObject({ id: 'o', lead: { text: 'Open' } });
+  });
+});
+
 // ---------- the DESIGN §6 property ----------
 
 const TITLES = ['New', '~x', '!x', '+x', '# h', '#h', 'a {#x}', 'a {x}', ' pad', 'pad ', 'a | b', 'a ; b', 'a , b', 'a / b', '"q', 'q"', '', '---', '// c', '-- c', 'x\ny', 't\tab', 'é', '\\', 'a=b', '{#only}', '"', 'x\\"y'];
@@ -321,6 +378,51 @@ describe('every edit changes only its target, and adds no syntax or structural e
       checked++;
     }
     expect(checked).toBeGreaterThanOrEqual(1000);
+  });
+
+  it(`setAnchor, over ${withRows.length} files`, () => {
+    /** Each line's projection with its cells by column name, so an implicit key column appearing shifts nothing. */
+    const named = (doc: RowsDocument) =>
+      project(doc).map((v, k) => {
+        const row = doc.lines[k].row;
+        if (!row || !('cells' in v)) return v;
+        return { ...v, cells: row.cells.slice(1).flatMap((c, i) => (c?.text != null ? [[doc.schema.columns[i + 1].name, c.text]] : [])) };
+      });
+    let written = 0;
+    for (const { text, options } of withRows) {
+      const doc = parseRows(text, options);
+      const row = pick(doc.rows);
+      const others = doc.rows.flatMap((r) => r.anchors.map((a) => a.id));
+      const id = pick(['new', 'x-1', 'R0', '2027-plan', 'bad id', '', '-x', 'a_b', ...others, ...others.map((x) => x.toUpperCase())]);
+      const result = setAnchor(doc, row, id);
+      const why = JSON.stringify({ text, line: row.line, id });
+      const ids = (r: Row) => (r.anchors.length > 0 ? r.anchors.map((a) => a.id) : r.id !== null ? [r.id] : []);
+      if ('refused' in result) {
+        // Only the documented refusals: not an ID; used, ignoring case, by another row or another of this row's IDs; the first anchor while a row sets id by name.
+        const own = ids(row)[0];
+        const used = doc.rows.some((r) => ids(r).some((x) => x.toLowerCase() === id.toLowerCase() && !(r === row && x === own)));
+        const setsId = (r: Row) => [...r.cells.slice(1), ...r.overflow].some((c) => c && !c.name && doc.text.slice(c.from, c.to).startsWith('id='));
+        const first = !doc.schema.identity && !doc.schema.columns.some((c) => c.name === 'id') && doc.rows.some(setsId);
+        expect(!ID.test(id) || used || first, why).toBe(true);
+        continue;
+      }
+      if (result.edits.length === 0) {
+        expect(row.anchors[0]?.id, why).toBe(id);
+        continue;
+      }
+      written++;
+      const after = edited(doc, result, options);
+      expect(addedErrors(doc, after.doc), why).toEqual([]);
+      const want = named(doc);
+      const target = want[rowLine(doc, row)] as RowView;
+      if (target.anchors.length > 0) target.anchors[0] = id;
+      else target.anchors = [id];
+      target.id = id;
+      const key = after.doc.schema.key!;
+      target.cells = (target.cells as unknown as [string, string][]).map(([name, v]) => [name, name === key.name ? id : v]) as never;
+      expect(named(after.doc), why).toEqual(want);
+    }
+    expect(written).toBeGreaterThanOrEqual(1000);
   });
 
   it(`insertRow, over ${files.length} files`, () => {
@@ -473,6 +575,22 @@ describe('deleteRow', () => {
     expect(deleteRow(doc, doc.rows[1])).toHaveProperty('edits');
   });
 
+  it('removes every reference to the row with removeReferences: a many cell keeps the others, an emptied cell is cleared', () => {
+    const text = '---\nnest: parent\ncolumns: deps:ref many qualifier=lag:duration | notes\n---\nReview {#review #rev}\nAPI {#api} | #review | x\nUI | #wire, #rev 1d,#api\nDocs | #review 1d\nWire {#wire} | parent=#review\n';
+    const doc = parseRows(text);
+    const after = edited(doc, deleteRow(doc, doc.rows[0], { removeReferences: true }));
+    expect(after.text.split('\n').slice(4).join('\n')).toBe('API {#api} |  | x\nUI | #wire,#api\nDocs\nWire {#wire}\n');
+    expect(after.doc.errors).toEqual([]);
+    // Without the option the references stay, and dangle.
+    const plain = edited(doc, deleteRow(doc, doc.rows[0]));
+    expect(plain.doc.errors.map((e) => e.code)).toEqual(['unresolved-ref', 'unresolved-ref', 'unresolved-ref', 'unresolved-ref']);
+  });
+
+  it('keeps the last-anchor refusal with removeReferences', () => {
+    const doc = parseRows('A {#a}\nB | id=b\n');
+    expect(deleteRow(doc, doc.rows[0], { removeReferences: true })).toEqual({ refused: 'it has the last anchor, and other rows set id by name' });
+  });
+
   it('deletes the last line, and the only one', () => {
     const doc = parseRows('A\nB');
     expect(edited(doc, deleteRow(doc, doc.rows[1])).text).toBe('A\n');
@@ -604,28 +722,60 @@ describe('the level-based edits and repairRow add no syntax or structural error 
     expect(moved).toBeGreaterThanOrEqual(2000);
   });
 
-  it(`deleteRow, over ${files.length} files`, () => {
+  it(`deleteRow, over ${files.length} files, half of them with removeReferences`, () => {
     let deleted = 0;
+    let withReferences = 0;
     for (const { text, options } of files) {
       const doc = parseRows(text, options);
       if (doc.rows.length === 0) continue;
       const k = Math.floor(random() * doc.rows.length);
       const row = doc.rows[k];
-      const result = deleteRow(doc, row);
-      const why = JSON.stringify({ text, line: row.line });
+      const removeReferences = random() < 0.5;
+      const result = deleteRow(doc, row, { removeReferences });
+      const why = JSON.stringify({ text, line: row.line, removeReferences });
       if ('refused' in result) {
         expect(result.refused, why).toMatch(/fits no level|frontmatter delimiter|the last anchor/);
         continue;
       }
       deleted++;
+      if (removeReferences) withReferences++;
       const after = edited(doc, result, options);
       expect(addedErrors(doc, after.doc), why).toEqual([]);
       const want = flat(doc);
+      // With removeReferences, each ref cell loses the references to the row: by target when the
+      // cell reads as references, else by the text of an ID the row is the first to declare.
+      const ids = (r: Row) => (r.anchors.length > 0 ? r.anchors.map((a) => a.id) : r.id !== null ? [r.id] : []);
+      const mine = ids(row).filter((id) => doc.rows.find((r) => ids(r).includes(id)) === row);
+      const toRow = (cell: NonNullable<Row['cells'][number]>, part: string, k: number) =>
+        cell.value?.type === 'ref' ? cell.value.refs[k].target === row : mine.some((id) => /^(\S*)#(\S+)/.exec(part.trim())?.[2] === id && ['', cell.column!.refTable].includes(/^(\S*)#/.exec(part.trim())![1]));
+      const parts = (text: string | null) => (text === null || text === '' ? null : text.split(',').map((p) => p.trim()).join(','));
+      const refColumns = doc.schema.columns.filter((c) => c.kind === 'ref' && c.refCurrent);
+      if (removeReferences) {
+        doc.rows.forEach((r) => {
+          if (r === row) return;
+          const v = want[r.line - 1] as RowView;
+          for (const c of refColumns) {
+            const cell = r.cells[c.index];
+            if (cell?.text == null) continue;
+            v.cells[c.index - 1] = parts(cell.text.split(',').filter((p, i) => !toRow(cell, p, i)).join(','));
+          }
+        });
+      }
       want.splice(row.line - 1, 1);
+      const normal = (list: ReturnType<typeof flat>) =>
+        list.map((v) => ('lead' in v ? { ...v, cells: (v as RowView).cells.map((t, i) => (refColumns.some((c) => c.index === i + 1) ? parts(t) : t)) } : v));
       // Deleting the only anchored row turns identity off (ext §3.1), and with it the implicit id column.
       const same = after.doc.schema.identity === doc.schema.identity;
-      const cells = (list: ReturnType<typeof flat>) => (same ? list : list.map((v) => ('cells' in v ? { ...v, cells: [] } : v)));
+      const cells = (list: ReturnType<typeof flat>) => (same ? normal(list) : list.map((v) => ('cells' in v ? { ...v, cells: [] } : v)));
       expect(cells(flat(after.doc)), why).toEqual(cells(want));
+      if (removeReferences) {
+        // No reference to the row's IDs is left pointing at nothing.
+        const declared = new Set(after.doc.rows.flatMap(ids));
+        const dangling = after.doc.rows.flatMap((r) =>
+          r.cells.flatMap((c) => (c?.column?.kind === 'ref' && c.text ? c.text.split(',').map((p) => /#(\S+)/.exec(p)?.[1]).filter((id) => id && mine.includes(id) && !declared.has(id)) : [])),
+        );
+        expect(dangling, why).toEqual([]);
+      }
       if (!doc.schema.nest) continue;
       // The tree keeps its shape: the row's children take its parent.
       const before = parents(doc);
@@ -633,6 +783,7 @@ describe('the level-based edits and repairRow add no syntax or structural error 
       expect(parents(after.doc), why).toEqual(expected);
     }
     expect(deleted).toBeGreaterThanOrEqual(3000);
+    expect(withReferences).toBeGreaterThanOrEqual(1500);
   });
 
   it(`repairRow, over every row with an error in ${files.length} files`, () => {

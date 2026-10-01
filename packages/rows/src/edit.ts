@@ -157,6 +157,86 @@ export function setCell(doc: RowsDocument, row: Row, column: Column, text: strin
   return { refused: `column ${column.name} can't be named, and padding up to it would follow a named cell` };
 }
 
+/** Every ID a row declares: its anchors, primary first, or its key value. */
+const idsOf = (row: Row): string[] => (row.anchors.length > 0 ? row.anchors.map((a) => a.id) : row.id !== null ? [row.id] : []);
+
+/**
+ * Gives a row an anchor, or replaces its anchor's ID (DESIGN §6). A key cell the row writes is set
+ * to the same ID, so the anchor and key agree (ext §3.2). Refuses an ID that is invalid or already
+ * used, ignoring case; and the file's first anchor while a row sets the implicit key by name, since
+ * identity would turn that cell into the row's key (the mirror of deleteRow's refusal).
+ */
+export function setAnchor(doc: RowsDocument, row: Row, id: string): EditResult {
+  if (!doc.schema.extensions) throw new Error('setAnchor: the document was read without extensions, so it has no anchors');
+  if (!ID.test(id)) return { refused: `${JSON.stringify(id)} isn't an ID` };
+  if (row.anchors[0]?.id === id) return { edits: [] };
+  // The ID being replaced doesn't count as used: the anchor's, or the key value of a row without one.
+  const own = idsOf(row)[0] ?? null;
+  const lower = id.toLowerCase();
+  const used = doc.rows.some((r) => idsOf(r).some((x) => x.toLowerCase() === lower && !(r === row && x === own)));
+  if (used) return { refused: `#${id} is already an ID in this file, ignoring case` };
+
+  if (!doc.schema.identity) {
+    // Identity would make the key the implicit `id` column, so a cell written `id=…` would become a key.
+    const setsKey = (c: Cell | null) => c !== null && c.name === null && NAMED.exec(doc.text.slice(c.from, c.to))?.[0] === 'id=';
+    const implicit = !doc.schema.columns.some((c) => c.name === 'id');
+    if (implicit && doc.rows.some((r) => [...r.cells.slice(1), ...r.overflow].some(setsKey))) {
+      return { refused: 'it would be the first anchor, and a row sets id by name' };
+    }
+  }
+
+  const edits: TextEdit[] = [];
+  if (row.anchors.length > 0) edits.push({ from: row.anchors[0].from + 1, to: row.anchors[0].to, insert: id });
+  else {
+    const lead = row.lead;
+    let insert = `${lead.valueFrom === lead.valueTo ? '' : ' '}{#${id}}`;
+    // An anchor after an unterminated quote would be inside it: close the quote where its text ends.
+    if (isUnterminated(row, lead)) {
+      const backslashes = /\\*$/.exec(doc.text.slice(lead.valueFrom + 1, lead.valueTo))![0].length;
+      insert = (backslashes % 2 === 1 ? '\\"' : '"') + insert;
+    }
+    if (doc.text[lead.valueTo] === doc.schema.sep) insert += ' ';
+    edits.push({ from: lead.valueTo, to: lead.valueTo, insert });
+  }
+  const key = doc.schema.key;
+  const cell = key ? row.cells[key.index] : null;
+  if (key && cell && cell.text !== null) edits.push(replaceValue(doc, cell, formatValue(doc, key, id)));
+  return { edits };
+}
+
+/**
+ * The edits that remove every in-file reference to `row` from the other rows' ref cells: a
+ * reference goes with its qualifier and a comma, and a cell left with none is cleared. A valid
+ * cell's references are matched by target; in a cell that doesn't read as references, a reference
+ * by text to an ID this row is the first to declare.
+ */
+function referenceEdits(doc: RowsDocument, row: Row): TextEdit[] {
+  const mine = new Set(idsOf(row).filter((id) => doc.rows.find((r) => idsOf(r).includes(id)) === row));
+  const edits: TextEdit[] = [];
+  for (const r of doc.rows) {
+    if (r === row) continue;
+    for (const cell of r.cells) {
+      const column = cell?.column;
+      if (!cell || cell.text === null || column?.kind !== 'ref' || !column.refCurrent) continue;
+      const value = cell.value?.type === 'ref' ? cell.value : null;
+      // Split as the parser splits (ext §4.3): references by commas, a qualifier after whitespace.
+      const parts = cell.text.split(',');
+      const kept = parts.filter((part, k) => {
+        if (value) return value.refs[k].target !== row;
+        const locator = /^[ \t]*(\S*)/.exec(part)![1];
+        const hash = locator.lastIndexOf('#');
+        const prefix = locator.slice(0, Math.max(hash, 0));
+        return hash === -1 || (prefix !== '' && prefix !== column.refTable) || !mine.has(locator.slice(hash + 1));
+      });
+      if (kept.length === parts.length) continue;
+      const text = kept.join(',').replace(/^[ \t]+|[ \t]+$/g, '');
+      const result = setCell(doc, r, column, text === '' ? null : text);
+      if ('edits' in result) edits.push(...result.edits);
+    }
+  }
+  return edits;
+}
+
 /** The value a bool column has for a row: its marker, then its cell, then its default; null when none says. */
 export function readFlag(doc: RowsDocument, row: Row, column: Column): boolean | null {
   const marker = doc.schema.markers.find((m) => m.column === column);
@@ -425,12 +505,14 @@ export function moveRow(doc: RowsDocument, row: Row, dir: 'up' | 'down'): EditRe
 
 /**
  * Deletes a row's line and promotes its descendants one level, so the rest of the tree keeps its
- * shape (DESIGN §6). Refuses when that would leave a row at an indent that fits no level.
+ * shape (DESIGN §6). With `removeReferences`, every in-file reference to the row goes too. Refuses
+ * when that would leave a row at an indent that fits no level.
  */
-export function deleteRow(doc: RowsDocument, row: Row): EditResult {
+export function deleteRow(doc: RowsDocument, row: Row, options: { removeReferences?: boolean } = {}): EditResult {
   const next = doc.lines[row.line];
   // The last line goes with the newline after it, if any, so a blank line above it stays a line.
   const edits: TextEdit[] = [{ from: row.from, to: next ? next.from : doc.text.length, insert: '' }];
+  if (options.removeReferences) edits.push(...referenceEdits(doc, row));
   if (row.line === 1 && next && opensFrontmatter(doc, doc.text.slice(next.from, next.to))) {
     return { refused: 'the new first line would read as a frontmatter delimiter' };
   }

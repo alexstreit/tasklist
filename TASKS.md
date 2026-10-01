@@ -276,7 +276,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 **Deliverables**
 
 - `src/grid/`: a grid editor over `PlanBuffer` per spec §4b.1–4b.3, items only in this task (comment/blank rows come in Task 15).
-- Columns: WBS, done checkbox, title, declared columns. Total row. New-task row.
+- Columns: WBS, done checkbox, title, declared columns. Total row. New-task row. _(Task 31: a toggle for each other marker follows the done checkbox.)_
 - Cell editing per §4b.2, including the raw-text-on-edit rule for summable cells and the pad-to-column helper.
 - Focus restoration by line and column after each buffer change, using `mapPos`.
 - App toolbar gains a Text / Grid toggle; only one editor is mounted at a time; the preview keeps working with either.
@@ -320,7 +320,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 
 **Changed by Task 23:** on item rows the operations work in levels through the rows edit API (spec §4b.6.4); comment and blank rows still use `src/editing/`. Deleting a parent promotes its children one level instead of leaving them at their indent. Indent and outdent take the row's descendants with it.
 
-**Changed by Task 24:** Move up and Move down on an item row move it with its subtree, swapping with the previous or next sibling's subtree, and are enabled only when that sibling exists; moving across levels is indent and outdent. They no longer move only the line, and are never refused for the indentation. Comment and blank rows still move as single lines, and the text editor's Alt+Up/Down stay raw line moves. Refusals are shown in plain words ("Other rows refer to this task by its ID, so it can't be deleted yet.") instead of rows' reasons.
+**Changed by Task 24:** Move up and Move down on an item row move it with its subtree, swapping with the previous or next sibling's subtree, and are enabled only when that sibling exists; moving across levels is indent and outdent. They no longer move only the line, and are never refused for the indentation. Comment and blank rows still move as single lines, and the text editor's Alt+Up/Down stay raw line moves. Refusals are shown in plain words ("Other rows refer to this task by its ID, so it can't be deleted yet.") instead of rows' reasons. _(Task 31 reworded that one; see Task 24's notes.)_
 
 ---
 
@@ -758,6 +758,8 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - "Rejoin into NOTES" is offered only when the row has a cell in NOTES; the path that rejoined from the first extra value and wrote `notes=…` is gone (spec §4b.6.6).
 - Refactor, no change in behaviour: the app uses rows' exports instead of copies (`removeCell`, `isWs`, `NAME`, `RECOVERED_CODES`, `KNOWN_KEYS`, `TYPE_NAMES`, `parseDuration`, `readFlag`, column `typeFrom`/`typeTo`); `rowFixes` and `withRepairs` use rows' labelled `repairs` (`repairRow` stays, as their flattened edits, since the rows tests use it); `normaliseDuration` keeps only the unit words and asks rows whether the result is a duration (a test checks it against the old grammar on 20,000 inputs); the grid's two notions of a row's level are behind one documented helper, `levels` in `src/grid/edits.ts`; the problems list, banner and fix previews moved to `src/grid/problems.ts`.
 - Fixed: the grid passed a row's shown level (its depth in the tree, which follows `parent=`) to rows' structure edits, which work in indentation levels. On an indent-0 row placed under another by `parent=`, and on its descendants, Indent was off when it should apply, Outdent did nothing, and Insert above wrote the new row one level too deep. The grid now passes the indentation level to Indent, Outdent and Insert above, and enables Indent and Outdent by it; titles are still shown at the tree depth (`tests/grid/levels.test.ts`).
+
+**Changed by Task 31:** the plain message for `deleteRow`'s last-anchor refusal said "Other rows refer to this task by its ID, so it can't be deleted yet.", but that refusal is about identity, not references: `deleteRow` never refused a row other rows refer to. It now reads "Deleting this task would turn off task IDs in this file, and other tasks still use them. Give another task an ID first." (`tests/grid/messages.test.ts`). A row others refer to is deleted after a confirm, with its references (Task 31).
 
 **Rewritten tests:**
 
@@ -1412,3 +1414,129 @@ Expected, in work hours, with the displayed dates:
 **New tests:** `tests/schedule/gantt-geometry.test.ts` and `gantt.test.ts`; `tests/views/pins.test.ts`; `tests/core/fields.test.ts` (`Model.fields()`, `label` and `kind`); `tests/renderers/scroll-to-cursor.test.ts`, which checks that the tree, table and schedule views still scroll their cursor row into view, `nearest`, now that `#host` scrolls (only the tree's had a test); in `tests/align/connect.test.ts`, "hosts at different heights" (follower host 32px lower, leader host 32px lower, and a host moving after connection); and in `tests/app/shell.test.ts`, "lines the Gantt up with the text editor's lines, and shows the pin review".
 
 **Spec:** plan-format-spec §2.11 (the `deadline` field), §3.2 (`fields()`), §3.3 and §3.4 (hosts at different heights, converted by the shell), §5.3 (the preview as a column), and the new §5.5 Gantt and §5.6 Pin review. PLUGINS.md §4 (`label`, `kind` for single keys only, `fields()`, `definePinnable`'s signature) and §8 (the Gantt in `renderers/`, `views/pins/`, dates in `ui/`). CLAUDE.md's non-negotiable 5 lists `deadline` and `projectFinish` among the schedule fields renderers read. No rows spec is touched, and rows is unchanged.
+
+---
+
+## Task 31 — Dependencies, IDs and milestones in the grid
+
+**Serves:** M1, its last task. After it, a grid user can build and schedule a plan without the text editor. Dependencies are typed as outline numbers, as in MS Project's Predecessors column. The tool gives the target rows IDs as needed, and IDs stay hidden. Milestones get a toggle like done.
+
+**Why IDs and not outline numbers:** the file stores references by ID, so dependencies survive rows being inserted, moved and deleted. The grid shows and accepts outline numbers, which are what a grid user sees, and translates both ways. Grid users never need to see an ID.
+
+**Deliverables**
+
+- **rows edit API** (DESIGN §6, with property tests; no spec change, since the anchor syntax exists):
+  - `setAnchor(doc, row, id)` gives a row an anchor, or replaces its anchor. It refuses an ID that's invalid or already used, ignoring case. (A third refusal was added when asked; see Decisions.)
+  - `deleteRow(doc, row, { removeReferences: true })` also removes every in-file reference to the row's ID. A cell left with no reference is cleared, and a `many` cell keeps its other references. Without the option, `deleteRow` is unchanged: it deletes the row and leaves any reference to it pointing at nothing, with the existing warning. _(Corrected: this said "today's refusal stands", but `deleteRow` has never refused a referenced row. Its one nearby refusal, the last anchor while other rows set `id=` by name, stays in both modes.)_
+  - The property tests extend to both: no new syntax or structural errors, and after `removeReferences`, no dangling reference to the deleted ID.
+- **ID minting, in core** (`mintId(doc, title)`, pure): a slug of the title, made valid by the ID grammar and unique ignoring case.
+  - Characters outside the grammar are dropped or turned into hyphens, and accents are folded (`Écran d'accueil` gives `ecran-d-accueil`).
+  - An ID that's taken gets `-2`, `-3` and so on.
+  - An empty slug gives `task`, which then follows the same rule.
+  - It's deterministic, so two clients mint the same ID from the same text.
+  - An ID never changes when the title does. Rewriting references on rename stays deferred (`renameId`, spec §7).
+- **Ref cells in the grid.** This is generic for any `ref` column, so the grid knows nothing about scheduling.
+  - **Display:** each target's outline number, plus its qualifier when there is one: `1.2, 2.1 +1d`. A reference that doesn't resolve shows as written (`#missing`), with its existing warning.
+  - **Input:** targets separated by commas, each an outline number or `#id`, optionally followed by a qualifier value (a signed duration for `lag`). Commit resolves every outline number against the current model.
+    - A target without an anchor gets one from `mintId`.
+    - The cell is written with `setCell`, so quoting and qualifiers are rows' business.
+    - The new anchors and the cell edit are one transaction, undone with one Ctrl+Z.
+  - **Refusals:** the edit is refused only when it can't be written: a number that matches no row ("There's no task 4.7"), more than one target in a column without `many`, or a qualifier the column doesn't declare. Everything else, such as a dependency on a parent or on itself, is written, and the schedule's diagnostics report it as usual.
+  - **Editing** shows the outline-number form, not the raw `#id` text. This is the one exception to spec §4b.2's "editing shows the raw cell text", and the spec says so.
+- **Marker toggles.** The grid shows a toggle column for each declared marker, with `done` first as today's checkbox, then the others in declaration order, headed by their glyph (`^`). It uses `setMarker`, and Space toggles it. The toolbar's Toggle done is unchanged.
+- **IDs on hover.** Hovering the WBS cell of a row with an anchor shows its ID (`#review`), so grid users can talk to text users.
+- **Deleting a referenced row.** Instead of deleting it and leaving its references pointing at nothing, the grid offers a `confirm` with a preview: "Delete _Review_? _API_ and _UI_ refer to it in deps; those references will be removed." When references come from more than one column, each is listed: "… _API_ in deps, _Spec_ in related …". Applying it calls `deleteRow` with `removeReferences`, as one transaction. Cancelling writes nothing. Task 24's plain message for `deleteRow`'s last-anchor refusal, which was worded as if it were about references, is reworded to say what it is. _(Corrected: the wording was "depend on it; their dependencies on it will be removed", which fits only `deps` while ref cells are generic; and the message was to go, but the refusal it shows remains.)_
+- **Spec:**
+  - plan-format-spec §4b.1 (marker toggles), §4b.2 (ref cells and the editing exception) and §4b.4 (deleting a referenced row).
+  - Remove "showing and editing anchors, IDs and `ref` columns in the grid" and "ID minting" from §7. Keep `renameId`, and showing implicit columns.
+
+**Acceptance criteria**
+
+- [x] On a `profile: schedule` file with no anchors, typing `1.1` into Review's `deps` gives Wireframes `{#wireframes}` and Review `#wireframes`. One Ctrl+Z restores both. — `tests/grid/refs.test.ts`, over a `CodeMirrorBuffer`: `    Wireframes {#wireframes} | 1d` and `    Review | 4h | deps=#wireframes` (by name, since `deps` isn't Review's next slot), one buffer change with origin `grid`, and one Ctrl+Z in the grid restores the text.
+- [x] `1.1, 2.1 +1d` writes two references, with a lag on the second, and displays exactly that. A target that already has an anchor is reused, and no second anchor is written. — `deps=#wireframes, #api +1d`, shown as `1.1, 2.1 +1d`; a `{#wire}` target is written `#wire`, and the file then has exactly the two anchors it needs.
+- [x] After moving rows with Alt+Up, the deps cells show the new outline numbers, and the references in the file are unchanged. — UI depends on API (2.1); after Alt+Up on UI its line is unchanged, it is 2.1, and its cell shows `2.2`.
+- [x] Each refusal leaves the cell and buffer as they were and shows its plain note. — no buffer change, the cell as it was, and the note: "There's no task 4.7.", "The "deps" column holds only one task.", "The "deps" column takes only task numbers, with nothing after them." and the first-anchor note (see Decisions).
+- [x] `mintId` table: two rows both titled `Review` (`review`, `review-2`), `REVIEW` when `review` exists (`review-2`), the accented title above, `2027 plan`, an empty title (`task`), and a title of only punctuation. Each result is checked against the ID grammar by parsing it back. — `tests/core/ids.test.ts`: each result is written as `X {#id}`, read back as the row's ID with no diagnostic. Also: the second `Review` minted in the same edit and after the first is written, `review` when `REVIEW` exists, `task-2`, the next free number, an ID in a key cell, and underscores and edge trimming. After review: a long title cut at its last hyphen within 24 characters, a long title that collides after cutting (`-2`), a long title with no hyphen cut at 24, and a hyphen at the 25th character.
+- [x] Deleting a row that two others depend on: the preview names both, Apply removes the row and the two references with no dangling reference, one Ctrl+Z restores it all, and Cancel writes nothing. — "Delete Review? API and UI refer to it in deps; those references will be removed.", with the preview of the lines; Apply leaves `    API {#api} | 3d` and `    UI | 2d | deps=#api` and no `unresolved-ref`, one Ctrl+Z over a `CodeMirrorBuffer` restores it all; Cancel writes nothing and, after review, puts the focus back on the row it was opened from, as Apply does. Also: one reference, references from two columns, a row nothing refers to (deleted at once), and a buffer change dropping the confirm.
+- [x] A marker toggle on `^` writes and removes the marker, and Space toggles it. — `    ^UI | 2d` and back, by the checkbox and by Space on its cell; headed `^`; a file whose only marker is done has no toggle column.
+- [x] **The M1 test.** A scripted grid session, with no text-editor input, builds `examples/schedule.plan`'s plan from a file holding only its frontmatter:
+  - rows and indents, estimates, the `dur` pin, start pins, dependencies typed as outline numbers (including the 1-day lag), the deadline, and the milestone toggle;
+  - its schedule then matches Task 28's table cell for cell.
+
+  The text may differ from the example only in the minted IDs and cell spacing. The test asserts the model, not the bytes.
+
+  — `tests/grid/m1.test.ts`. Rows are typed into the new-task row and placed with Alt+Shift+Right and Left; cells are typed into; the milestone is its `^` toggle. The model matches the example's row for row (outline number, title, markers, every cell, and each dependency by its target's title with its lag), and the schedule matches Task 28's table, copied from it by hand: every start, duration, finish, late start, late finish, slack, flag and shown date, `projectFinish` 56 (Tue 13 Oct), and exactly the table's three diagnostics. The code agreed with every value on the first run. The text it builds:
+
+  ```
+  ---
+  profile: schedule
+  project-start: 2026-10-05
+  ---
+  Design
+      Wireframes {#wireframes} | 1d | start=2026-10-05
+      Review {#review} | 4h | deps=#wireframes
+  Build
+      API {#api} | 3d | start=2026-10-05 | deps=#review
+      UI {#ui} | 2d | start=2026-10-12 | deps=#review
+      ^Beta ready | deps=#api, #ui | due=2026-10-12
+  Docs | 1d | 3d | deps=#review 1d
+  ```
+
+  Beta ready has no anchor, since nothing refers to it; the example's comment line is the text editor's business.
+
+- [x] The text editor is unaffected, and every existing test passes. — 1,894 tests pass (1,829 before), with typecheck and lint clean. No text-editor file changed. Rewritten tests are listed below.
+- [ ] **Browser pass, Chrome and Firefox:** build a small schedule in the grid alone, with the Gantt beside it; delete a predecessor through the confirm; undo. **Pending review.** There is no browser here.
+
+**Visible changes:**
+
+- `deps` cells, and every other `ref` cell, show outline numbers, and editing one starts from them. Typing outline numbers writes IDs, and gives the targets anchors as needed.
+- Marker toggle columns: in a `profile: schedule` file, a `^` column between done and the title.
+- IDs on hover over the WBS cell, above any diagnostic message there.
+- Deleting a row others refer to asks first, in a panel below the toolbar, instead of leaving their references pointing at nothing.
+- New refusal notes for ref cells, and the reworded last-anchor note (Task 24's notes).
+- A diagnostic on a named cell (`deps=#missing`, `est=4 hours`) now outlines that cell. It used to land on the WBS cell, since its span includes `NAME=` and the grid compared it with the value alone (spec §4b.2 now says so).
+
+**Not in this task:**
+
+- Picking a predecessor by clicking a row.
+- Link types other than finish-to-start.
+- Rewriting references when an ID is renamed.
+- Showing the implicit `id` and `parent` columns.
+
+**Human review:** the M1 test first. It's the milestone's definition of done, written as a test.
+
+**How it's built:**
+
+- rows (`packages/rows/src/edit.ts`): `setAnchor` inserts ` {#id}` straight after the lead value, before any padding, or replaces the first anchor's ID, and sets a written key cell to the same ID. It closes an unterminated lead's quote first, as appending a cell does. `deleteRow`'s `removeReferences` adds, for every other row's ref cell of the current table (the nest column included), a `setCell` that drops the references to the row with their qualifiers and a comma, or clears the cell. In a cell that reads as references they are matched by target; in one that doesn't (a part that isn't a reference, or several in a column without `many`), by the text of an ID the row is the first to declare. DESIGN §6 has both, and the refusals.
+- core (`src/core/ids.ts`): `mintId(doc, title, taken?)`. `taken` holds IDs minted for the same edit and not written yet, so `1, 2` on two rows titled `Review` gives `review` and `review-2`.
+- grid (`src/grid/refs.ts`): `refText` shows a ref cell, and is what editing starts from; `setRefs` reads what was typed, resolves outline numbers, mints and anchors targets with no ID, and writes the cell with `setCell`, as one change with the repairs of every row it touches. Inserts at one place (an anchor on a lead-only row that is also the cell's row) are joined in order.
+- grid (`src/grid/index.ts`): marker toggle columns are numbered `-2`, `-3`… (`MARKER - i`), between done (0) and the title (1), so existing column numbers are unchanged. The WBS cell's `title` carries the ID. The delete confirm is the problems list's own confirm flow (`problems.run`, exposed for it), shown in a `.sheet-confirm` panel below the toolbar; a delete compares `deleteRow` with and without `removeReferences`, and asks only when the edits differ, naming each row whose ref cell the extra edits touch, by column. Any model update clears the panel. Focus moving into it doesn't count as leaving the grid, so after Apply the grid takes the focus back. _(Changed in review: Cancel does too. `problems.run` takes an `onCancel`, and the grid restores its place on it.)_
+- `src/grid/messages.ts`: the new refusals' plain messages, and the reworded last-anchor one.
+
+**Decisions taken** (by the spec owner, when asked):
+
+- **`deleteRow` without the option is unchanged.** The task said "today's refusal stands" and that Task 24's message "goes", but `deleteRow` never refused a referenced row: it deleted it and left an `unresolved-ref`. Its one nearby refusal (the last anchor while other rows set `id=` by name) stays in both modes, and its message is reworded to say what it is. The grid confirms whenever other rows refer to the row, so a grid delete never leaves a dangling reference. The deliverables above are corrected.
+- **A third `setAnchor` refusal, mirroring `deleteRow`'s:** the file's first anchor, in a file without `key`, while a row has a cell written `id=…`. Without identity that cell reads as text (`owner` = `id=x`); with it, it becomes the row's key, changing another row's meaning. The generators contain `id=a`, so the "every other row unchanged" property found it, and it keeps that property with no exemption. In the grid, a ref edit needing such an anchor is refused as a whole: "Another task has a cell written as id=…, which would start to mean a task ID. Change that cell first." It counts the target row's own `id=` cell too, since that would also change.
+- **The confirm names the column,** since ref cells are generic: "Delete Review? API and UI refer to it in deps; those references will be removed.", and "… API and Docs in deps, UI and Docs in related refer to it …" across columns. One reference reads "UI refers to it in deps; that reference will be removed."
+
+**Decisions taken** (by me, within the task):
+
+- **A target that already has an ID reuses it,** from an anchor or from a key cell. Only a target with no ID gets an anchor.
+- **A duration qualifier typed into a ref cell is normalised** as a typed duration is (`1 day` → `1d`), by analogy with spec §4b.6.5. Any other qualifier, and every `#id`, is written as typed; a part that is neither an outline number nor `#id` is written as typed too, and shows rows' warning.
+- **`mintId`** turns each run of characters outside `[a-z0-9_-]` into one hyphen after folding accents (NFD, marks dropped) and lowering case, and trims what can't begin an ID and trailing hyphens. _(Changed in review: it then cuts the slug at the last hyphen at or before 24 characters, or hard at 24 when there is none, before the uniqueness suffix, since ext §3.3 says a minted ID SHOULD be short. `Migrate the billing database to Postgres` gives `migrate-the-billing`, and a second long title that cuts to the same slug gives `migrate-the-billing-2`.)_
+- **`setAnchor` changing an anchor's case** (`review` → `Review` on the same row) is allowed: the ID it replaces doesn't count as used. Its own aliases do.
+- **`removeReferences` covers the nest column,** as "every in-file reference" says: a `parent=#review` on another row is removed, and that row falls back to its indentation.
+- **The ID on hover** is the first anchor's, above any diagnostic message the WBS cell already shows.
+- **A diagnostic on a named cell outlines the cell** (above, Visible changes). Without it, every unresolved `deps=#…` the grid writes would have marked the WBS cell instead, since the grid writes `deps` by name.
+
+**Rewritten tests:**
+
+- `tests/grid/messages.test.ts`: "the example wording" expects the reworded last-anchor message, and the first-anchor one; the cases gain the last-anchor refusal with `removeReferences` and `setAnchor`'s first-anchor refusal.
+- `packages/rows/tests/edit.test.ts`: the `deleteRow` property now runs half its files with `removeReferences`, and its expected projection drops exactly the references to the row from the other rows' ref cells (compared by their trimmed parts), then checks that no reference to the row's IDs is left pointing at nothing. Over 1,500 files delete with the option. A planted bug (skipping cells that don't read as references) fails it.
+- `packages/rows/tests/generators.ts`: nested files now and then get a ref cell that doesn't read as references (`#a, x`, and `parent="#a, #b"` in a column without `many`); it was added because the planted bug above passed without it. Every property still holds.
+
+**New tests:** `tests/grid/refs.test.ts` (ref cells, refusals, marker toggles, IDs on hover, the delete confirm), `tests/grid/m1.test.ts` (the M1 test), `tests/core/ids.test.ts` (`mintId`); in `packages/rows/tests/edit.test.ts`, the `setAnchor` examples and property (over 4,554 files, at least 1,000 written; a planted bug that drops the first-anchor refusal fails it) and two `deleteRow` examples.
+
+**Spec:** plan-format-spec §3.9 (`setAnchor`, `removeReferences`), §4b.1 (marker toggles, IDs on hover), §4b.2 (ref cells, their input and refusals, `mintId`, the editing exception, and diagnostics on named cells), §4b.4 (Space on a toggle, deleting a referenced row) and §4b.6.6's identity note; §7 loses "showing and editing anchors, IDs and `ref` columns in the grid" and "ID minting", and keeps `renameId` and showing the implicit `id` and `parent` columns. rows DESIGN §6: `setAnchor`, `deleteRow`'s option, both refusals and the property. No rows spec is touched, so no version changes, and there are no spec questions.
+
+**Changed in review** (from what was noticed above): DESIGN §1 no longer lists minting IDs under rows' "Later", and says it lives in the plan's core; PLUGINS.md §8 lists `mintId` among core's contents; plan-format-spec §4b.2 has the 24-character cut. Escape on the delete confirm still does nothing; Cancel is the way out.

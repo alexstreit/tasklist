@@ -15,6 +15,7 @@ export {
   repairRow,
   repairs,
   rowLevels,
+  setAnchor,
   setCell,
   setLead,
   setLevel,

@@ -459,8 +459,8 @@ What the plan tool uses:
 
 - `parseRows` for reading (§3.1), and `readValue` for frontmatter values of a vocabulary type (§3.2);
 - `tokenizeLine` for highlighting (§4.1);
-- `setLead`, `setCell`, `setMarker` and `insertRow` for every cell-level edit from the grid (§4b.2);
-- `setLevel`, `insertRow`, `moveRow`, `deleteRow` and `repairRow` for the grid's structure operations and `auto` repairs (§4b.6).
+- `setLead`, `setCell`, `setMarker` and `insertRow` for every cell-level edit from the grid (§4b.2), and `setAnchor` for the anchors a ref cell's targets need;
+- `setLevel`, `insertRow`, `moveRow`, `deleteRow` (with `removeReferences` for a row others refer to, §4b.4) and `repairRow` for the grid's structure operations and `auto` repairs (§4b.6).
 
 The line operations in `src/editing/` stay in the app. They work on whole lines and don't depend on the format, except `toggleComment`, which takes the comment marker from the document.
 
@@ -498,7 +498,9 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 
 ### 4b.1 Rows
 
-- One row per **item** line. Columns, left to right: WBS (outline number, read-only, doubles as the row selector), done (checkbox), title, then each declared column in order.
+- One row per **item** line. Columns, left to right: WBS (outline number, read-only, doubles as the row selector), done (checkbox), a toggle for each other declared marker, title, then each declared column in order.
+- **Marker toggles.** Each marker other than `done` has a checkbox column after done's, in declaration order, headed by its glyph (`^`). It calls `setMarker`, and Space toggles it, as it does done. A file whose only marker is `done` has none.
+- **IDs on hover.** Hovering the WBS cell of a row with an anchor shows its ID (`#review`), so a grid user can name the task to a text user. IDs are otherwise hidden: a grid user never needs one.
 - Comment and blank lines render as greyed rows: a WBS cell with no number, then one cell spanning the remaining columns and holding the raw line text, indentation included. They are editable as raw text — editing one into an item line is an ordinary text edit and the row changes kind on the next render — and they can be selected, deleted and moved like any row. The reverse is not a grid edit: an item's title cell edits only the title (§4b.2), so a `//` typed there is quoted and reads back as part of the title. An item is commented out in the text editor.
 - Front matter renders as a single collapsed greyed row at the top, read-only.
 - A read-only **total** row at the bottom shows document `effective` and `doneSum` per summable column.
@@ -509,11 +511,15 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 Every cell edit goes through the rows edit API (§3.9). The grid never builds row text itself.
 
 - **Title** edits call `setLead`, which keeps the indent, markers and anchors, and quotes the title when it would otherwise read as a marker, an anchor or a heading.
-- **Done** checkbox calls `setMarker(done)`. A child of a done parent shows a checked, disabled checkbox.
+- **Done** checkbox calls `setMarker(done)`. A child of a done parent shows a checked, disabled checkbox. The other marker toggles call `setMarker` with their marker's name.
+- **Ref cells** show each target's outline number, plus its qualifier as written when there is one (`1.2, 2.1 +1d`); a reference that doesn't resolve shows as written (`#missing`), with its warning. A cell that doesn't read as references shows its text. This is the same for any `ref` column: the grid knows nothing about scheduling.
+  - **Input:** targets separated by commas, each an outline number or `#id`, optionally followed by a qualifier value after whitespace (a signed duration for `lag`, normalised as a typed duration is, §4b.6.5). Commit resolves every outline number against the current model, to its row's ID. A target with no ID gets an anchor from `mintId` (core: a slug of the title, accents folded, in the ID grammar, cut at the last hyphen within 24 characters, or at 24 when there is none, then unique ignoring case with `-2`, `-3`…, or `task` when nothing is left; deterministic, and never changed by a later change of title). The cell is written with `setCell`, so quoting and qualifiers are rows' business. The new anchors and the cell edit are one change, undone in one step.
+  - **Refusals:** only when it can't be written: a number that matches no row ("There's no task 4.7."), more than one target in a column without `many`, a qualifier the column doesn't declare, and an anchor `setAnchor` refuses (the file's first, while a row has a cell written `id=…`). The whole edit is refused then, and nothing is written. Everything else, such as a dependency on a parent or on the row itself, is written, and the schedule's diagnostics report it as usual.
+  - **Editing shows the outline-number form**, as the cell shows it, not the raw `#id` text. It is the one exception to "editing shows the raw cell text" below. Committing it unchanged writes nothing.
 - **Summable cells** display the formatted `effective` (empty when `hasValue` is false; muted when `mode` is `derived`). Editing shows the **raw cell text** from the file, spreadsheet-formula style. Committing a non-empty value on a parent creates an override; committing an empty value on a parent restores derived. An additive value (`+…`) is shown with a marker and is read-only.
 - **Text cells** display and edit the decoded text. A `|` or a leading `"` typed into a cell is quoted automatically.
 - Writing a column that the row doesn't set yet follows `setCell`'s rules: append it positionally if it is the next slot, otherwise write it as a named cell (`notes=…`). The grid pads with empty cells only in `setCell`'s one exception, a column that can't be named. Clearing a cell removes it, or empties it if later cells depend on its position.
-- A cell with a diagnostic has a coloured outline (error, warning or info) and shows the message on hover. A diagnostic whose span falls in a cell marks that cell. One with no span, or on overflow cells, marks the row's WBS cell. Anything inside the frontmatter marks its collapsed row.
+- A cell with a diagnostic has a coloured outline (error, warning or info) and shows the message on hover. A diagnostic whose span falls in a cell, a named cell's `NAME=` included, marks that cell. One with no span, or on overflow cells, marks the row's WBS cell. Anything inside the frontmatter marks its collapsed row.
 - Implicit columns (`parent`, and `id` when identity is on) are not shown in v1.
 - When rows refuses an edit, the grid leaves the cell as it was and shows the reason beside it briefly; it never fails silently. The reason is worded for someone who has never seen the file ("Other rows refer to this task by its ID, so it can't be deleted yet."): rows gives its reasons in its own terms, and the grid maps them to plain messages. An inserted row that rows refuses stays a draft with its text. An edit made while the model still trails the buffer (the shell's debounce) is refused the same way, since its offsets would be for the older text.
 - Typed values are trimmed, and a tab becomes a space, since the buffer holds no tabs (§2.2).
@@ -534,15 +540,17 @@ MS Project conventions; where Project has no default, the text editor's binding 
 | Tab / Shift+Tab         | next / previous cell (wraps across rows)                                                           | commit, then next / previous cell              | —                                                           |
 | F2 or any printable key | start editing (printable key replaces the content; F2 keeps it, caret at end)                      | —                                              | —                                                           |
 | Escape                  | —                                                                                                  | cancel edit, restore display, buffer untouched | clear selection                                             |
-| Delete                  | clear cell (commit empty)                                                                          | —                                              | delete the row; its descendants move up one level (§4b.6.4) |
+| Delete                  | clear cell (commit empty)                                                                          | —                                              | delete the row; its descendants move up one level (§4b.6.4); asks first when other rows refer to it |
 | Insert                  | insert a blank item row **above** at the current row's level (§4b.6.4) and start editing its title | —                                              | same                                                        |
 | Alt+Shift+Right / Left  | indent / outdent the row                                                                           | —                                              | same                                                        |
 | Alt+Up / Alt+Down       | move the row and its subtree past its previous / next sibling (§4b.6.4)                            | —                                              | same                                                        |
-| Space                   | toggle done when the focused cell is the checkbox                                                  | —                                              | —                                                           |
+| Space                   | toggle done, or a marker, when the focused cell is its checkbox                                    | —                                              | —                                                           |
 | Ctrl+Z / Ctrl+Y         | buffer undo / redo                                                                                 | Ctrl+Z cancels the edit                        | same as focused                                             |
 | Arrow keys              | move focus                                                                                         | —                                              | move selection                                              |
 
 Insert-above is deliberate: inserting directly **below** a parent at the parent's indent would capture the parent's children; inserting above never does.
+
+**Deleting a row other rows refer to** asks first, with a preview of the exact change, below the toolbar: "Delete Review? API and UI refer to it in deps; those references will be removed." When the references come from more than one column, each is listed: "… API in deps, Spec in related refer to it …". Apply calls `deleteRow` with `removeReferences`, as one change, so a grid delete never leaves a reference pointing at nothing; Cancel writes nothing, and any change to the buffer drops the question. A row nothing refers to is deleted at once.
 
 Arrow keys move between cells within a row as well as between rows; left of the done checkbox is the WBS cell, so ArrowLeft from the first cell selects the row. Tab and Enter are deliberately unbound on a selected row, and that is the keyboard's way out of the grid: select a row, then Tab leaves for the next control on the page.
 
@@ -666,7 +674,7 @@ The extra values are the overflow cells other than a column's repeat, and any ce
 | A marker's column declared with another type (`done:text` while the profile's markers use `done`) | "Make done a checkbox column": the type becomes `bool`                                 | `confirm` |
 | Malformed type, invalid or repeated option, bad `sep`/`comment`, unsupported `format`, profile errors | "Remove this setting" (the whole `key: value` line) or "Remove this option" (the `:TYPE`, leaving a text column, or the option) | `confirm` |
 
-**Identity.** IDs are hidden in the grid, but concurrent edits and copy-paste create these.
+**Identity.** IDs are hidden in the grid, apart from the WBS cell's hover (§4b.1), but concurrent edits and copy-paste create these.
 
 | Case                                        | Fix                                                                                                                                  | Tier      |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------- |
@@ -744,9 +752,9 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
 - Link types other than finish-to-start; `done` affecting dates
 - Additional roll-up types: `max`, `count`, `done%`, `remaining`
 - Negative values and negative additive values
-- Showing and editing anchors, IDs and `ref` columns in the grid
 - `renameId`: rename an anchor and rewrite in-file references to it. Until then, `setCell` on an anchored key column renames the anchor only.
-- rows `include` resolution (needs directory access in the browser), canonical form export, ID minting
+- rows `include` resolution (needs directory access in the browser), canonical form export
+- Showing the implicit `id` and `parent` columns in the grid
 - Renderers: Gantt; exports to Excel files, Word, HTML, MS Project
 - Manual light/dark toggle
 - Multi-user via text CRDT

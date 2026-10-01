@@ -3,24 +3,29 @@
 
 import { readFlag } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, EditResult } from 'rows';
-import { formatDuration } from '../core';
-import type { Column, Diagnostic, ItemNode, Model, Node, Pinnable, Span } from '../core';
+import { formatDuration, preview } from '../core';
+import type { Column, Diagnostic, Fix, ItemNode, Model, Node, Pinnable, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
-import { canMarkDone, columnOf, deleteItem, insertIndent, insertItem, levels, moveItem, setDone, setField, setFlag, setLine, setTitle, shiftItem, withRepairs } from './edits';
+import { canMarkDone, columnOf, deleteItem, insertIndent, insertItem, levels, moveItem, setDone, setField, setFlag, setLine, setTitle, setToggle, shiftItem, withRepairs } from './edits';
 import { plainRefusal } from './messages';
+import { isRefColumn, refText, setRefs } from './refs';
 import { hasValue, rollup, totals } from '../plugins/estimate/fields';
 import { mountProblems } from './problems';
 import { layoutPublisher } from '../ui/row-layout';
 import type { Leader, RowLayout } from '../ui/row-layout';
 import './grid.css';
 
-/** Cell columns: the WBS cell (which selects the row), the done checkbox, the title, then the declared columns. */
+/**
+ * Cell columns: the WBS cell (which selects the row), the done checkbox, a toggle for each other
+ * marker (MARKER, MARKER - 1, …, left to right), the title, then the declared columns.
+ */
 const WBS = -1;
 const DONE = 0;
 const TITLE = 1;
 const DECLARED = 2;
+const MARKER = -2;
 
 /** An item line, or any other line shown as one editable full-width cell. */
 type Row =
@@ -97,7 +102,10 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   table.className = 'plan-sheet';
   // Space above the table when a following pane's header is taller than the grid's (setMinBodyTop).
   const spacer = document.createElement('div');
-  parent.replaceChildren(bar, problems.banner, problems.list, spacer, table);
+  // Where the grid asks before deleting a row other rows refer to (spec §4b.4).
+  const confirmBox = document.createElement('div');
+  confirmBox.className = 'sheet-confirm';
+  parent.replaceChildren(bar, confirmBox, problems.banner, problems.list, spacer, table);
 
   let model: Model | null = null;
   let rows: Row[] = [];
@@ -198,10 +206,20 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     return result.edits;
   }
 
+  /** The markers other than done, each with a toggle column after done's, in declaration order (spec §4b.1). */
+  function toggles() {
+    return (model?.doc.schema.markers ?? []).filter((m) => m.name !== 'done');
+  }
+
+  /** The cells before the title: the WBS cell, done, and the toggles. */
+  function leading(): number {
+    return 2 + toggles().length;
+  }
+
   /** The cells a row offers, left to right. A non-item line has only its raw cell. */
   function columnsOf(row: Row): number[] {
     if (row.kind === 'line') return [WBS, TITLE];
-    return [WBS, DONE, TITLE, ...(model?.columns ?? []).map((_, i) => DECLARED + i)];
+    return [WBS, DONE, ...toggles().map((_, i) => MARKER - i), TITLE, ...(model?.columns ?? []).map((_, i) => DECLARED + i)];
   }
 
   /** The column to land on when arriving at a row that may not have the one we left. */
@@ -215,6 +233,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (column === TITLE) return row.node.title;
     const index = column - DECLARED;
     if (!model?.columns[index]) return null;
+    // Editing a ref cell shows its outline numbers, as it is shown: the one exception to the raw text (§4b.2).
+    if (isRefColumn(model, index)) return refText(model, row.node, index);
     const text = row.node.fields[index]?.text ?? '';
     const cell = rollupOf(row.node, index);
     // A bool the checkbox shows is toggled, not typed; any other text is edited as text.
@@ -243,6 +263,10 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const text = node.fields[index]?.text ?? '';
     const cell = rollupOf(node, index);
     if (!cell) {
+      if (isRefColumn(model!, index)) {
+        td.textContent = refText(model!, node, index);
+        return;
+      }
       const bool = boolColumn(DECLARED + index);
       // A bool is a checkbox (spec §4b.6.5), unless its text is no bool; then it shows as written.
       if (bool && isFlag(text)) {
@@ -307,8 +331,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function addDraftRow(body: HTMLTableSectionElement, columns: Column[]): void {
     const row = body.insertRow();
     row.className = 'draft';
-    row.insertCell();
-    row.insertCell();
+    for (let i = 0; i < leading(); i++) row.insertCell();
     const title = row.insertCell();
     title.style.paddingLeft = `${0.5 + (draft ? draft.indent / 4 : 0) * 1.25}em`;
     title.append(draftInput);
@@ -324,6 +347,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
     const wbs = addCell(tr, node.line, WBS, 'wbs');
     wbs.textContent = node.outlineNumber;
+    // The ID, so a grid user can name the task to a text user (spec §4b.1).
+    if (node.row.anchors.length > 0) wbs.title = [`#${node.row.anchors[0].id}`, wbs.title].filter(Boolean).join('\n');
     const extra = extraValues(node);
     if (extra) {
       // The values rows kept as overflow, or a column's two values (spec §4b.6.6).
@@ -348,6 +373,19 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     });
     check.append(box);
 
+    toggles().forEach((marker, i) => {
+      const td = addCell(tr, node.line, MARKER - i, 'check');
+      const toggle = document.createElement('input');
+      toggle.type = 'checkbox';
+      toggle.tabIndex = -1;
+      toggle.checked = readFlag(model!.doc, node.row, marker.column) === true;
+      toggle.setAttribute('aria-label', marker.name);
+      toggle.addEventListener('change', () => {
+        if (!write(td, (current) => withRepairs(current, setToggle(current, node, marker.name, toggle.checked), [node]))) toggle.checked = !toggle.checked;
+      });
+      td.append(toggle);
+    });
+
     const title = addCell(tr, node.line, TITLE, 'title');
     title.textContent = node.title;
     title.style.paddingLeft = `${0.5 + row.depth * 1.25}em`;
@@ -362,7 +400,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     tr.className = row.blank ? 'line blank' : 'line';
     addCell(tr, row.line, WBS, 'wbs');
     const raw = addCell(tr, row.line, TITLE, 'raw');
-    raw.colSpan = 2 + columns.length;
+    raw.colSpan = leading() + columns.length;
     raw.textContent = row.text;
   }
 
@@ -373,7 +411,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const draftLine = draft ? lineAt(text, draft.anchor) : null;
     table.replaceChildren();
     const head = table.createTHead().insertRow();
-    for (const name of ['#', '', 'Task', ...columns.map((c) => c.name)]) {
+    for (const name of ['#', '', ...toggles().map((m) => m.char), 'Task', ...columns.map((c) => c.name)]) {
       const th = document.createElement('th');
       th.textContent = name;
       head.append(th);
@@ -386,7 +424,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       tr.insertCell();
       const cell = tr.insertCell();
       cell.className = 'raw';
-      cell.colSpan = 2 + columns.length;
+      cell.colSpan = leading() + columns.length;
       cell.textContent = frontMatter.text;
       if (frontMatter.diagnostic) {
         cell.classList.add(frontMatter.diagnostic.severity);
@@ -409,8 +447,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const foot = table.createTFoot();
     const total = foot.insertRow();
     total.className = 'total';
-    total.insertCell();
-    total.insertCell();
+    for (let i = 0; i < leading(); i++) total.insertCell();
     total.insertCell().textContent = 'Total';
     columns.forEach((column) => {
       const td = total.insertCell();
@@ -421,8 +458,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
     const adder = foot.insertRow();
     adder.className = 'new-task';
-    adder.insertCell();
-    adder.insertCell();
+    for (let i = 0; i < leading(); i++) adder.insertCell();
     adder.insertCell().append(newTask);
     columns.forEach(() => adder.insertCell());
     markPlace();
@@ -473,7 +509,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   // The pane, and the header parts above the table: the problems list or the settings banner
   // opening or closing moves the body without resizing the pane. jsdom has no ResizeObserver.
   const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(fitBodyTop) : null;
-  for (const element of [parent, bar, problems.banner, problems.list]) resize?.observe(element);
+  for (const element of [parent, bar, confirmBox, problems.banner, problems.list]) resize?.observe(element);
 
   /**
    * Show where the grid is: the selected-row class, and the roving tab stop —
@@ -563,9 +599,14 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     endEdit(row, column);
     if (row.kind === 'line') return apply(setLine(buffer.text(), row.span, value));
     const { node } = row;
-    write(cellFor(row.line, column), (current) =>
-      withRepairs(current, column === TITLE ? setTitle(current, node, value) : setField(current, node, column - DECLARED, value), [node]),
-    );
+    write(cellFor(row.line, column), (current) => {
+      const index = column - DECLARED;
+      if (column >= DECLARED && isRefColumn(current, index)) {
+        const { result, touched } = setRefs(current, node, index, value);
+        return withRepairs(current, result, touched);
+      }
+      return withRepairs(current, column === TITLE ? setTitle(current, node, value) : setField(current, node, index, value), [node]);
+    });
   }
 
   /**
@@ -768,12 +809,60 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     write(cellFor(row.line, at?.column ?? WBS), make);
   }
 
+  /**
+   * Delete an item row. When other rows refer to it, ask first, with a preview: applying removes
+   * the row and those references as one change, and cancelling writes nothing (spec §4b.4).
+   */
+  function remove(row: Row & { kind: 'item' }): void {
+    const current = model;
+    const plain = current && current.doc.text === buffer.text() ? deleteItem(current, row.node) : null;
+    const full = current && plain ? deleteItem(current, row.node, true) : null;
+    if (!current || !plain || !full || 'refused' in plain || 'refused' in full) return structure(row, (m) => deleteItem(m, row.node, true));
+    const kept = new Set(plain.edits.map((e) => JSON.stringify(e)));
+    const references = full.edits.filter((e) => !kept.has(JSON.stringify(e)));
+    if (references.length === 0) return structure(row, () => full);
+    const fix: Fix = {
+      label: 'Delete row',
+      tier: 'confirm',
+      edits: full.edits,
+      preview: preview(current.doc.text, full.edits),
+      warning: deleteQuestion(current, row.node, references),
+    };
+    confirmBox.replaceChildren();
+    // Cancel puts the focus back on the row it was opened from, as Apply does.
+    problems.run(confirmBox, fix, () => {
+      held = true;
+      restore();
+    });
+  }
+
+  /** "Delete Review? API and UI refer to it in deps; those references will be removed." By column, in column order. */
+  function deleteQuestion(current: Model, node: ItemNode, references: TextEdit[]): string {
+    const name = (n: ItemNode) => (n.title !== '' ? n.title : `Line ${n.line}`);
+    const groups = new Map<string, string[]>();
+    for (const column of current.doc.schema.columns.filter((c) => c.kind === 'ref')) {
+      for (const other of [...byLine.values()]) {
+        if (other.kind !== 'item' || other.node === node) continue;
+        const cell = other.node.row.cells[column.index];
+        if (cell?.text && references.some((e) => e.from < cell.valueTo && cell.valueFrom < e.to)) groups.set(column.name, [...(groups.get(column.name) ?? []), name(other.node)]);
+      }
+    }
+    const list = (xs: string[]) => (xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+    const count = [...groups.values()].reduce((n, titles) => n + titles.length, 0);
+    const these = count === 1 ? 'that reference' : 'those references';
+    const [only] = groups.size === 1 ? [...groups] : [];
+    const who = only
+      ? `${list(only[1])} ${count === 1 ? 'refers' : 'refer'} to it in ${only[0]}`
+      : `${[...groups].map(([column, titles]) => `${list(titles)} in ${column}`).join(', ')} refer to it`;
+    return `Delete ${name(node)}? ${who}; ${these} will be removed.`;
+  }
+
   const actions: { id: string; label: string; run(row: Row): void; enabled(row: Row): boolean }[] = [
     { id: 'insert', label: 'Insert row', run: startDraft, enabled: () => true },
     {
       id: 'delete',
       label: 'Delete row',
-      run: (row) => (row.kind === 'item' ? structure(row, (m) => deleteItem(m, row.node)) : apply(deleteLines(buffer.text(), range(row)))),
+      run: (row) => (row.kind === 'item' ? remove(row) : apply(deleteLines(buffer.text(), range(row)))),
       enabled: () => true,
     },
     {
@@ -943,7 +1032,9 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   });
   table.addEventListener('focusout', (event) => {
     const next = event.relatedTarget as Node | null;
-    if (next && !table.contains(next as unknown as globalThis.Node)) held = false;
+    // The delete confirm is the grid's own question: the grid takes the focus back after it.
+    const inside = (el: HTMLElement) => el.contains(next as unknown as globalThis.Node);
+    if (next && !inside(table) && !inside(confirmBox)) held = false;
   });
 
   draftInput.addEventListener('keydown', (event) => {
@@ -1028,13 +1119,19 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (!diagnostic.span) return WBS;
     if (row.kind === 'line') return TITLE;
     if (within(row.node.titleSpan, diagnostic.span)) return TITLE;
-    const i = row.node.fields.findIndex((field) => field && within(field.span, diagnostic.span as Span));
+    // The whole cell, so a named cell's `NAME=` counts as in it.
+    const i = row.node.fields.findIndex((field, k) => {
+      const cell = field && model ? row.node.row.cells[columnOf(model, k).index] : null;
+      return cell && within({ from: cell.from, to: cell.to }, diagnostic.span as Span);
+    });
     return i >= 0 ? DECLARED + i : WBS;
   }
 
   return {
     update(next) {
       model = next;
+      // A confirm was made against the last model's text; any change drops it.
+      confirmBox.replaceChildren();
       readModel(next);
       build();
       problems.update(next, frontMatter?.span ?? null);

@@ -23,6 +23,8 @@ export interface Problems {
   list: HTMLDetailsElement;
   /** Rebuild both from a model. `settings` is the front matter's span, or null without one. */
   update(model: Model, settings: Span | null): void;
+  /** Apply a fix as the list does: a confirm fix shows its preview and warning in `host` first; `onCancel` runs when it is cancelled. */
+  run(host: HTMLElement, fix: Fix, onCancel?: () => void): void;
 }
 
 function part(className: string, text: string): HTMLSpanElement {
@@ -64,7 +66,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
    * and cancelling writes nothing (spec §4b.6.1). A fix that takes a typed
    * value (a column's new name) shows it in an input, and the preview follows it.
    */
-  function runFix(host: HTMLElement, offered: Fix): void {
+  function runFix(host: HTMLElement, offered: Fix, onCancel?: () => void): void {
     const fix = resolveFix(offered, day);
     if (fix.tier !== 'confirm') {
       hooks.write(host, () => ({ edits: fix.edits }));
@@ -98,7 +100,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
       box.append(input);
       first = input;
     }
-    box.append(pre, ok, button('fix', 'Cancel', () => box.remove()));
+    box.append(pre, ok, button('fix', 'Cancel', () => (box.remove(), onCancel?.())));
     host.append(box);
     first.focus();
   }
@@ -167,5 +169,6 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
       renderBanner(settings);
       renderList();
     },
+    run: runFix,
   };
 }

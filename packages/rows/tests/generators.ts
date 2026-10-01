@@ -64,8 +64,9 @@ export function generateNested(random: () => number): string {
     let line = pick(['', '', '  ', '    ', '        ', '\t']) + pick(['', '~', '~~']) + `R${i}`;
     if (random() < 0.6) line += ` {#${pick(ids)}}`;
     line += ` | ${pick(['1', '2', 'x', ''])}`;
-    if (random() < 0.5) line += ` | #${pick(ids)}, #${pick(ids)} +1d`;
-    if (random() < 0.6) line += ` | parent=#${pick(ids)}`;
+    // Now and then a cell that doesn't read as references: a part that isn't one, or several in a column without many.
+    if (random() < 0.5) line += pick([` | #${pick(ids)}, #${pick(ids)} +1d`, ` | #${pick(ids)}, #${pick(ids)} +1d`, ` | #${pick(ids)}, x`]);
+    if (random() < 0.6) line += pick([` | parent=#${pick(ids)}`, ` | parent=#${pick(ids)}`, ` | parent="#${pick(ids)}, #${pick(ids)}"`]);
     lines.push(line);
   }
   return lines.join('\n') + '\n';
