@@ -159,7 +159,7 @@ function activate(renderer: Renderer): void {
 function connect(): void {
   disconnect();
   const leads = editor?.onRowLayout && editor.scrollTo && editor.setMinBodyTop ? (editor as Leader) : undefined;
-  disconnect = connectPanes({ leads }, { follows: active.follows ? channel.follower : undefined });
+  disconnect = connectPanes({ leads, host: editorHost }, { follows: active.follows ? channel.follower : undefined, host });
 }
 
 function schedule(): void {

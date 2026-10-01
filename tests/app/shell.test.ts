@@ -249,11 +249,15 @@ describe('renderer switcher', () => {
   const tab = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('#renderers button')].find((b) => b.textContent === label)!;
 
   it('lists every registered renderer, greying out one whose requirements are unmet', () => {
-    expect([...document.querySelectorAll('#renderers button')].map((b) => b.textContent)).toEqual(['Tree', 'Table', 'Schedule']);
+    expect([...document.querySelectorAll('#renderers button')].map((b) => b.textContent)).toEqual(['Tree', 'Table', 'Schedule', 'Gantt', 'Pins']);
     expect(tab('Tree').classList.contains('active')).toBe(true);
     expect(tab('Table').disabled).toBe(false);
     expect(tab('Schedule').disabled).toBe(true);
     expect(tab('Schedule').title).toBe('needs project-start');
+    expect(tab('Gantt').disabled).toBe(true);
+    expect(tab('Gantt').title).toBe('needs project-start');
+    // The pin review requires nothing.
+    expect(tab('Pins').disabled).toBe(false);
   });
 
   it('switches to the table renderer and back', () => {
@@ -284,6 +288,21 @@ describe('renderer switcher', () => {
     expect(tab('Schedule').classList.contains('active')).toBe(false);
     expect(tab('Table').classList.contains('active')).toBe(true);
     expect(preview.querySelector('table')!.className).toContain('plan-table');
+  });
+
+  it('lines the Gantt up with the text editor’s lines, and shows the pin review', () => {
+    const text = '---\nprofile: schedule\nproject-start: 2026-10-05\n---\n// plan\nBuild\n    API | 3d\n    UI | 2d | | 2026-10-12\n';
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    vi.advanceTimersByTime(60);
+    tab('Gantt').click();
+    vi.advanceTimersByTime(60);
+    const bands = [...preview.querySelectorAll<HTMLElement>('.gantt-row')];
+    // The comment and front matter lines are rows with no mark.
+    expect(bands.map((b) => Number(b.dataset.line))).toEqual([6, 7, 8]);
+    expect(bands.map((b) => parseFloat(b.style.top))).toEqual([6, 7, 8].map((line) => view.lineBlockAt(view.state.doc.line(line).from).top));
+    tab('Pins').click();
+    expect([...preview.querySelectorAll<HTMLTableRowElement>('tbody tr')].map((r) => r.cells[1].textContent)).toEqual(['UI']);
+    tab('Table').click();
   });
 });
 

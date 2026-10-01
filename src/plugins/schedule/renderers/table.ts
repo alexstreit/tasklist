@@ -1,20 +1,11 @@
 // The schedule table (spec §5.4): one row per item with its start, finish, duration and slack.
 // Reads the schedule fields; dates and days come from the model's calendar.
 
-import type { Calendar, ItemNode, Model, RenderContext, Renderer, WorkHours } from '../../../core';
+import type { ItemNode, Model, RenderContext, Renderer, WorkHours } from '../../../core';
+import { formatDate } from '../../../ui/dates';
 import { addItemRow, createGrid, mount, muted } from '../../../ui/grid';
 import { critical, duration, finish, late, milestone, slack, start } from '../fields';
 import './table.css';
-
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** `Mon 5 Oct`, with the year when it isn't project-start's: `Mon 4 Jan 2027`. */
-export function formatDate(iso: string, calendar: Calendar): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  const year = iso.slice(0, 4) === calendar.start.slice(0, 4) ? '' : ` ${d.getUTCFullYear()}`;
-  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}${year}`;
-}
 
 /** Working hours in days and hours of the calendar's day: `1d 4h`, `3d`, `0h`, `−1d`. */
 export function formatDays(hours: number, hoursPerDay: number): string {

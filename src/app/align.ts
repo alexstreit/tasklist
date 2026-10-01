@@ -19,6 +19,16 @@ export interface Follower {
 export interface Pane {
   leads?: Leader;
   follows?: Follower;
+  /**
+   * The element the pane's editor or view is mounted in. A layout's `bodyTop` and a header height
+   * are measured from its content top; the shell converts between the two panes' tops.
+   */
+  host?: HTMLElement;
+}
+
+/** Where an element's content box starts, from the page's top. */
+function contentTop(el: HTMLElement): number {
+  return el.getBoundingClientRect().top + el.clientTop + (parseFloat(getComputedStyle(el).paddingTop) || 0);
 }
 
 type FollowerContext = Required<Pick<RenderContext, 'onRowLayout' | 'reportScroll' | 'reportHeaderHeight'>>;
@@ -73,22 +83,43 @@ export function followerChannel(): { follower: Follower; context: FollowerContex
  * the function that disconnects them.
  *
  * Connected, the leader's body starts no higher than the follower's header ends, so both start at
- * the larger of the two; the follower draws at the layout's `bodyTop`. Scrolling syncs both ways,
- * and each side's echo of a scroll the shell gave it is dropped (`ScrollEcho`).
+ * the larger of the two; the follower draws at the layout's `bodyTop`. The two hosts' tops may
+ * differ, either way round: the shell measures both against the page and converts each `bodyTop`
+ * and header height between them, and measures again when either host is resized. Scrolling syncs
+ * both ways, and each side's echo of a scroll the shell gave it is dropped (`ScrollEcho`).
  */
 export function connectPanes(left: Pane, right: Pane): () => void {
-  const [leader, follower] =
-    left.leads && right.follows ? [left.leads, right.follows] : right.leads && left.follows ? [right.leads, left.follows] : [];
-  if (!leader || !follower) return () => {};
+  const [lead, follow] = left.leads && right.follows ? [left, right] : right.leads && left.follows ? [right, left] : [];
+  if (!lead || !follow) return () => {};
+  const leader = lead.leads!;
+  const follower = follow.follows!;
   const leaderEcho = new ScrollEcho();
   const followerEcho = new ScrollEcho();
+  /** How far the follower's host starts below the leader's; negative when it starts above. */
+  const measure = () => (lead.host && follow.host ? contentTop(follow.host) - contentTop(lead.host) : 0);
+  let offset = measure();
+  let header: number | null = null;
+  let latest: RowLayout | null = null;
+
+  const fitHeader = () => {
+    if (header !== null) leader.setMinBodyTop(Math.max(0, header + offset));
+  };
+  // The leader's layout in the follower's terms: the same rows, from the follower's own top. On the
+  // leader catching up with a scroll the shell gave it, the follower stays where it was scrolled.
+  const forward = (layout: RowLayout) => {
+    const scrollTop = leaderEcho.isEcho(layout.scrollTop) ? leaderEcho.value! : layout.scrollTop;
+    followerEcho.set(scrollTop);
+    follower.layout({ ...layout, bodyTop: layout.bodyTop - offset, scrollTop });
+  };
+
   const offs = [
-    follower.onHeaderHeight((px) => leader.setMinBodyTop(px)),
+    follower.onHeaderHeight((px) => {
+      header = px;
+      fitHeader();
+    }),
     leader.onRowLayout((layout) => {
-      // The leader catching up with a scroll the shell gave it: the follower stays where it was scrolled.
-      const scrollTop = leaderEcho.isEcho(layout.scrollTop) ? leaderEcho.value! : layout.scrollTop;
-      followerEcho.set(scrollTop);
-      follower.layout(scrollTop === layout.scrollTop ? layout : { ...layout, scrollTop });
+      latest = layout;
+      forward(layout);
     }),
     follower.onScroll((top) => {
       if (followerEcho.isEcho(top)) return;
@@ -96,7 +127,22 @@ export function connectPanes(left: Pane, right: Pane): () => void {
       leader.scrollTo(top);
     }),
   ];
+
+  // A host moves when the bar above it wraps or grows; that resizes it too. jsdom has no ResizeObserver.
+  const resize =
+    typeof ResizeObserver === 'function' && lead.host && follow.host
+      ? new ResizeObserver(() => {
+          const next = measure();
+          if (next === offset) return;
+          offset = next;
+          fitHeader();
+          if (latest) forward(latest);
+        })
+      : null;
+  for (const host of [lead.host, follow.host]) if (host) resize?.observe(host);
+
   return () => {
+    resize?.disconnect();
     for (const off of offs) off();
     leader.setMinBodyTop(0);
   };

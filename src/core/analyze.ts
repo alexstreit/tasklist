@@ -71,6 +71,7 @@ export function createAnalyzer(registry: Registry): (text: string, options?: Ana
       diagnostics,
       inactive: [],
       version,
+      fields: () => [...written],
       get: <T>(node: ItemNode, key: FieldKey<T>) => nodeFields.get(key)?.get(node) as T | undefined,
       value: <T>(key: FieldKey<T>) => documentFields.get(key) as T | undefined,
     };

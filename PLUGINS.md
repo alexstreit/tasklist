@@ -80,13 +80,19 @@ interface FieldKey<T> {
   readonly name: string;
   readonly scope: "node" | "document";
   readonly pinnable: "no" | "single" | "by-column";
+  readonly label?: string; // a single pinnable key's name in the pin review: 'Start', 'Duration'
+  readonly kind?: "duration" | "date"; // how the pin review formats a single pinnable key's values
 }
 function defineField<T>(
   plugin: string,
   name: string,
   scope: "node" | "document",
 ): FieldKey<T>;
-function definePinnable<T>(plugin: string, name: string): FieldKey<Pinnable<T>>; // node scope
+function definePinnable<T>(
+  plugin: string,
+  name: string,
+  show: { label: string; kind: "duration" | "date" },
+): FieldKey<Pinnable<T>>; // node scope
 function definePinnableByColumn<T>(
   plugin: string,
   name: string,
@@ -113,10 +119,11 @@ interface Model {
   // plugin fields
   get<T>(node: ItemNode, key: FieldKey<T>): T | undefined;
   value<T>(key: FieldKey<T>): T | undefined; // document-scope fields
+  fields(): FieldKey<unknown>[]; // the keys written in this analysis, in stage order
 }
 
 // plugins/schedule/fields.ts
-export const start = definePinnable<WorkHours>("schedule", "start");
+export const start = definePinnable<WorkHours>("schedule", "start", { label: "Start", kind: "date" });
 // plugins/estimate/fields.ts
 export const rollup = definePinnableByColumn<Hours>("estimate", "rollup");
 ```
@@ -124,7 +131,7 @@ export const rollup = definePinnableByColumn<Hours>("estimate", "rollup");
 - **Why keys and not properties.** One `Model` type with optional properties for every plugin would make every renderer depend on every plugin, and declaration merging would do the same invisibly. A key is an import, so the dependency is visible and the import test (§8) can check it against `requires`.
 - **Scopes.** `node` fields hold one value per item; `document` fields hold one value per file (totals, the critical path, the project finish). Estimate's roll-ups are one **by-column** pinnable key, a map from column name to `Pinnable`, because fields are declared statically in the manifest and a file's columns are not.
 - **Pinnable values.** `mode` is the only record of whether a value is pinned: "pinned" is `mode !== 'derived'`, never a separate boolean. How `effective` follows from `derived` and `pin` is the owning stage's rule. For estimate, `derived` is the children's sum when any child has a value (today's `childSum` and `childrenHaveValue`) and absent otherwise, so a leaf's estimate is a pin with nothing derived; an override replaces and `+` adds. For schedule, `derived` always exists, and a start pin is a floor, so `effective` can be later than `pin`.
-- **The pin review** lists pins that override something: for every node field whose key is pinnable, single or by column, each value with both a `pin` and a `derived`, shown side by side. It knows no plugin, and leaf estimates never appear in it.
+- **The pin review** lists pins that override something: for every node field whose key is pinnable, single or by column, each value with both a `pin` and a `derived`, shown side by side. It knows no plugin, and leaf estimates never appear in it. It finds the keys through `model.fields()`. A single pinnable key carries a `label` and a `kind` for it; a by-column key carries neither, since its entries are named by their column and formatted by the column's type (a duration column as a duration, a number column as the plain number).
 - **Pin diagnostics are the owning plugin's.** Schedule's "pin has no effect" is `pin !== undefined && effective > pin`, and "pin equals derived" applies in `pinned` mode only, since in `additive` mode an equal pin doubles rather than repeats. Estimate keeps exactly today's diagnostics.
 - **What moves and what stays.** Each column's `effective`, `childSum` and `mode` become the `rollup` map's `Pinnable` (`childSum` is its `derived`; `childrenHaveValue` is `derived !== undefined`). `hasValue` and `doneSum` become estimate fields beside it. `done`, own and inherited, stays in core on `ItemNode`, because plan spec §2.8's inheritance is structure, not arithmetic.
 - **Storage** is a `Map` per field keyed by node, which is fine for 500-line files. The interface hides it, so it can change.
@@ -292,11 +299,11 @@ src/
                         Workspace and Calendar interfaces, naive calendar
   plugins/
     estimate/           the roll-up stages and their fields; tree, table and TSV move here
-    schedule/           the forward and backward passes and their fields; the schedule table (Task 28), Gantt next
+    schedule/           the forward and backward passes and their fields; the schedule table and the Gantt, in renderers/
   ui/                   shared UI code for renderers and editors: the row-per-item table, cursor highlight,
-                        click-to-line and their CSS; today's date for fixes; row-layout.ts, row alignment
+                        click-to-line and their CSS; today's date for fixes; dates as views show them; row-layout.ts, row alignment
                         between a leading editor and a following view; imports only core's types
-  views/                renderers that belong to no plugin: the pin review (with scheduling)
+  views/                renderers that belong to no plugin: the pin review (pins/)
   app/                  shell, registry wiring, single-file workspace, connecting a leader to a follower (align.ts)
   editor/ grid/ buffer/ editing/   unchanged: editors are not plugins
 ```

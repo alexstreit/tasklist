@@ -1204,6 +1204,7 @@ Expected, in work hours, with the displayed dates:
 **Deliverables**
 
 - **`src/ui/row-layout.ts`**, a name chosen to avoid "rows", which already means the library:
+
   ```ts
   interface RowLayout {
     version: number; // the buffer version this layout was measured at
@@ -1218,6 +1219,7 @@ Expected, in work hours, with the displayed dates:
 
   - Helpers: `naturalLayout(model, version, viewport)` builds a follower's own layout, with one row per item at `--row-height`. `ScrollEcho` drops a reported scroll within 1px of the value the shell last set, comparing values rather than using a boolean guard.
   - `--row-height` is one theme token, which the grid and followers share.
+
 - **Buffer and model versions:** `PlanBuffer` counts its changes, and `Model.version` records the version that `analyze` read.
 - **Leaders:** the grid and the text editor. `PlanEditor` gains optional `onRowLayout(cb)`, `scrollTo(top)` and `setMinBodyTop(px)`.
   - The text editor uses CodeMirror's line blocks, which cover wrapped lines. Folded lines are absent.
@@ -1242,12 +1244,14 @@ Expected, in work hours, with the displayed dates:
   - folding a parent removes its children's rows, while the model still has their dates, which the Task 30 summary bar needs.
 
   — `tests/align/text-editor.test.ts`. CodeMirror itself measures the injected line heights (20px, 40px for the line that wraps), so the line blocks are real ones. Folding and unfolding a parent; the folded children's `start` and `finish` are asserted on the model. The empty text after the final newline is a CodeMirror line and no model line, so it is a row with no item.
+
 - [x] Grid leading the stub:
   - comment rows are present;
   - a draft row is `at: null`;
   - opening the problems list republishes with a larger `bodyTop` (mocked `ResizeObserver`).
 
   — `tests/align/grid.test.ts`, with block layout injected. Also: the front matter is one row, on its first line; only rows on screen are published.
+
 - [x] Coordinates: a layout published after scrolling has the same `top` values as before, and only `scrollTop` differs. — "publishes a scroll with the same row tops" in both leaders' tests.
 - [x] Versions: after an insert or an Alt+Up move, the stub keeps its last frame until the model catches up, then draws. It never draws a layout against the wrong model. — The insert in the text editor's tests, Alt+Up in the grid's. Each checks there is no new frame between the edit and the model reaching the stub, including after the editor has the new model and the stub doesn't yet. Every frame records the model version it was drawn with, which is the layout's.
 - [x] Scroll sync both ways, including an echo delivered after a delay (simulated): no loop, and no drift beyond 1px. — `tests/align/connect.test.ts`, with a fake leader that rounds to whole pixels and delivers its scroll events only when told: one `scrollTo` per user scroll, and a stub at 300.4 stays there when the leader's late echo says 300.
@@ -1277,4 +1281,134 @@ Expected, in work hours, with the displayed dates:
 
 **New tests:** `tests/align/text-editor.test.ts`, `grid.test.ts`, `connect.test.ts` and `idle.test.ts`; "model versions" in `tests/app/shell.test.ts`; `tests/ui/row-layout.test.ts` (`naturalLayout`, `ScrollEcho`); the buffer's version in `tests/buffer/shared.test.ts`. Test support: `tests/support/stub-follower.ts` (the stub, not registered), `layout.ts` (injected measurements and a mock `ResizeObserver`) and `panes.ts` (an editor leading the stub, connected as the shell connects them). No existing test was rewritten in substance: callers of `analyze` across the tests now pass `{ filename }`, and `tests/app/shell.test.ts` mocks the registry to record models.
 
+**Changed by Task 30:** the shell converts between the two hosts' tops. A `bodyTop` or a header height is measured from its own host, `connectPanes` takes each pane's `host`, and it remeasures when either host is resized. Task 29 had assumed both panes start at the same height.
+
 **Spec:** plan-format-spec §3.2 (`Model.version`, `analyze`'s options object), §3.3 (`follows`, the follower part of `RenderContext`, `RowLayout` and the follower rules), §3.4 (the leader part of `PlanEditor`, both leaders, measuring only with a subscriber, the connecting rules) and §3.7 (`version()`). PLUGINS.md §4 and §6 add `Model.version` and `analyze`'s options object, and §8 lists `row-layout.ts` and `app/align.ts`. CLAUDE.md's repo layout names row alignment under `ui/`. VISION is unchanged.
+
+---
+
+## Task 30 — Gantt chart and pin review
+
+**Serves:** M1 (VISION §5; `PLUGINS.md` §4). The Gantt is the first view that follows another pane's rows (Task 29). The pin review lists every pin from any plugin. This task completes "a PM can read a schedule"; editing IDs and dependencies in the grid is Task 31.
+
+**Deliverables**
+
+- **Gantt geometry, as a pure function** (`src/plugins/schedule/renderers/gantt/geometry.ts`): `ganttGeometry(model, layout, dayWidth, today)` returns plain data with no DOM:
+  - per row: a bar (x, width), a summary bracket, or a milestone diamond (x); whether it is critical, late, done or pinned, where pinned means the start's mode isn't `derived` (`PLUGINS.md` §4); for a pinned start, `pinX`, the pin's own date; and its row's `top` and `height` from the layout;
+  - full-height lines for the project finish and for each distinct deadline date;
+  - the date scale: week separators and day labels.
+
+  The drawing code only places what it returns. Every geometry test runs without a browser.
+
+- **The chart's extent** runs from hour 0 to the later of the project finish and the latest deadline, rounded up to a whole working day, plus one working day of padding.
+- **The x axis is working days.** A position is `WorkHours / calendar.hoursPerDay × dayWidth`, so weekends take no space, and every bar matches the schedule's own axis exactly. The scale shows a separator and a date label (`Mon 5 Oct`, with the year shown when it differs from `project-start`'s) at each week's first working day, and the day letters below. `dayWidth` is fixed at 24px for now, and the chart scrolls horizontally on its own. Zoom comes later.
+- **Marks:**
+  - Leaf bars run from start to finish.
+  - Summary rows get a bracket from their start to their finish.
+  - Milestones are a diamond at their finish.
+  - Critical leaf bars and summary brackets use the critical colour.
+  - A late row's mark is outlined in the warning colour, and a small marker sits at its deadline on that row.
+  - Done rows are dimmed.
+  - A pinned start has a small pin mark at the pin's own date (`pinX`), not at the start of the bar. A pin that had no effect sits left of its bar, which shows it.
+  - Each deadline date is a dashed full-height line, labelled in the scale. The project finish is a solid line.
+- **A today line**, read from `today()` in `src/ui/`. The renderer is UI code, so it may read the clock; the geometry function takes `today` as a parameter, so it stays pure and testable. The line is drawn only when today falls inside the extent.
+- **A `deadline` field** in the schedule plugin: `schedule.backward` writes `deadline: WorkHours`, the deadline date's `'end'` edge, on each row whose deadline cell is set. It already converts the date for the late finish, so the conversion happens once, in one place. The geometry collects the distinct values for the lines and the scale labels.
+- **The Gantt renderer** (`src/plugins/schedule/renderers/gantt/`): it declares `follows: true` and requires the schedule fields it reads.
+  - It draws from its `RowLayout`: the editor's layout when one leads, otherwise its natural layout. A row with no item stays empty, and only rows in the layout are drawn.
+  - It reports its header height (the date scale) through `reportHeaderHeight`.
+  - The cursor band and click-to-line work through `RenderContext`, as in the other views. Clicking a mark or its row moves the cursor to that line.
+  - Hovering a mark gives a tooltip with the title, start and finish dates, duration and slack, formatted as in the schedule table.
+  - When the schedule's stages were skipped, it is greyed out with the reason, as now.
+- **Theme tokens** for the bar, critical, summary, milestone, deadline, project finish, today, pin and the scale's lines, in both themes. The colour-token test still passes.
+- **Pin review** (`src/views/pins/`), with no requires, so it's always available, and showing "No pins" when the list is empty:
+  - **What it lists:** for every node field whose key is pinnable (single or by column), each value with both a `pin` and a `derived`. Leaf estimates never appear. For each, it shows the outline number, title, what is pinned, pin, derived and effective, in document order. A pinned value whose effective value differs from its pin (a floor that had no effect) is marked; an additive one never is, since adding is what it's for.
+  - **Interaction:** click-to-line and the cursor band, as in the other views.
+  - **How it finds the pinnable fields:** `Model` gains `fields(): FieldKey<unknown>[]`, listing the keys written in this analysis.
+  - **How it labels and formats them without knowing the plugin:** single pinnable keys gain a `label` ('Start', 'Duration') and a `kind` (`'duration'` or `'date'`). A by-column key carries neither: it shows its column's name, and the column's type decides the format, a duration column through `formatDuration` and a number column as the plain number. Durations are formatted with `formatDuration`, and dates with `calendar.toDate(t, 'start')`.
+  - Estimate's `rollup` is labelled with the column name and formatted by the column's type. Schedule's `start` is 'Start', `kind: 'date'`, and its `duration` is 'Duration', `kind: 'duration'`.
+- **Spec:** plan-format-spec §5.5 (Gantt) and §5.6 (pin review), §3.2 for `fields()`, and §2.11 for the `deadline` field. PLUGINS.md §4 for `label`, `kind` (single keys only; a by-column value is formatted by its column's type) and `fields()`.
+
+**Acceptance criteria**
+
+- [x] Geometry on `examples/schedule.plan` with its natural layout, in days at `dayWidth` 1:
+
+  | Row        | Mark                      | x   | width | pinX |
+  | ---------- | ------------------------- | --- | ----- | ---- |
+  | Design     | summary                   | 0   | 1.5   | —    |
+  | Wireframes | bar, pinned               | 0   | 1     | 0    |
+  | Review     | bar                       | 1   | 0.5   | —    |
+  | Build      | summary, critical         | 1.5 | 5.5   | —    |
+  | API        | bar, pinned               | 1.5 | 3     | 0    |
+  | UI         | bar, critical, pinned     | 5   | 2     | 5    |
+  | Beta ready | milestone, critical, late | 7   | —     | —    |
+  | Docs       | bar                       | 2.5 | 3     | —    |
+
+  Deadline line at 6 (12 Oct); Beta ready's deadline field is 48. Project finish at 7. Extent 8 (finish 7, deadline 6, rounded 7, padded 8). Week separators at 0 and 5, labelled `Mon 5 Oct` and `Mon 12 Oct`. Today passed as `2026-10-07` gives a line at 2. Today outside the chart gives no line.
+
+  Like Task 28's, these values were worked out by hand. Write the test from the table, never from output.
+
+  — `tests/schedule/gantt-geometry.test.ts`, written from this table. The code agreed with every value on the first run. The table's "pinned" column and `pinX` were corrected before any code was written (see decisions). It also checks that the rows keep the layout's order, `top` and `height`, that the day letters span the extent, and that positions scale with `dayWidth`.
+
+- [x] Geometry against a leader's layout: comment and frontmatter rows give no mark. A folded parent's children give no mark, but the parent's summary bracket still spans their dates. A draft row (`at: null`) gives no mark. Marks take each row's `top` and `height` from the layout. — "Gantt geometry against a leader's layout" in the same file, on a layout written by hand: front matter, the comment, Design folded, a draft row, and Build.
+- [x] The Gantt follows through the Task 29 contract: it draws only when the layout's version matches the model's, and reports its scale height through `reportHeaderHeight`. — `tests/schedule/gantt.test.ts`, which also covers the natural layout, empty rows, repositioning without redrawing, click-to-line, the cursor band, the tooltips, done rows and its scroll report. In `tests/app/shell.test.ts`, the booted app's Gantt lines its rows up with the text editor's line blocks.
+- [x] Pin review on the fixture lists exactly four entries: the Wireframes, API and UI starts, and Docs' duration. Leaf estimates have no derived value, so none appears. API's row is marked as differing (pin Mon 5 Oct, effective Tue 6 Oct). — `tests/views/pins.test.ts`, with the derived values from Task 28's hand-worked table; the code agreed on the first run.
+- [x] A pinned number column shows its plain value in the pin review, not hours. — `tests/views/pins.test.ts`.
+- [x] Pin review on `examples/example.plan` lists exactly `Auth`'s `est` override (pin 2d, derived 2d 7h) and `OAuth (Google)`'s additive `est` (pin +1d, derived 5h, effective 1d 5h), and no leaf estimate. — `tests/views/pins.test.ts`.
+- [x] The colour-token test passes, and every new token has a dark value. — Nine `--gantt-*` tokens, each with a dark value.
+- [x] **Browser pass, Chrome and Firefox, both themes:**
+  - Gantt beside the grid: bars line up row for row, including with the problems list open and closed.
+  - Gantt beside the text editor: comment lines give empty rows, and folding a parent hides its children's bars and keeps its bracket.
+  - Scrolling either pane scrolls the other, with no drift or stutter, on a 500-line file.
+  - The fixture's marks match the table above.
+  - The pin review lists the pins, and clicking a row moves the cursor.
+  - The tab bar and the export button stay put while each view scrolls.
+  - The Gantt still lines up after the tab bar wraps (narrow the window) and after it unwraps.
+
+  **Pending review.** There is no browser here.
+
+**Visible changes:** a Gantt tab and a Pins tab.
+
+**Not in this task:**
+
+- Dependency arrows (after M1).
+- Zoom levels.
+- Dragging bars (M2).
+- Showing weekends as calendar time.
+- Editing IDs and dependencies in the grid (Task 31).
+
+**Human review:** read the geometry test against the table first. It's the one place the chart's meaning is pinned down.
+
+**Decisions taken** (asked and answered before any code was written):
+
+- **Pinned is the start's mode.** A row is pinned when its start's mode isn't `derived` (`PLUGINS.md` §4). The table had API unmarked and Docs marked (Docs' pin is on its duration), so it was corrected: API is `bar, pinned`, and Docs is `bar`. The pin mark sits at the pin's own date, which geometry reports as `pinX`, not at the start of the bar. Wireframes is at 0, UI at 5, and API at 0, left of its bar at 1.5, which shows the pin had no effect.
+- **A by-column key carries no kind.** In the pin review, the column's type decides the format: a duration column through `formatDuration`, a number column as the plain number. Only single keys have `label` and `kind`. Estimate also rolls up number columns, and `kind: 'duration'` on `rollup` would have shown a pinned 16 as `2d`.
+- **A `deadline` field in the schedule plugin.** `schedule.backward` writes `deadline: WorkHours`, the date's `'end'` edge, on each row whose deadline cell is set. It already converted the date for the late finish, so the conversion happens once, in one place. The Gantt couldn't read the cell itself (non-negotiable 5). On the fixture, Beta ready's is 48.
+- **The extent** runs from hour 0 to the later of the project finish and the latest deadline, rounded up to a whole working day, plus one working day. On the fixture it is 8. Today is drawn only inside it.
+- **The Gantt lives in `src/plugins/schedule/renderers/gantt/`**, geometry included, where the renderer lint rules already apply (no `rows`). The task had `src/plugins/schedule/gantt/`, which they don't cover. The schedule table was already in `renderers/`.
+- **The shell converts between the two hosts' tops.** It completes Task 29's contract (below). A layout's `bodyTop` and a header height are each measured from their own host's content top. `connectPanes` takes each pane's `host`, measures both against the page, and converts in either direction: it subtracts the offset from each forwarded `bodyTop` and adds it to the header height it passes to `setMinBodyTop`. A `ResizeObserver` on both hosts redoes the conversion when either moves, for example when the tab bar wraps. Editors and renderers never see the shell's markup.
+- **The preview is a flex column:** a fixed tab bar, with `#host` filling the rest as the scroll container. The Gantt's body scrolls inside it: in sync vertically, on its own horizontally.
+
+**Decisions taken** (by me, within the task):
+
+- **`formatDate` moved from the schedule table to `src/ui/dates.ts`**, since the pin review belongs to no plugin and can't import one. `formatDays` stays in the schedule table, and the Gantt's tooltip imports it from there, in the same plugin.
+- **The geometry takes `today`** as its fourth argument: `ganttGeometry(model, layout, dayWidth, today)`. Today's line is at the start of its working day (`fromDate(today, 'start')`), so a weekend's falls on the Monday after.
+- **The scale is 40px:** week labels and deadline dates on top, day letters below. The Gantt reports that as its header height. With a leader, its body starts at the layout's `bodyTop`, and the scale fills the height above it.
+- **A new layout repositions the Gantt's rows without redrawing them.** Row elements are kept by line and only moved. Rows that leave the layout are removed, and new ones are drawn. A new model redraws everything. The cursor band is a class on each row, updated on every render.
+- **The tooltip** is the mark's `title`: the title; the start and finish dates (a milestone shows one date); the duration (`milestone` for a milestone; a summary has none); and the slack. All as the schedule table formats them.
+- **The pin review** shows an additive pin with its `+` and marks a differing row with a muted "differs from the pin" in its effective cell. `Model.fields()` is the set of keys every stage that ran declares in `writes`, in stage order.
+- **The pin review's tab comes after the plugins' renderers.** `app/registry.ts` lists the views after them.
+
+**Visible changes:**
+
+- A Gantt tab and a Pins tab. The Gantt is greyed out with the schedule's reason, as the schedule table is.
+- The preview's tab bar and export button stay put while a view scrolls. The view's host scrolls, not the whole preview pane.
+- With the Gantt showing, the editor's body starts lower, level with the Gantt's: the 40px scale plus the tab bar's height. The text editor gets top padding, the grid a spacer above its table.
+- Nine new theme tokens (`--gantt-bar`, `-critical`, `-summary`, `-milestone`, `-deadline`, `-finish`, `-today`, `-pin`, `-scale-line`), used only by the Gantt.
+
+**Rewritten tests:**
+
+- `tests/app/shell.test.ts`, "lists every registered renderer, greying out one whose requirements are unmet": the tabs are Tree, Table, Schedule, Gantt and Pins (were Tree, Table and Schedule). The Gantt is greyed out with "needs project-start", and Pins is enabled.
+
+**New tests:** `tests/schedule/gantt-geometry.test.ts` and `gantt.test.ts`; `tests/views/pins.test.ts`; `tests/core/fields.test.ts` (`Model.fields()`, `label` and `kind`); `tests/renderers/scroll-to-cursor.test.ts`, which checks that the tree, table and schedule views still scroll their cursor row into view, `nearest`, now that `#host` scrolls (only the tree's had a test); in `tests/align/connect.test.ts`, "hosts at different heights" (follower host 32px lower, leader host 32px lower, and a host moving after connection); and in `tests/app/shell.test.ts`, "lines the Gantt up with the text editor's lines, and shows the pin review".
+
+**Spec:** plan-format-spec §2.11 (the `deadline` field), §3.2 (`fields()`), §3.3 and §3.4 (hosts at different heights, converted by the shell), §5.3 (the preview as a column), and the new §5.5 Gantt and §5.6 Pin review. PLUGINS.md §4 (`label`, `kind` for single keys only, `fields()`, `definePinnable`'s signature) and §8 (the Gantt in `renderers/`, `views/pins/`, dates in `ui/`). CLAUDE.md's non-negotiable 5 lists `deadline` and `projectFinish` among the schedule fields renderers read. No rows spec is touched, and rows is unchanged.

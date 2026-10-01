@@ -149,6 +149,8 @@ export interface Model extends ModelReader {
   inactive: Inactive[];
   /** The buffer version `analyze` read (spec §3.7); 0 when the caller passes none. */
   version: number;
+  /** The keys written in this analysis, in stage order: those of every stage that ran. */
+  fields(): FieldKey<unknown>[];
 }
 
 // Renderer seam. Spec §3.3.

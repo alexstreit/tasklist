@@ -1,0 +1,2 @@
+.plan-pins tr.differs td:last-child { color: var(--diag-warning); }
+.pins-empty { margin: 8px 12px; color: var(--fg-muted); font-size: 13px; }

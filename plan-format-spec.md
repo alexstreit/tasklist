@@ -219,7 +219,7 @@ The **schedule** plugin (`src/plugins/schedule/`) computes dates, slack and late
 - Every row is **critical** when its slack is at most 0, so a phase on the critical path shows as one.
 - A row is **late** when its finish passes its own deadline, and gets `schedule-late`: "finishes 2026-10-13, after its deadline 2026-10-12". Negative slack upstream shows in the fields, with no diagnostic of its own.
 
-**Fields.** `start` (a `Pinnable`: `derived` is the floor, `pin` the start cell, `effective` as above), `duration` (a `Pinnable`, leaves only), `finish`, `lateStart` and `lateFinish` (leaves only), `slack`, `critical`, `late`, `milestone` (a leaf with the marker, for the schedule table) and the document's `projectFinish`. A summary has no `duration`, `lateStart` or `lateFinish`.
+**Fields.** `start` (a `Pinnable`: `derived` is the floor, `pin` the start cell, `effective` as above), `duration` (a `Pinnable`, leaves only), `finish`, `lateStart` and `lateFinish` (leaves only), `slack`, `critical`, `late`, `milestone` (a leaf with the marker, for the schedule table), `deadline` (the deadline date's `'end'` edge, on each row whose deadline cell is set; `schedule.backward` writes it, since it already converts the date for the late finish) and the document's `projectFinish`. A summary has no `duration`, `lateStart` or `lateFinish`.
 
 **Pin diagnostics.** On a start pin: `schedule-pin-no-effect` when the effective start is later than the pin (on a summary, when no descendant starts at it); else `schedule-pin-equals-derived` when the pin equals the derived start. On a duration pin: `schedule-pin-equals-derived` when it equals the effort.
 
@@ -289,6 +289,8 @@ A stage declares the roles, keys and markers it reads. It is skipped when a requ
 
 `calendar` is present when `project-start` is set: the naive calendar, Monday to Friday, with the effort column's `hpd` as its day (8 when unset). Scheduling works in working hours from the project start, and every date conversion goes through it (`PLUGINS.md` §7.2).
 
+`fields()` lists the keys written in this analysis, those of every stage that ran, in stage order. The pin review (§5.6) finds the pinnable fields through it without knowing any plugin.
+
 `lines` is every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
 
 `createAnalyzer(registry)` returns `analyze(text, { filename?, files?, version? }?) → Model`, which composes `parseRows`, `readTree`, `bindVocabulary`, the calendar and the stages, and is the single entry point the app shell and any tooling call. It is synchronous and pure, and never reads the clock (lint-enforced in `src/core/` and in plugins outside their renderers and exporters). The shell passes the current file name, or none for a new document (§2.1), the buffer's version, which the model records (0 when none is passed), and a snapshot of included files, which it gathers first through the workspace with `includesOf(text)` (`PLUGINS.md` §6). The snapshot is unused until M3. A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `parsePlan` or `readTree` directly (lint-enforced). With no plugins registered, `analyze` still returns the tree, the lines and `readTree`'s diagnostics.
@@ -333,7 +335,7 @@ interface RowLayout {
 }
 ```
 
-A row on screen is at `bodyTop + top - scrollTop` from the pane's top. `RowLayout` is in `src/core/types.ts`, beside `RenderContext`; its helpers are in `src/ui/row-layout.ts`, a name chosen to avoid "rows", which already means the library.
+A row on screen is at `bodyTop + top - scrollTop` from the top of its pane's host, the element the editor or view is mounted in, at its content box. The two hosts' tops may differ, either way round (the preview's tab bar sits above the view's host): the shell measures both against the page, converts each layout's `bodyTop` and each header height between them, and measures again when either host is resized. Editors and renderers never see the shell's markup or the offset. `RowLayout` is in `src/core/types.ts`, beside `RenderContext`; its helpers are in `src/ui/row-layout.ts`, a name chosen to avoid "rows", which already means the library.
 
 - A follower always draws from a `RowLayout`. Until a leader's arrives (when nothing leads, always) it builds its own with `naturalLayout(model, version, viewport)`: one row per item, in document order, at `--row-height`, the one row-height token, which the grid shares. So there is one drawing path, with no aligned and standalone modes.
 - It re-renders on a new model and repositions on a new layout, never re-rendering per scroll event. It starts its body at the layout's `bodyTop` and scrolls it to the layout's `scrollTop`.
@@ -372,6 +374,7 @@ The shell connects a leader to a follower by declared capability, never by which
 - The follower reports its natural header height and the shell passes it to the leader's `setMinBodyTop`, so the leader's body starts at the larger of the two headers; the follower starts its body at the layout's `bodyTop`, the same place.
 - Scrolling syncs in both directions. Each side has a `ScrollEcho`: a scroll a side reports within 1px of the value the shell last set it to is that side's echo, and is dropped, however late it arrives. A leader's echo still passes its layout on, with the follower's own scroll position.
 - After each analysis the shell hands the leader the model (`update`), which republishes, so the layout and model versions agree within one debounce.
+- The leader's `bodyTop` and the follower's header height are each measured from their own host's top; the shell converts between the two (§3.3).
 
 ### 3.5 Multi-user (future, stated now so nothing blocks it)
 
@@ -698,7 +701,28 @@ The schedule plugin's renderer (§2.11): one row per item, nested like the tree,
 - Critical rows show their slack in the error colour; late rows are outlined in the warning colour.
 - Same highlight and click rules via `RenderContext`. It is greyed out with the skip reason ("needs project-start", "project-start isn't a date") when its stages are skipped.
 
+### 5.5 Gantt
+
+The schedule plugin's second renderer (`src/plugins/schedule/renderers/gantt/`), and the first that follows (§3.3). It draws from its `RowLayout`: the editor's when one leads, otherwise its natural layout. A row with no item stays empty, and only rows in the layout are drawn, so a folded parent's children have no marks while its bracket still spans their dates.
+
+- **Geometry** is a pure function, `ganttGeometry(model, layout, dayWidth, today)`, returning plain data: per row, a bar, a summary bracket or a milestone diamond, its flags (critical, late, done, pinned), a pinned start's `pinX`, a late row's `deadlineX`, and its layout row's `top` and `height`; the deadline lines, the project finish, the today line, and the scale. The renderer only places what it returns.
+- **The x axis is working days**: a position is `WorkHours / hoursPerDay × dayWidth`, so weekends take no space. `dayWidth` is 24px. The **extent** runs from hour 0 to the later of the project finish and the latest deadline, rounded up to a whole working day, plus one working day.
+- **The scale** shows a separator and a date label (as §5.4 formats dates) at each week's first working day, the day letters below, and each deadline's date. Its height is the Gantt's natural header height, which it reports. The chart scrolls sideways on its own; the scale moves with it.
+- **Marks:** a leaf bar from start to finish; a summary's bracket from its start to its finish; a milestone's diamond at its finish. Critical bars and brackets use the critical colour. A late row's mark is outlined in the warning colour, with a small marker at its deadline on that row. Done rows are dimmed. A pinned start (its mode isn't `derived`) has a pin mark at the pin's own date, so a pin that had no effect sits left of its bar.
+- **Lines:** each distinct deadline is a dashed full-height line; the project finish is a solid one; today, from `today()` in `src/ui/`, is drawn only when it falls inside the extent. Geometry takes today as a parameter, so it stays pure.
+- Hovering a mark shows the title, start and finish dates, duration and slack, as §5.4 formats them. Clicking a row or its mark moves the cursor to its line, and the cursor row is banded, through `RenderContext`. It is greyed out with the skip reason when the schedule's stages are skipped.
+
+### 5.6 Pin review
+
+A view that belongs to no plugin (`src/views/pins/`), with no `requires`, so it is always available. It lists every pin that overrides something: for each key in `model.fields()` that is pinnable, single or by column, each node's value with both a `pin` and a `derived`, in document order. A leaf estimate has nothing derived, so it never appears. "No pins" when the list is empty.
+
+- Each entry shows the outline number, title, what is pinned, pin, derived and effective. A single key gives its `label` and `kind` (`PLUGINS.md` §4): a `'duration'` through `formatDuration`, a `'date'` through `calendar.toDate(t, 'start')` and §5.4's format. A by-column key carries neither: the entry shows the column's name, and the column's type decides the format, a duration column through `formatDuration` and a number column as the plain number. An additive pin shows its `+`.
+- A pinned value whose effective value differs from its pin (a floor that had no effect) is marked. An additive one never is, since adding is what it is for.
+- Click-to-line and the cursor band, as in the other views.
+
 ### 5.3 Theming
+
+The preview is a column: its tab bar stays put, and the view's host below it fills the rest and is the scroll container.
 
 All colours are CSS custom properties defined in `src/app/theme.css` on `:root`, with a complete dark set under `prefers-color-scheme: dark`, plus `color-scheme: light dark`. CodeMirror's chrome and lint decorations read the same tokens, and its dark flag follows the media query live. A test fails on any hex or `rgb(` literal outside the theme file and on any light token without a dark counterpart. No manual toggle yet.
 

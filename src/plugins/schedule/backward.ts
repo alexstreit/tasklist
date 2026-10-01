@@ -2,7 +2,7 @@
 // Deadlines seed it, so slack is measured against them; negative slack means already late for one.
 
 import type { ItemNode, Stage, WorkHours } from '../../core';
-import { critical, duration, finish, late, lateFinish, lateStart, projectFinish, slack, start } from './fields';
+import { critical, deadline, duration, finish, late, lateFinish, lateStart, projectFinish, slack, start } from './fields';
 import { readNetwork, spanOf } from './network';
 
 export const backwardStage: Stage = {
@@ -10,7 +10,7 @@ export const backwardStage: Stage = {
   keys: { required: ['project-start'] },
   roles: { optional: ['deps', 'deadline'] },
   reads: [start, duration, finish, projectFinish],
-  writes: [lateStart, lateFinish, slack, critical, late],
+  writes: [lateStart, lateFinish, slack, critical, late, deadline],
   run(ctx) {
     const calendar = ctx.calendar!;
     const { model } = ctx;
@@ -50,18 +50,19 @@ export const backwardStage: Stage = {
       const s = slacks.get(n)!;
       ctx.set(n, slack, s);
       ctx.set(n, critical, s <= 0);
-      const deadline = deadlineOf(n);
+      const due = deadlineOf(n);
+      if (due !== undefined) ctx.set(n, deadline, due);
       const end = model.get(n, finish)!;
-      const isLate = deadline !== undefined && end > deadline;
+      const isLate = due !== undefined && end > due;
       ctx.set(n, late, isLate);
       if (isLate) {
-        const due = ctx.cell(n, 'deadline') as { text: string };
+        const date = ctx.cell(n, 'deadline') as { text: string };
         ctx.diagnose({
           line: n.line,
           span: spanOf(ctx, n, 'deadline'),
           severity: 'warning',
           code: 'schedule-late',
-          message: `finishes ${calendar.toDate(end, 'end')}, after its deadline ${due.text}`,
+          message: `finishes ${calendar.toDate(end, 'end')}, after its deadline ${date.text}`,
         });
       }
     }

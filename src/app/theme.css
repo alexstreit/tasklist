@@ -51,6 +51,17 @@
   --diag-warning: #f59e0b;
   --diag-info: #9ca3af;
   --diag-active: #ffdd9980;
+
+  /* Gantt chart */
+  --gantt-bar: #60a5fa;
+  --gantt-critical: #dc2626;
+  --gantt-summary: #374151;
+  --gantt-milestone: #7c3aed;
+  --gantt-deadline: #d97706;
+  --gantt-finish: #111827;
+  --gantt-today: #059669;
+  --gantt-pin: #be185d;
+  --gantt-scale-line: #e5e7eb;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -97,5 +108,15 @@
     --diag-warning: #fbbf24;
     --diag-info: #9ca3af;
     --diag-active: #86714a80;
+
+    --gantt-bar: #3b82f6;
+    --gantt-critical: #f87171;
+    --gantt-summary: #d1d5db;
+    --gantt-milestone: #a78bfa;
+    --gantt-deadline: #fbbf24;
+    --gantt-finish: #f9fafb;
+    --gantt-today: #34d399;
+    --gantt-pin: #f472b6;
+    --gantt-scale-line: #374151;
   }
 }

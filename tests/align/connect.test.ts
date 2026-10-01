@@ -7,6 +7,7 @@ import { connectPanes, followerChannel } from '../../src/app/align';
 import type { Pane } from '../../src/app/align';
 import { analyze } from '../../src/app/registry';
 import type { RenderContext, RowLayout } from '../../src/core';
+import { mockResizeObserver } from '../support/layout';
 import { stubFollower } from '../support/stub-follower';
 
 const model = analyze('A\n    B\nC\n');
@@ -157,6 +158,57 @@ describe('connecting panes', () => {
       [2, 'B', 22],
       [3, 'C', 44],
     ]);
+  });
+});
+
+describe('hosts at different heights', () => {
+  /** A host at `top` px from the page's top, which the test can move. */
+  function hostAt(top: number) {
+    const el = document.createElement('div');
+    const at = { top };
+    vi.spyOn(el, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, at.top, 600, 400));
+    return { el, at };
+  }
+
+  function connect(leaderTop: number, followerTop: number) {
+    const resize = mockResizeObserver();
+    const leader = fakeLeader();
+    const lead = hostAt(leaderTop);
+    const follow = hostAt(followerTop);
+    const { stub, pane, render } = following(40);
+    const disconnect = connectPanes({ leads: leader, host: lead.el }, { ...pane, host: follow.el });
+    render();
+    /** Where each body starts on the page; they line up when equal. */
+    const bodies = () => [lead.at.top + leader.layout().bodyTop, follow.at.top + stub.last()!.bodyTop];
+    return { leader, stub, lead, follow, bodies, resize, disconnect };
+  }
+
+  it('lines up the bodies when the follower’s host is 32px lower', () => {
+    const { stub, bodies, resize } = connect(0, 32);
+    // The follower's 40px header ends 72px down the page, so the leader's body starts there.
+    expect(bodies()).toEqual([72, 72]);
+    expect(stub.last()!.bodyTop).toBe(40);
+    resize.restore();
+  });
+
+  it('lines up the bodies when the leader’s host is 32px lower', () => {
+    const { leader, stub, bodies, resize } = connect(32, 0);
+    expect(bodies()).toEqual([72, 72]);
+    // The leader's own 40px header is the taller: the follower's body starts below its header.
+    expect(leader.minBodyTop).toBe(8);
+    expect(stub.last()!.bodyTop).toBe(72);
+    resize.restore();
+  });
+
+  it('redoes the alignment when a host moves after connection', () => {
+    const { follow, bodies, resize } = connect(0, 32);
+    follow.at.top = 50;
+    resize.fire();
+    expect(bodies()).toEqual([90, 90]);
+    follow.at.top = 10;
+    resize.fire();
+    expect(bodies()).toEqual([50, 50]);
+    resize.restore();
   });
 });
 

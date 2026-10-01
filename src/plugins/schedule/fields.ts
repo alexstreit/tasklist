@@ -10,10 +10,10 @@ import type { WorkHours } from '../../core';
  * its lag, and each ancestor's floor. `pin` is the start column's date. A leaf starts at the later
  * of the two; a summary's `effective` is its earliest descendant start.
  */
-export const start = definePinnable<WorkHours>('schedule', 'start');
+export const start = definePinnable<WorkHours>('schedule', 'start', { label: 'Start', kind: 'date' });
 
 /** Leaves only, in hours. `derived` is the effort at one full-time person (0 without it); `pin` is the dur column. A milestone's is 0. */
-export const duration = definePinnable<number>('schedule', 'duration');
+export const duration = definePinnable<number>('schedule', 'duration', { label: 'Duration', kind: 'duration' });
 
 /** `calendar.add(start, duration)` for a leaf; the latest descendant finish for a summary. */
 export const finish = defineField<WorkHours>('schedule', 'finish', 'node');
@@ -33,6 +33,9 @@ export const late = defineField<boolean>('schedule', 'late', 'node');
 
 /** A leaf with the milestone marker: the schedule table shows it as a point. */
 export const milestone = defineField<boolean>('schedule', 'milestone', 'node');
+
+/** The row's deadline, at the end of its date: set on each row whose deadline cell is. */
+export const deadline = defineField<WorkHours>('schedule', 'deadline', 'node');
 
 /** The latest finish of all. */
 export const projectFinish = defineField<WorkHours>('schedule', 'project-finish', 'document');

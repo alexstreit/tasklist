@@ -7,6 +7,10 @@ export interface FieldKey<T> {
   /** `node` fields hold one value per item; `document` fields one value per file. */
   readonly scope: 'node' | 'document';
   readonly pinnable: 'no' | 'single' | 'by-column';
+  /** A single pinnable key's name in the pin review: 'Start', 'Duration'. A by-column key shows its column's name. */
+  readonly label?: string;
+  /** How the pin review formats a single pinnable key's values. A by-column value is formatted by its column's type. */
+  readonly kind?: PinKind;
   /** Carries `T` for type inference only; never set. */
   readonly type?: T;
 }
@@ -23,13 +27,16 @@ export interface Pinnable<T> {
   mode: 'derived' | 'pinned' | 'additive';
 }
 
+/** Hours, shown with formatDuration; or working hours from project-start, shown as a date. */
+export type PinKind = 'duration' | 'date';
+
 export function defineField<T>(plugin: string, name: string, scope: 'node' | 'document'): FieldKey<T> {
   return Object.freeze({ plugin, name, scope, pinnable: 'no' });
 }
 
-/** A node-scope field with one pinnable value per item. */
-export function definePinnable<T>(plugin: string, name: string): FieldKey<Pinnable<T>> {
-  return Object.freeze({ plugin, name, scope: 'node', pinnable: 'single' });
+/** A node-scope field with one pinnable value per item, and how the pin review shows it. */
+export function definePinnable<T>(plugin: string, name: string, show: { label: string; kind: PinKind }): FieldKey<Pinnable<T>> {
+  return Object.freeze({ plugin, name, scope: 'node', pinnable: 'single', label: show.label, kind: show.kind });
 }
 
 /** A node-scope field with a pinnable value per column, keyed by column name, since a file's columns are not known statically. */
