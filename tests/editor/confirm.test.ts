@@ -19,8 +19,8 @@ function open(text: string, filename = 'test.plan'): void {
   Range.prototype.getBoundingClientRect = () => new DOMRect();
   buffer = new CodeMirrorBuffer(text);
   editor = mountTextEditor(buffer, document.body, { onCursorLine: () => {}, onSave: () => {} });
-  buffer.onChange(() => editor.update(analyze(buffer.text(), filename)));
-  editor.update(analyze(buffer.text(), filename));
+  buffer.onChange(() => editor.update(analyze(buffer.text(), { filename })));
+  editor.update(analyze(buffer.text(), { filename }));
 }
 
 afterEach(() => editor.destroy());

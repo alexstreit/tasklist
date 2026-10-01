@@ -109,6 +109,7 @@ interface Model {
   calendar?: Calendar; // present when project-start is set; renderers use it for dates
   diagnostics: Diagnostic[];
   inactive: Inactive[]; // stages that were skipped, and why
+  version: number; // the buffer version analyze read (plan spec §3.7)
   // plugin fields
   get<T>(node: ItemNode, key: FieldKey<T>): T | undefined;
   value<T>(key: FieldKey<T>): T | undefined; // document-scope fields
@@ -177,8 +178,9 @@ Core reads the format once, in full; plugins only compute. `readPlan` stays esse
 ```ts
 // core; the app builds this once from the registry
 const analyze = createAnalyzer(registry);
-analyze(text, filename?, files?)  // files: a snapshot of included files (M3); unused until then
-includesOf(text): string[]        // include lines, wherever the spec puts them (subproject rows in M3b); cheap
+analyze(text, { filename?, files?, version? }?)  // files: a snapshot of included files (M3); unused until then;
+                                                 // version: the buffer version, recorded as Model.version
+includesOf(text): string[]                       // include lines, wherever the spec puts them (subproject rows in M3b); cheap
 
 // inside analyze
 parsePlan(text)                           // tabs, parseRows with the plan profile, as today
@@ -292,9 +294,10 @@ src/
     estimate/           the roll-up stages and their fields; tree, table and TSV move here
     schedule/           the forward and backward passes and their fields; the schedule table (Task 28), Gantt next
   ui/                   shared UI code for renderers and editors: the row-per-item table, cursor highlight,
-                        click-to-line and their CSS; today's date for fixes; imports only core's types
+                        click-to-line and their CSS; today's date for fixes; row-layout.ts, row alignment
+                        between a leading editor and a following view; imports only core's types
   views/                renderers that belong to no plugin: the pin review (with scheduling)
-  app/                  shell, registry wiring, single-file workspace
+  app/                  shell, registry wiring, single-file workspace, connecting a leader to a follower (align.ts)
   editor/ grid/ buffer/ editing/   unchanged: editors are not plugins
 ```
 

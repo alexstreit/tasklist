@@ -30,9 +30,9 @@ function open(text: string, filename = 'test.plan'): void {
   grid = mountGrid(buffer, host, { onCursorLine: () => {} });
   buffer.onChange(() => {
     changes++;
-    grid.update(analyze(buffer.text(), filename));
+    grid.update(analyze(buffer.text(), { filename }));
   });
-  grid.update(analyze(buffer.text(), filename));
+  grid.update(analyze(buffer.text(), { filename }));
 }
 
 afterEach(() => {
@@ -96,7 +96,7 @@ describe('confirm fixes', () => {
     ['messy-unclosed.plan', unclosed],
   ])('every confirm fix in %s shows its preview, and cancelling writes nothing', (name, text) => {
     open(text, name);
-    const confirms = analyze(text, name).diagnostics.flatMap((d) => (d.fixes ?? []).filter((f) => f.tier === 'confirm').map((f) => [d, f] as const));
+    const confirms = analyze(text, { filename: name }).diagnostics.flatMap((d) => (d.fixes ?? []).filter((f) => f.tier === 'confirm').map((f) => [d, f] as const));
     expect(confirms.length).toBeGreaterThan(0);
     for (const [d, fix] of confirms) {
       const li = problems(d.line).find((x) => fixButton(x, fix.label) && x.querySelector('.message')!.textContent === d.message)!;
@@ -189,7 +189,7 @@ describe('every fixture case can be fixed without leaving the grid', () => {
   ])('%s', (name, text) => {
     open(text, name);
     fixAll();
-    const left = analyze(buffer.text(), name).diagnostics.map((d) => `${d.line} ${d.code}`);
+    const left = analyze(buffer.text(), { filename: name }).diagnostics.map((d) => `${d.line} ${d.code}`);
     // What remains has no fix in the spec: values to edit in their cell, a title to type, an
     // unknown key, and an override that differs from its children once they convert.
     const expected: Record<string, string[]> = {

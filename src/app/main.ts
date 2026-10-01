@@ -7,6 +7,8 @@ import { unmetReason } from '../core';
 import type { Exporter, Model, Renderer } from '../core';
 import { mountTextEditor } from '../editor';
 import { mountGrid } from '../grid';
+import type { Leader } from '../ui/row-layout';
+import { connectPanes, followerChannel } from './align';
 import { cursorItemFor, itemLines } from './cursor';
 import { createIncludes } from './includes';
 import { analyze, exporters, registry, renderers } from './registry';
@@ -18,14 +20,17 @@ import './style.css';
 const DEBOUNCE_MS = 50;
 const DEFAULT_NAME = 'untitled.plan';
 
-/** What the shell needs from whichever editor is mounted. Spec §3.4. */
-interface PlanEditor {
+/** What the shell needs from whichever editor is mounted, and what one that leads also offers. Spec §3.4. */
+interface PlanEditor extends Partial<Leader> {
   update(model: Model): void;
   setCursorLine(line: number): void;
   destroy(): void;
 }
 
 let active = renderers[0];
+// The active renderer's channel, when it follows; a new one for each renderer.
+let channel = followerChannel();
+let disconnect = (): void => {};
 const host = document.getElementById('host')!;
 const editorHost = document.getElementById('editor')!;
 const editorTabs = document.getElementById('editors')!;
@@ -77,7 +82,7 @@ function renderTabs(): void {
       button.disabled = reason !== null;
       button.title = reason ?? '';
       button.addEventListener('click', () => {
-        active = renderer;
+        activate(renderer);
         render();
       });
       return button;
@@ -119,7 +124,7 @@ function renderExporters(): void {
 function render(): void {
   if (dirty) {
     const text = buffer.text();
-    model = analyze(text, path ?? undefined, includes.snapshot(path, text));
+    model = analyze(text, { filename: path ?? undefined, files: includes.snapshot(path, text), version: buffer.version() });
     lines = itemLines(model);
     dirty = false;
     editor?.update(model);
@@ -133,14 +138,28 @@ function render(): void {
       host.replaceChildren();
       return;
     }
-    active = fallback;
+    activate(fallback);
   }
   renderTabs();
   const cursorItem = cursorItemFor(lines, cursorLine);
   const scrollToCursor = editorMovedCursor && cursorItem !== null && cursorItem.line !== highlightedLine;
   editorMovedCursor = false;
   highlightedLine = cursorItem?.line ?? null;
-  active.render(model, host, { cursorLine, cursorItem, scrollToCursor, setCursorLine });
+  active.render(model, host, { cursorLine, cursorItem, scrollToCursor, setCursorLine, ...(active.follows ? channel.context : {}) });
+}
+
+function activate(renderer: Renderer): void {
+  if (renderer === active) return;
+  active = renderer;
+  channel = followerChannel();
+  connect();
+}
+
+/** The editor leads when it can, and the renderer follows when it can (spec §3.4); the editor is on the left. */
+function connect(): void {
+  disconnect();
+  const leads = editor?.onRowLayout && editor.scrollTo && editor.setMinBodyTop ? (editor as Leader) : undefined;
+  disconnect = connectPanes({ leads }, { follows: active.follows ? channel.follower : undefined });
 }
 
 function schedule(): void {
@@ -240,6 +259,8 @@ function renderEditorTabs(): void {
 }
 
 function mountEditor(kind: (typeof editors)[number]): void {
+  disconnect();
+  disconnect = () => {};
   editor?.destroy();
   editorKind = kind;
   try {
@@ -250,6 +271,7 @@ function mountEditor(kind: (typeof editors)[number]): void {
   editor = kind.mount();
   // When an analysis is already pending the new editor fills on the next render.
   if (!dirty) editor.update(model);
+  connect();
   renderEditorTabs();
 }
 

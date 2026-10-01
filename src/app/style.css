@@ -1,3 +1,5 @@
+/* One row's height, which the grid and the views that follow it share (spec §3.3). Not a colour, so not in theme.css. */
+:root { --row-height: 22px; }
 html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
 body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg); }
 .toolbar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }

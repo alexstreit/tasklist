@@ -9,7 +9,7 @@ const DEFAULTS = [
   { name: 'owner', type: 'text' },
   { name: 'notes', type: 'text' },
 ];
-const columns = (text: string, filename?: string) => analyze(text, filename).columns;
+const columns = (text: string, filename?: string) => analyze(text, { filename }).columns;
 
 describe('columns (§2.1, §2.6)', () => {
   it('defaults when there is no front matter', () => {

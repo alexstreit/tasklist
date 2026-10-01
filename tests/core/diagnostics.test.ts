@@ -119,7 +119,7 @@ describe('spec §2.9 diagnostics', () => {
 
   it('a legacy file opened as .plan: conversion warnings, whose fix clears them and brings the totals', () => {
     const text = '---\ncolumns: est:duration | owner:text\n---\nA | 2d\nB | 4\n';
-    const model = analyze(text, 'legacy.plan');
+    const model = analyze(text, { filename: 'legacy.plan' });
     // 2d can't convert without hpd; a bare number isn't valid without unit= (rows validation).
     expect(model.diagnostics).toMatchObject([
       { line: 4, severity: 'warning', code: 'unconvertible-duration' },
@@ -131,13 +131,13 @@ describe('spec §2.9 diagnostics', () => {
     expect(fix).toMatchObject({ label: 'Add unit=h hpd=8 dpw=5', tier: 'click' });
     const fixed = applyEdits(text, fix.edits);
     expect(fixed.split('\n')[1]).toBe('columns: est:duration unit=h hpd=8 dpw=5 | owner:text');
-    const after = analyze(fixed, 'legacy.plan');
+    const after = analyze(fixed, { filename: 'legacy.plan' });
     expect(after.diagnostics).toEqual([]);
     expect(total(after)).toEqual({ effective: 20, doneSum: 0 });
   });
 
   it('the conversion fix adds only the options a column is missing', () => {
-    const model = analyze('---\ncolumns: est:duration unit=h\n---\nA | 1w\n', 'x.plan');
+    const model = analyze('---\ncolumns: est:duration unit=h\n---\nA | 1w\n', { filename: 'x.plan' });
     expect(model.diagnostics[0].fixes![0].label).toBe('Add hpd=8 dpw=5');
   });
 

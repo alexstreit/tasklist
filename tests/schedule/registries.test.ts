@@ -40,13 +40,13 @@ describe('each plugin alone', () => {
 
   it.each(Object.entries(files))('with only estimate registered, %s is unchanged', (path, text) => {
     const name = path.split('/').pop()!;
-    expect(estimateOf(estimateOnly(text, name))).toEqual(estimateOf(analyze(text, name)));
+    expect(estimateOf(estimateOnly(text, { filename: name }))).toEqual(estimateOf(analyze(text, { filename: name })));
   });
 
   it('with only schedule registered, the fixture still schedules', () => {
-    const alone = scheduleOnly(scheduleFixture, 'schedule.plan');
+    const alone = scheduleOnly(scheduleFixture, { filename: 'schedule.plan' });
     expect(alone.inactive).toEqual([]);
-    expect(scheduleOf(alone)).toEqual(scheduleOf(analyze(scheduleFixture, 'schedule.plan')));
+    expect(scheduleOf(alone)).toEqual(scheduleOf(analyze(scheduleFixture, { filename: 'schedule.plan' })));
     expect(alone.value(schedule.projectFinish)).toBe(56);
   });
 });
@@ -58,7 +58,7 @@ describe('analysis never reads the clock', () => {
   const on = (day: Date, text: string) => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(day);
-    const model = analyze(text, 'a.plan');
+    const model = analyze(text, { filename: 'a.plan' });
     vi.useRealTimers();
     return model;
   };

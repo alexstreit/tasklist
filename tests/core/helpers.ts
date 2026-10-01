@@ -5,7 +5,7 @@ import { doneSum, hasValue, rollup, totals } from '../../src/plugins/estimate/fi
 import type { Total } from '../../src/plugins/estimate/fields';
 
 export function load(text: string, filename?: string): { tree: Tree; model: Model } {
-  return { tree: readTree(parsePlan(text, filename).doc), model: analyze(text, filename) };
+  return { tree: readTree(parsePlan(text, filename).doc), model: analyze(text, { filename }) };
 }
 
 /** Depth-first flatten of the model's item nodes. */

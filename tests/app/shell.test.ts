@@ -6,6 +6,28 @@
 import { diagnosticCount, forEachDiagnostic } from '@codemirror/lint';
 import { EditorView } from '@codemirror/view';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { CodeMirrorBuffer } from '../../src/buffer';
+import type { Model } from '../../src/core';
+
+// Every model the shell builds, with the buffer's version when it was built.
+const built: { model: Model; bufferVersion: number }[] = [];
+// The shell's buffer is the one its text editor mounts on, which happens before its first analysis.
+let shellBuffer: CodeMirrorBuffer | undefined;
+const createView = CodeMirrorBuffer.prototype.createView;
+CodeMirrorBuffer.prototype.createView = function (this: CodeMirrorBuffer, ...args) {
+  shellBuffer ??= this;
+  return createView.apply(this, args);
+};
+const buffer = () => shellBuffer!;
+vi.mock('../../src/app/registry', async (original) => {
+  const registry = await original<typeof import('../../src/app/registry')>();
+  const analyze: typeof registry.analyze = (text, options) => {
+    const model = registry.analyze(text, options);
+    built.push({ model, bufferVersion: buffer().version() });
+    return model;
+  };
+  return { ...registry, analyze };
+});
 
 let view: EditorView;
 let preview: HTMLElement;
@@ -344,5 +366,16 @@ describe('editor toggle', () => {
     vi.advanceTimersByTime(60);
     expect(view.state.doc.toString()).toBe(before);
     expect(titles()).toEqual(['Auth', 'Login']);
+  });
+});
+
+describe('model versions', () => {
+  it('every model the shell built carries the buffer’s version at the time', () => {
+    vi.advanceTimersByTime(60);
+    // Edits, undo, a load, and both editors, by the time this runs: many versions, not one.
+    expect(new Set(built.map(({ model }) => model.version)).size).toBeGreaterThan(5);
+    expect(built.map(({ model }) => model.version)).toEqual(built.map(({ bufferVersion }) => bufferVersion));
+    expect(built[built.length - 1].model.version).toBe(buffer().version());
+    expect(buffer().version()).toBeGreaterThan(0);
   });
 });

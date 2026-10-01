@@ -21,7 +21,7 @@ src/
   core/        parse, readTree, fields, registry and stage runner. Pure TypeScript. NO imports from dom, codemirror, or src/ui.
   editor/      CodeMirror 6 language mode, folding, keymap
   plugins/     one folder per plugin: its manifest, stages, fields, renderers and exporters (PLUGINS.md)
-  ui/          shared UI code for renderers and editors (row table, cursor highlight, click-to-line, today's date); imports only core types
+  ui/          shared UI code for renderers and editors (row table, cursor highlight, click-to-line, today's date, row alignment between panes); imports only core types
   views/       renderers that belong to no plugin
   app/         shell: wires buffer -> analyze -> active renderer; registry.ts builds the registry
 tests/

@@ -114,7 +114,7 @@ describe('setDone', () => {
 
   it('is available only when the document has a done marker or done column', () => {
     expect(canMarkDone(analyze('Auth\n'))).toBe(true);
-    expect(canMarkDone(analyze('Auth\n', 'a.rows'))).toBe(false);
+    expect(canMarkDone(analyze('Auth\n', { filename: 'a.rows' }))).toBe(false);
   });
 });
 

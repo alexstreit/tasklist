@@ -28,7 +28,7 @@ const sorted = (lines: Record<number, string[]>) => Object.fromEntries(Object.en
 const CONVERT = 'Add unit=h hpd=8 dpw=5 (click)';
 
 describe('messy.plan', () => {
-  const model = analyze(FILES['messy.plan'], 'messy.plan');
+  const model = analyze(FILES['messy.plan'], { filename: 'messy.plan' });
   const lines = byLine(model);
 
   it('reports each line, with its fixes', () => {
@@ -92,13 +92,13 @@ describe('messy.plan', () => {
 
   it('rejoins the overflow into notes, and the value reads back exactly', () => {
     const d = model.diagnostics.find((x) => x.code === 'too-many-cells')!;
-    const after = analyze(applyEdits(model.doc.text, d.fixes![0].edits), 'messy.plan');
+    const after = analyze(applyEdits(model.doc.text, d.fixes![0].edits), { filename: 'messy.plan' });
     expect(after.doc.text.split('\n')[11]).toBe('    OAuth (Google)            | +1d     |       | "call Bob | then Alice"');
     expect(after.doc.rows.find((r) => r.line === 12)!.cells[3]!.text).toBe('call Bob | then Alice');
   });
 
   it('warns that the later duplicate ID is referenced, when it is', () => {
-    const referenced = analyze(`${FILES['messy.plan']}Login help | 1h | | | parent=#login\n`, 'messy.plan');
+    const referenced = analyze(`${FILES['messy.plan']}Login help | 1h | | | parent=#login\n`, { filename: 'messy.plan' });
     const fix = referenced.diagnostics.find((d) => d.code === 'duplicate-id' && d.fixes)!.fixes![0];
     expect(fix.warning).toBe("A row refers to #login. It isn't clear which task it meant, so check it after renaming.");
     expect(fix.preview).toBe('-     Password reset {#login}   | 6       | priya | reuse email templates\n+     Password reset {#login-2}   | 6       | priya | reuse email templates');
@@ -108,7 +108,7 @@ describe('messy.plan', () => {
 });
 
 describe('messy-settings.plan', () => {
-  const model = analyze(FILES['messy-settings.plan'], 'messy-settings.plan');
+  const model = analyze(FILES['messy-settings.plan'], { filename: 'messy-settings.plan' });
 
   it('reports each declaration error, with the settings fixes', () => {
     expect(byLine(model)).toEqual(sorted({
@@ -133,7 +133,7 @@ describe('messy-settings.plan', () => {
   it('points the done error at the declaration, and the checkbox fix makes ~ a done marker again', () => {
     const d = model.diagnostics.find((x) => x.code === 'marker-column-not-bool')!;
     expect(model.doc.text.slice(d.span!.from, d.span!.to)).toBe('done:text');
-    const after = analyze(applyEdits(model.doc.text, d.fixes![0].edits), 'messy-settings.plan');
+    const after = analyze(applyEdits(model.doc.text, d.fixes![0].edits), { filename: 'messy-settings.plan' });
     expect(after.doc.text.split('\n')[3]).toMatch(/\| done:bool$/);
     expect(after.roots[0].children[0]).toMatchObject({ title: 'Write copy', done: true });
   });
@@ -157,7 +157,7 @@ describe('messy-settings.plan', () => {
 });
 
 describe('messy-unclosed.plan', () => {
-  const model = analyze(FILES['messy-unclosed.plan'], 'messy-unclosed.plan');
+  const model = analyze(FILES['messy-unclosed.plan'], { filename: 'messy-unclosed.plan' });
 
   it('has no frontmatter: the settings lines are rows, and the file is still read as a plan', () => {
     expect(byLine(model)).toEqual({ 1: ['unclosed-frontmatter: Close settings (confirm)'], 3: ['invalid-value'], 5: ['override-differs'] });
@@ -169,7 +169,7 @@ describe('messy-unclosed.plan', () => {
   it('"Close settings" inserts --- after line 3, the last key: value line', () => {
     const fix = model.diagnostics[0].fixes![0];
     expect(fix.preview).toBe('- columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text\n+ columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text\n+ ---');
-    const after = analyze(applyEdits(model.doc.text, fix.edits), 'messy-unclosed.plan');
+    const after = analyze(applyEdits(model.doc.text, fix.edits), { filename: 'messy-unclosed.plan' });
     expect(after.doc.text.split('\n').slice(0, 5)).toEqual(['---', 'profile: plan', 'columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text', '---', '']);
     expect(after.roots.map((n) => n.title)).toEqual(['Website relaunch']);
     expect(after.roots[0].children[2]).toMatchObject({ title: 'Domain renewal', done: true });

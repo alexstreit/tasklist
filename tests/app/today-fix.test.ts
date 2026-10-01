@@ -32,8 +32,8 @@ describe('the text editor', () => {
     Range.prototype.getBoundingClientRect = () => new DOMRect();
     const buffer = new CodeMirrorBuffer(text);
     const editor = mountTextEditor(buffer, document.body, { onCursorLine: () => {}, onSave: () => {} });
-    buffer.onChange(() => editor.update(analyze(buffer.text(), 'a.plan')));
-    editor.update(analyze(buffer.text(), 'a.plan'));
+    buffer.onChange(() => editor.update(analyze(buffer.text(), { filename: 'a.plan' })));
+    editor.update(analyze(buffer.text(), { filename: 'a.plan' }));
     const view = EditorView.findFromDOM(document.querySelector<HTMLElement>('.cm-editor')!)!;
     const actions = () => {
       const out: Diagnostic[] = [];
@@ -67,8 +67,8 @@ describe('the grid', () => {
     document.body.append(host);
     const buffer = new InMemoryBuffer(text);
     const grid = mountGrid(buffer, host, { onCursorLine: () => {} });
-    buffer.onChange(() => grid.update(analyze(buffer.text(), 'a.plan')));
-    grid.update(analyze(buffer.text(), 'a.plan'));
+    buffer.onChange(() => grid.update(analyze(buffer.text(), { filename: 'a.plan' })));
+    grid.update(analyze(buffer.text(), { filename: 'a.plan' }));
     return { buffer, host };
   }
   const label = 'Set project start to today (2026-09-29)';

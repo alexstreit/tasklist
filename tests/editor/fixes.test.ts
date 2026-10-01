@@ -26,9 +26,9 @@ beforeEach(() => {
   // The shell's job, done synchronously.
   buffer.onChange((change) => {
     origins.push(change.origin);
-    editor.update(analyze(buffer.text(), 'legacy.plan'));
+    editor.update(analyze(buffer.text(), { filename: 'legacy.plan' }));
   });
-  editor.update(analyze(buffer.text(), 'legacy.plan'));
+  editor.update(analyze(buffer.text(), { filename: 'legacy.plan' }));
 });
 
 afterEach(() => editor.destroy());

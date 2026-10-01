@@ -4,6 +4,7 @@
 .plan-sheet { border-collapse: collapse; width: 100%; font-size: 13px; }
 .plan-sheet th, .plan-sheet td { padding: 3px 10px; text-align: left; white-space: nowrap; border-right: 1px solid var(--border-soft); }
 .plan-sheet th { color: var(--fg-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+.plan-sheet tbody tr { height: var(--row-height); }
 .plan-sheet tbody tr:hover { background: var(--hover); }
 .plan-sheet tr.done { color: var(--done-fg); text-decoration: line-through; }
 .plan-sheet td.wbs { color: var(--fg-muted); user-select: none; text-align: right; }

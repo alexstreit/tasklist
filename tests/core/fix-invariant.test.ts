@@ -36,15 +36,15 @@ function structural(model: Model): Map<string, number> {
 type Case = [string, string, string | undefined, Diagnostic, Fix];
 
 function casesOf(name: string, text: string, filename: string | undefined): Case[] {
-  return analyze(text, filename).diagnostics.flatMap((d) => (d.fixes ?? []).map((fix): Case => [`${name}:${d.line} ${d.code} → ${fix.label}`, text, filename, d, fix]));
+  return analyze(text, { filename }).diagnostics.flatMap((d) => (d.fixes ?? []).map((fix): Case => [`${name}:${d.line} ${d.code} → ${fix.label}`, text, filename, d, fix]));
 }
 
 function check([, text, filename, d, offered]: Case): void {
   const fix = resolveFix(offered, '2026-10-05');
-  const before = analyze(text, filename);
+  const before = analyze(text, { filename });
   const source = before.doc.text; // the text the fix's edits are for, tabs converted
   const edited = applyEdits(source, fix.edits);
-  const after = analyze(edited, filename);
+  const after = analyze(edited, { filename });
   if (fix.tier === 'confirm') expect(fix.preview).toBeTruthy();
   // The diagnostic is gone from where it went: its span's start, or its line when it has no span.
   const lineStart = source.split('\n').slice(0, d.line - 1).join('\n').length + (d.line > 1 ? 1 : 0);

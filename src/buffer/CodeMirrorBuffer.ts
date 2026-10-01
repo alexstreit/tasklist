@@ -19,6 +19,7 @@ export class CodeMirrorBuffer implements PlanBuffer {
   private readonly historyConfig = new Compartment();
   private readonly listeners = new Set<(change: BufferChange) => void>();
   private origin = 'text-editor';
+  private changes = 0;
 
   constructor(doc: string) {
     this.state = EditorState.create({ doc, extensions: [this.historyConfig.of(history()), this.mounted.of([])] });
@@ -26,6 +27,10 @@ export class CodeMirrorBuffer implements PlanBuffer {
 
   text(): string {
     return this.state.doc.toString();
+  }
+
+  version(): number {
+    return this.changes;
   }
 
   apply(edits: readonly TextEdit[], origin: string): void {
@@ -92,6 +97,8 @@ export class CodeMirrorBuffer implements PlanBuffer {
 
   private dispatch(tr: Transaction): void {
     this.state = tr.state;
+    // Counted before the view updates, so the text editor's listeners see the new version.
+    if (tr.docChanged) this.changes++;
     this.view?.update([tr]);
     if (!tr.docChanged) return;
     const edits: TextEdit[] = [];

@@ -36,14 +36,21 @@ export function includesOf(text: string): string[] {
   return parsePlan(text).doc.schema.includes.map((i) => i.path);
 }
 
-/**
- * `analyze` for the registry's plugins. Synchronous and pure: it never reads the clock or the
- * workspace. `files` is the shell's snapshot of included files, by path (M3); unused until then.
- */
-export function createAnalyzer(registry: Registry): (text: string, filename?: string, files?: ReadonlyMap<string, string>) => Model {
+/** What `analyze` is told besides the text (spec §3.2). */
+export interface AnalyzeOptions {
+  /** The file's name; none for a new document. */
+  filename?: string;
+  /** The shell's snapshot of included files, by path (M3); unused until then. */
+  files?: ReadonlyMap<string, string>;
+  /** The buffer version the text was read at, recorded on the model (spec §3.7); 0 when absent. */
+  version?: number;
+}
+
+/** `analyze` for the registry's plugins. Synchronous and pure: it never reads the clock or the workspace. */
+export function createAnalyzer(registry: Registry): (text: string, options?: AnalyzeOptions) => Model {
   const plugins = new Set(registry.plugins.map((p) => p.id));
   const plugin = new Map(registry.plugins.flatMap((p) => p.stages.map((s) => [s, p.id] as const)));
-  return (text, filename) => {
+  return (text, { filename, version = 0 } = {}) => {
     const { doc, tabs } = parsePlan(text, filename);
     const tree = readTree(doc, (edited) => parsePlan(edited, filename).doc);
     const { bindings, diagnostics: vocabulary } = bindVocabulary(doc, plugins);
@@ -63,6 +70,7 @@ export function createAnalyzer(registry: Registry): (text: string, filename?: st
       ...(calendar ? { calendar } : {}),
       diagnostics,
       inactive: [],
+      version,
       get: <T>(node: ItemNode, key: FieldKey<T>) => nodeFields.get(key)?.get(node) as T | undefined,
       value: <T>(key: FieldKey<T>) => documentFields.get(key) as T | undefined,
     };

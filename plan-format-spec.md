@@ -281,7 +281,7 @@ The **schedule** plugin's stages, `schedule.forward` and `schedule.backward`, co
 
 No renderer or exporter performs arithmetic: they read these fields.
 
-The model carries a fixed core: the rows document it was read from (`doc`), `lines`, `roots` (the tree's items), `columns`, `bindings`, `calendar`, `diagnostics`, and `inactive`, the stages that were skipped with the reason for each. The model carries `doc` so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
+The model carries a fixed core: the rows document it was read from (`doc`), `lines`, `roots` (the tree's items), `columns`, `bindings`, `calendar`, `diagnostics`, `inactive`, the stages that were skipped with the reason for each, and `version`, the buffer version it was read at (§3.7). The model carries `doc` so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
 
 `bindVocabulary` runs after `readTree`. It reads rows' merged roles, the frontmatter keys and the marker names, checks them against the vocabulary (§2.1) and the registered plugins, and reports §2.9's vocabulary diagnostics. `bindings` holds each bound role's column, each core or registered plugin's key with its value, and the marker names; a core role left unbound for its column's type is kept with the reason. Values are read with rows' `readValue`, as cells are.
 
@@ -291,7 +291,7 @@ A stage declares the roles, keys and markers it reads. It is skipped when a requ
 
 `lines` is every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
 
-`createAnalyzer(registry)` returns `analyze(text, filename?, files?) → Model`, which composes `parseRows`, `readTree`, `bindVocabulary`, the calendar and the stages, and is the single entry point the app shell and any tooling call. It is synchronous and pure, and never reads the clock (lint-enforced in `src/core/` and in plugins outside their renderers and exporters). The shell passes the current file name, or none for a new document (§2.1), and a snapshot of included files, which it gathers first through the workspace with `includesOf(text)` (`PLUGINS.md` §6). The snapshot is unused until M3. A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `parsePlan` or `readTree` directly (lint-enforced). With no plugins registered, `analyze` still returns the tree, the lines and `readTree`'s diagnostics.
+`createAnalyzer(registry)` returns `analyze(text, { filename?, files?, version? }?) → Model`, which composes `parseRows`, `readTree`, `bindVocabulary`, the calendar and the stages, and is the single entry point the app shell and any tooling call. It is synchronous and pure, and never reads the clock (lint-enforced in `src/core/` and in plugins outside their renderers and exporters). The shell passes the current file name, or none for a new document (§2.1), the buffer's version, which the model records (0 when none is passed), and a snapshot of included files, which it gathers first through the workspace with `includesOf(text)` (`PLUGINS.md` §6). The snapshot is unused until M3. A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `parsePlan` or `readTree` directly (lint-enforced). With no plugins registered, `analyze` still returns the tree, the lines and `readTree`'s diagnostics.
 
 `src/core/` imports nothing outside itself, the standard library and the `rows` package (lint-enforced).
 
@@ -302,6 +302,7 @@ interface Renderer {
   id: string;
   label: string;
   requires: FieldKey<unknown>[]; // tree and table: estimate's rollup, hasValue and totals
+  follows?: true; // draws its rows beside a leading editor's
   render(model: Model, host: HTMLElement, ctx: RenderContext): void;
 }
 ```
@@ -311,6 +312,33 @@ interface Renderer {
 Renderers that read a plugin's fields belong to that plugin: tree and table are in `src/plugins/estimate/renderers/`, and the schedule table in `src/plugins/schedule/renderers/`. A renderer that reads only core fields goes in `src/views/`. The row-per-item table, its cursor highlight and click-to-line, and their CSS are in `src/ui/`, shared UI code for renderers and editors, which imports only core's types (`PLUGINS.md` §8).
 
 `RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), and `setCursorLine(line)` for click-to-line. It is renderer-agnostic.
+
+**Following.** A renderer that declares `follows: true` lines its rows up with a leading editor's (§3.4), row for row. Its `RenderContext` then also has:
+
+```ts
+onRowLayout(cb: (layout: RowLayout) => void): void; // replaces any earlier callback; called at once with the latest layout, if any
+reportScroll(top: number): void; // its body was scrolled
+reportHeaderHeight(px: number): void; // its natural header height
+```
+
+```ts
+interface RowLayout {
+  version: number; // the buffer version this layout was measured at
+  bodyTop: number; // px from the pane's top to where its scrolling body starts, at scrollTop 0
+  contentHeight: number; // the scrolling body's full height
+  scrollTop: number;
+  rows: { at: { line: number } | null; top: number; height: number }[];
+  // the visible rows, in CONTENT coordinates (from the top of the body, not of the viewport);
+  // a leader may add a margin either side. at: null for a grid draft row; { line } can gain a file in M3
+}
+```
+
+A row on screen is at `bodyTop + top - scrollTop` from the pane's top. `RowLayout` is in `src/core/types.ts`, beside `RenderContext`; its helpers are in `src/ui/row-layout.ts`, a name chosen to avoid "rows", which already means the library.
+
+- A follower always draws from a `RowLayout`. Until a leader's arrives (when nothing leads, always) it builds its own with `naturalLayout(model, version, viewport)`: one row per item, in document order, at `--row-height`, the one row-height token, which the grid shares. So there is one drawing path, with no aligned and standalone modes.
+- It re-renders on a new model and repositions on a new layout, never re-rendering per scroll event. It starts its body at the layout's `bodyTop` and scrolls it to the layout's `scrollTop`.
+- It draws a layout only when `layout.version === model.version`, and otherwise keeps its last frame: after an edit the leader's layout runs ahead of the model until the next analysis.
+- A layout row whose line has no item (a comment, blank or front matter line) is left empty. An item whose line isn't in the layout, such as a folded parent's child, isn't drawn; the model still has its fields.
 
 ### 3.4 Editors
 
@@ -325,6 +353,25 @@ interface PlanEditor {
 ```
 
 The shell mounts one editor, hands it every new model, and destroys it when the other is chosen. It holds the editors in a list, exactly as it holds renderers and exporters, and special-cases neither. Undo survives a switch because the history belongs to the buffer, not to the editor.
+
+**Leading.** An editor may lead, publishing where its rows are for a following renderer (§3.3). A leading editor also has:
+
+```ts
+onRowLayout(cb: (layout: RowLayout) => void): () => void; // called at once, then on every change; returns unsubscribe
+scrollTo(top: number): void;
+setMinBodyTop(px: number): void; // start the body at least px from the pane's top; 0 removes the space
+```
+
+- Both editors lead, and publish after a scroll, an edit, a fold, a resize and each `update`. A leader measures only while something subscribes: with no subscriber, none of these measures anything, and `setMinBodyTop` waits for one. Resizes come from a `ResizeObserver` on the pane; the grid also observes its toolbar, settings banner and problems list, so either opening or closing counts.
+- The text editor's rows are CodeMirror's line blocks, which cover wrapped lines; a folded line's block covers the lines folded into it, which have no rows. Its version is the buffer's: its view always shows the buffer's text. `setMinBodyTop` adds top padding to the content.
+- The grid's rows are its table's body rows on screen: items, comment, blank and front matter rows (front matter is one row, on its first line), and a draft row as `at: null`. Its version is its model's, since its rows are drawn from it. Its whole pane scrolls, header included, so `bodyTop` is measured in the pane's content. `setMinBodyTop` adds space above the table.
+
+The shell connects a leader to a follower by declared capability, never by which view it is, with one function, `connectPanes(left, right)` (`src/app/align.ts`):
+
+- When one side leads and the other follows, they are connected. When both could lead, the left one does. Two editors side by side, or two renderers that don't follow, stay unconnected. Today the editor is on the left and the renderer on the right.
+- The follower reports its natural header height and the shell passes it to the leader's `setMinBodyTop`, so the leader's body starts at the larger of the two headers; the follower starts its body at the layout's `bodyTop`, the same place.
+- Scrolling syncs in both directions. Each side has a `ScrollEcho`: a scroll a side reports within 1px of the value the shell last set it to is that side's echo, and is dropped, however late it arrives. A leader's echo still passes its layout on, with the follower's own scroll position.
+- After each analysis the shell hands the leader the model (`update`), which republishes, so the layout and model versions agree within one debounce.
 
 ### 3.5 Multi-user (future, stated now so nothing blocks it)
 
@@ -373,6 +420,7 @@ interface BufferChange {
 
 interface PlanBuffer {
   text(): string;
+  version(): number; // how many changes it has had
   apply(edits: TextEdit[], origin: string): void;
   undo(): void;
   redo(): void;
@@ -386,6 +434,7 @@ interface PlanBuffer {
 - The text editor mounts its `EditorView` on the state owned by `CodeMirrorBuffer`; its edits arrive at the buffer like any other, with origin `text-editor`.
 - Undo and redo are buffer operations. No editor calls CodeMirror's history commands directly.
 - The buffer knows characters only. Lines, nodes and columns are `analyze()`'s business.
+- The buffer counts its changes: every edit, undo, redo and load. A listener already sees the new count. `analyze` records the version it read on the model, and a leading editor's row layout carries the version its rows show (§3.3, §3.4).
 
 ### 3.8 Line operations
 

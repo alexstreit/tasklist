@@ -533,7 +533,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 **Deliverables**
 
 - `readPlan(doc) → Tree` per spec §2.4–§2.6 and §3.1, with outline numbers from the rows parent relation.
-- `analyze(text, filename?)` per spec §3.2; the plan profile built in as a named profile; `defaultProfile` applied per spec §2.1.
+- `analyze(text, filename?)` per spec §3.2 (since Task 29, `analyze(text, { filename })`); the plan profile built in as a named profile; `defaultProfile` applied per spec §2.1.
 - Diagnostics per spec §2.9, including the `error` severity and the `fixes` field; the three fixes in §2.3 and §2.6.
 - `Model.lines` built from rows lines; the `reserved` line kind is gone.
 - The old `parse`, `parseColumns` and duration parser are deleted.
@@ -1192,3 +1192,89 @@ Expected, in work hours, with the displayed dates:
 **New tests:** `tests/schedule/fixture.test.ts`, `schedule.test.ts`, `table.test.ts` and `registries.test.ts`; `tests/app/today-fix.test.ts`; the schedule profile's identity in `tests/core/columns.test.ts`; the fix, `resolveFix` (including that a second resolve changes nothing) and the "project-start isn't a date" skip reason in `tests/core/vocabulary.test.ts`; the duration role in `tests/core/compute.test.ts` and `tests/renderers/tree.test.ts`; the `src/ui` rule and a core probe of `src/ui` in `tests/plugins/lint.test.ts`.
 
 **Spec:** plan-format-spec §2.1 (the schedule profile, `project-start` expected), §2.9 (`no-project-start`, the scheduling codes, `key-type`'s message, `source`), the new §2.11 Scheduling, §3.2 (estimate and the duration role, the schedule stages), §3.3 (`src/ui/`), §4b.6.2 (`Fix.input`, `resolveFix`, `inputEdit`), §5.2 and the new §5.4 Schedule table, and §7. PLUGINS.md §5 (`source`, fixes that need today), §6 (estimate's role, the missing start) and §8 (`src/ui/`, its lint rule). CLAUDE.md's repo layout and non-negotiable 5 name `src/ui/` and the schedule fields. VISION is unchanged. No rows spec is touched, and rows is unchanged.
+
+---
+
+## Task 29 — Row alignment between panes
+
+**Serves:** M1. The Gantt in Task 30 must line up row for row with the editor beside it. This task builds the contract and the two leaders, and tests them with a stub follower. It has no visible change: no registered view follows yet.
+
+**The idea:** a pane may **lead**, publishing where its rows are; **follow**, drawing its rows where it's told; both; or neither. Rows are keyed by line. A follower always draws from a `RowLayout`: when nothing leads, it builds one itself from the model. So there is one drawing path, with no aligned and standalone modes. The shell connects a leader to a follower by declared capability, and never by which view it is.
+
+**Deliverables**
+
+- **`src/ui/row-layout.ts`**, a name chosen to avoid "rows", which already means the library:
+  ```ts
+  interface RowLayout {
+    version: number; // the buffer version this layout was measured at
+    bodyTop: number; // px from the pane's top to where its scrolling body starts
+    contentHeight: number; // the scrolling body's full height
+    scrollTop: number;
+    rows: { at: { line: number } | null; top: number; height: number }[];
+    // the visible rows, in CONTENT coordinates (from the top of the body, not of the viewport)
+    // at: null for a grid draft row; { line } can gain a file in M3
+  }
+  ```
+
+  - Helpers: `naturalLayout(model, version, viewport)` builds a follower's own layout, with one row per item at `--row-height`. `ScrollEcho` drops a reported scroll within 1px of the value the shell last set, comparing values rather than using a boolean guard.
+  - `--row-height` is one theme token, which the grid and followers share.
+- **Buffer and model versions:** `PlanBuffer` counts its changes, and `Model.version` records the version that `analyze` read.
+- **Leaders:** the grid and the text editor. `PlanEditor` gains optional `onRowLayout(cb)`, `scrollTo(top)` and `setMinBodyTop(px)`.
+  - The text editor uses CodeMirror's line blocks, which cover wrapped lines. Folded lines are absent.
+  - The grid includes comment, blank and frontmatter rows, plus a draft row as `at: null`.
+  - Both publish after a scroll, an edit, a fold, and a resize. Resizes use a `ResizeObserver` on the pane, so the problems list and settings banner opening or closing count.
+- **Followers:** `Renderer` gains `follows?: true`. A following renderer's `RenderContext` has `onRowLayout(cb)` and `reportScroll(top)`. It re-renders on a new model and repositions on a new layout, never re-rendering per scroll event.
+  - It draws a layout only when `layout.version === model.version`, and otherwise keeps its last frame.
+  - A layout row whose line has no item is left empty. An item whose line isn't in the layout isn't drawn.
+- **The shell:** one connecting function, checked by capability:
+  - When one side leads and the other follows, connect them. When both could lead, the left one does. Two editors side by side, or two renderers that don't follow, stay unconnected.
+  - Each side reports its natural header height, and the shell sets both to the larger with `setMinBodyTop`.
+  - Scrolling syncs in both directions through `ScrollEcho`.
+  - After each analysis, the shell asks the leader to publish again, so the layout and model versions agree within one debounce.
+- **Test-only stub follower** (`tests/support/`, not registered) that records what it would draw.
+- **Spec:** plan-format-spec §3.3 (the follower part of `RenderContext`), §3.4 (the leader part of `PlanEditor`) and §3.7 (the buffer version). PLUGINS.md §8 lists `row-layout.ts`.
+
+**Acceptance criteria** (jsdom, with injected measurements, since jsdom can't lay pages out)
+
+- [x] Text editor leading the stub:
+  - comment, blank and frontmatter lines are rows with no item;
+  - a wrapped line has its own height;
+  - folding a parent removes its children's rows, while the model still has their dates, which the Task 30 summary bar needs.
+
+  — `tests/align/text-editor.test.ts`. CodeMirror itself measures the injected line heights (20px, 40px for the line that wraps), so the line blocks are real ones. Folding and unfolding a parent; the folded children's `start` and `finish` are asserted on the model. The empty text after the final newline is a CodeMirror line and no model line, so it is a row with no item.
+- [x] Grid leading the stub:
+  - comment rows are present;
+  - a draft row is `at: null`;
+  - opening the problems list republishes with a larger `bodyTop` (mocked `ResizeObserver`).
+
+  — `tests/align/grid.test.ts`, with block layout injected. Also: the front matter is one row, on its first line; only rows on screen are published.
+- [x] Coordinates: a layout published after scrolling has the same `top` values as before, and only `scrollTop` differs. — "publishes a scroll with the same row tops" in both leaders' tests.
+- [x] Versions: after an insert or an Alt+Up move, the stub keeps its last frame until the model catches up, then draws. It never draws a layout against the wrong model. — The insert in the text editor's tests, Alt+Up in the grid's. Each checks there is no new frame between the edit and the model reaching the stub, including after the editor has the new model and the stub doesn't yet. Every frame records the model version it was drawn with, which is the layout's.
+- [x] Scroll sync both ways, including an echo delivered after a delay (simulated): no loop, and no drift beyond 1px. — `tests/align/connect.test.ts`, with a fake leader that rounds to whole pixels and delivers its scroll events only when told: one `scrollTo` per user scroll, and a stub at 300.4 stays there when the leader's late echo says 300.
+- [x] `bodyTop`: with a 40px leader header and a 64px follower header, both bodies start at 64px. — With the grid ("starts both bodies at the larger header", which also opens and closes the problems list over it) and with the text editor ("starts its body below a taller follower header").
+- [x] Unconnected cases: two non-following renderers, and the stub with no leader, which draws its natural layout. — `tests/align/connect.test.ts`, which also covers two leaders, a follower on the left, and both sides able to lead.
+- [x] No visible change in the app, and every existing test passes. — 1781 tests pass (1750 before), with typecheck and lint clean. No registered renderer follows, so the shell connects nothing. **Browser pass pending review:** grid rows now have `height: var(--row-height)`, 22px, as a minimum. I chose 22px to match today's rows, but haven't measured it in a browser.
+
+**Not in this task:** the Gantt (Task 30). Overscan for dependency arrows, which have no off-screen endpoints until arrows exist (after M1). Choosing which view goes on which side; the shell's rule is written for any pairing, but the layout stays editor on the left and views on the right.
+
+**Human review:** read `row-layout.ts` and the shell's connecting function first. They are the contract every aligned view follows.
+
+**Decisions taken** (by me, within the task):
+
+- **`RowLayout` lives in `src/core/types.ts`,** beside `RenderContext`, which needs it and which core can't import from `src/ui`. `src/ui/row-layout.ts` re-exports it with the helpers (`naturalLayout`, `ScrollEcho`, `layoutPublisher`) and the `Leader` interface, the optional part of `PlanEditor`.
+- **The connecting function is `connectPanes(left, right)` in `src/app/align.ts`,** not inside `main.ts`, so it is tested without booting the app. It is given what each pane can do: `leads` (a `Leader`) and `follows` (the shell's end of a follower, from `followerChannel()`).
+- **A follower also reports its header height,** through a third `RenderContext` member, `reportHeaderHeight(px)`. The task lists only `onRowLayout` and `reportScroll`, but the follower needs a way to report its header. The shell passes that height to the leader's `setMinBodyTop`, and the follower starts its body at the layout's `bodyTop`, so both start at the larger header without the shell knowing the leader's natural height. The follower has no `setMinBodyTop` of its own.
+- **`update` is how the shell asks the leader to publish again:** both editors republish at the end of `update`, which the shell already calls after each analysis. `PlanEditor` gains only the three methods the task names.
+- **The leader publishes at once to a new subscriber, and the follower channel replays its latest layout and header height,** so a connection made after an editor or view switch doesn't wait for the next scroll.
+- **A layout's `version` is what its rows show:** the buffer's version for the text editor, whose view always shows the buffer, and its model's version for the grid, whose rows are drawn from the model.
+- **A leader's scroll echo still passes its layout on,** with `scrollTop` replaced by the value the shell set. A scroll can show new rows, so the echo can't be dropped, and the follower stays where the user scrolled it.
+- **`analyze` takes its optional arguments as an object,** `analyze(text, { filename, files, version })`; without a version the model records 0. Every caller is updated. `tests/app/shell.test.ts` wraps the registry's `analyze` and checks that every model the shell builds carries the buffer's version at that moment.
+- **The text editor's `setMinBodyTop` sets the content's top padding** through a compartment, and keeps CodeMirror's own 4px when that's more. The gutters follow the padding.
+- **The grid's `setMinBodyTop` sizes a spacer between the problems list and the table.** The grid's whole pane scrolls, header included, so its `bodyTop` is in the pane's content. That fits the same formula as the text editor's: on screen, a row is at `bodyTop + top - scrollTop`.
+- **`--row-height` is in `src/app/style.css`, not `theme.css`:** theme.css holds colours, and its test requires every token there to have a dark value too.
+
+- **Leaders measure only while something subscribes.** Checked before commit. The text editor already measured only through `publish`, which returns early with no subscriber, except in `setMinBodyTop`, which read two rects. The grid measured in `fitBodyTop` on every `update` and every resize, subscriber or not. Both changed: with no subscriber, nothing is measured, and a minimum body top waits for one (a minimum of 0 still clears the space, without measuring). When something subscribes, the grid fits its spacer before the first layout goes out, and the text editor sets its padding, which republishes. `tests/align/idle.test.ts` checks, for both editors, that a scroll, an edit, an update, a resize and `setMinBodyTop` measure nothing with no subscriber, and that scrolling does measure once something subscribes and stops when it unsubscribes.
+
+**New tests:** `tests/align/text-editor.test.ts`, `grid.test.ts`, `connect.test.ts` and `idle.test.ts`; "model versions" in `tests/app/shell.test.ts`; `tests/ui/row-layout.test.ts` (`naturalLayout`, `ScrollEcho`); the buffer's version in `tests/buffer/shared.test.ts`. Test support: `tests/support/stub-follower.ts` (the stub, not registered), `layout.ts` (injected measurements and a mock `ResizeObserver`) and `panes.ts` (an editor leading the stub, connected as the shell connects them). No existing test was rewritten in substance: callers of `analyze` across the tests now pass `{ filename }`, and `tests/app/shell.test.ts` mocks the registry to record models.
+
+**Spec:** plan-format-spec §3.2 (`Model.version`, `analyze`'s options object), §3.3 (`follows`, the follower part of `RenderContext`, `RowLayout` and the follower rules), §3.4 (the leader part of `PlanEditor`, both leaders, measuring only with a subscriber, the connecting rules) and §3.7 (`version()`). PLUGINS.md §4 and §6 add `Model.version` and `analyze`'s options object, and §8 lists `row-layout.ts` and `app/align.ts`. CLAUDE.md's repo layout names row alignment under `ui/`. VISION is unchanged.

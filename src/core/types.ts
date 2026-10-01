@@ -147,6 +147,8 @@ export interface Model extends ModelReader {
   diagnostics: Diagnostic[];
   /** Stages that were skipped, in stage order. */
   inactive: Inactive[];
+  /** The buffer version `analyze` read (spec §3.7); 0 when the caller passes none. */
+  version: number;
 }
 
 // Renderer seam. Spec §3.3.
@@ -167,6 +169,33 @@ export interface RenderContext {
    *  renderer itself requested through setCursorLine. */
   scrollToCursor: boolean;
   setCursorLine(line: number): void;
+  // The follower part, present only for a renderer that `follows` (spec §3.3).
+  /** Where the leading pane's rows are. Replaces any earlier callback, and is called at once with the latest layout, if any. */
+  onRowLayout?(cb: (layout: RowLayout) => void): void;
+  /** The renderer's body was scrolled to `top`. */
+  reportScroll?(top: number): void;
+  /** The renderer's natural header height: where its body would start if nothing else had a taller header. */
+  reportHeaderHeight?(px: number): void;
+}
+
+/**
+ * Where a leading pane's rows are, so a following pane can draw its rows beside them (spec §3.3,
+ * §3.4). A row on screen is at `bodyTop + top - scrollTop` from the pane's top.
+ */
+export interface RowLayout {
+  /** The buffer version this layout was measured at. */
+  version: number;
+  /** px from the pane's top to where its scrolling body starts, at scrollTop 0. */
+  bodyTop: number;
+  /** The scrolling body's full height. */
+  contentHeight: number;
+  scrollTop: number;
+  /**
+   * The visible rows (a leader may add a margin either side), in content coordinates: from the
+   * top of the body, not of the viewport. `at` is null for a row with no line, such as the
+   * grid's draft row; `{ line }` can gain a file in M3.
+   */
+  rows: { at: { line: number } | null; top: number; height: number }[];
 }
 
 export interface Renderer {
@@ -174,6 +203,8 @@ export interface Renderer {
   label: string;
   /** The fields it reads; greyed out when one wasn't computed (PLUGINS.md §5). */
   requires: FieldKey<unknown>[];
+  /** Draws its rows where a leading pane's rows are (spec §3.3). */
+  follows?: true;
   render(model: Model, host: HTMLElement, ctx: RenderContext): void;
 }
 

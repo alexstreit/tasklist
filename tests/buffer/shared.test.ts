@@ -99,4 +99,19 @@ describe.each(implementations)('%s', (_name, create) => {
     buffer.undo();
     expect(buffer.text()).toBe('new\n');
   });
+
+  it('counts its changes, and a listener already sees the new count', () => {
+    const buffer = create('a\n');
+    const seen: number[] = [];
+    buffer.onChange(() => seen.push(buffer.version()));
+    expect(buffer.version()).toBe(0);
+    buffer.apply([{ from: 1, to: 1, insert: 'b' }], 'grid');
+    buffer.undo();
+    buffer.redo();
+    buffer.undo();
+    buffer.undo(); // nothing to undo: not a change
+    buffer.apply([{ from: 0, to: 2, insert: 'new\n' }], 'load');
+    expect(seen).toEqual([1, 2, 3, 4, 5]);
+    expect(buffer.version()).toBe(5);
+  });
 });

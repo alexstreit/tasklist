@@ -12,6 +12,8 @@ import { canMarkDone, columnOf, deleteItem, insertIndent, insertItem, levels, mo
 import { plainRefusal } from './messages';
 import { hasValue, rollup, totals } from '../plugins/estimate/fields';
 import { mountProblems } from './problems';
+import { layoutPublisher } from '../ui/row-layout';
+import type { Leader, RowLayout } from '../ui/row-layout';
 import './grid.css';
 
 /** Cell columns: the WBS cell (which selects the row), the done checkbox, the title, then the declared columns. */
@@ -31,7 +33,9 @@ export interface GridHooks {
   onCursorLine(line: number, fromApi: boolean): void;
 }
 
-export interface GridEditor {
+/** The grid leads (spec §3.4): its rows are its table's body rows. */
+export interface GridEditor extends Leader {
+  /** Also republishes the row layout. */
   update(model: Model): void;
   setCursorLine(line: number): void;
   destroy(): void;
@@ -91,13 +95,15 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   });
   const table = document.createElement('table');
   table.className = 'plan-sheet';
-  parent.replaceChildren(bar, problems.banner, problems.list, table);
+  // Space above the table when a following pane's header is taller than the grid's (setMinBodyTop).
+  const spacer = document.createElement('div');
+  parent.replaceChildren(bar, problems.banner, problems.list, spacer, table);
 
   let model: Model | null = null;
   let rows: Row[] = [];
   const byLine = new Map<number, Row>();
   // The front matter block, shown collapsed and read-only above the rows.
-  let frontMatter: { span: Span; text: string; diagnostic?: Diagnostic } | null = null;
+  let frontMatter: { line: number; span: Span; text: string; diagnostic?: Diagnostic } | null = null;
   // Diagnostics by `line:column`; spec §4b.2.
   let marks = new Map<string, Diagnostic>();
   // Where the grid is: a cell of a row, or its WBS cell, which is what row
@@ -422,6 +428,53 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     markPlace();
   }
 
+  // Row alignment (spec §3.4). The whole pane scrolls, header included, so the body's top is
+  // measured in the pane's content.
+  let minBodyTop = 0;
+
+  /** The body rows that are on screen: comment, blank and front matter rows too, and a draft row as `at: null`. */
+  function measure(): RowLayout {
+    const scrollTop = parent.scrollTop;
+    const paneTop = parent.getBoundingClientRect().top;
+    const body = table.tBodies[0];
+    // Before the first model there is no body, and no rows.
+    const bodyTop = body ? body.getBoundingClientRect().top - paneTop + scrollTop : 0;
+    const rows: RowLayout['rows'] = [];
+    for (const tr of body?.rows ?? []) {
+      const rect = tr.getBoundingClientRect();
+      // Off screen: above the pane's top, or below its bottom.
+      if (rect.bottom <= paneTop || rect.top >= paneTop + parent.clientHeight) continue;
+      const line = tr.classList.contains('front-matter') ? frontMatter!.line : tr.classList.contains('draft') ? null : Number(tr.dataset.line);
+      rows.push({ at: line === null ? null : { line }, top: rect.top - paneTop + scrollTop - bodyTop, height: rect.height });
+    }
+    return { version: model?.version ?? 0, bodyTop, contentHeight: parent.scrollHeight - bodyTop, scrollTop, rows };
+  }
+  const layout = layoutPublisher(measure);
+
+  /** The spacer makes up what the grid's own header lacks of the minimum. */
+  function fitSpacer(): void {
+    const spaced = spacer.getBoundingClientRect().height;
+    const body = table.tBodies[0];
+    if (!body) return;
+    const natural = body.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop - spaced;
+    const want = Math.max(0, minBodyTop - natural);
+    if (want !== spaced) spacer.style.height = want > 0 ? `${want}px` : '';
+  }
+
+  /** Fit the spacer and publish, measuring nothing while nothing subscribes; with no minimum, the spacer goes. */
+  function fitBodyTop(): void {
+    if (minBodyTop === 0) spacer.style.height = '';
+    if (!layout.listened()) return;
+    fitSpacer();
+    layout.publish();
+  }
+
+  parent.addEventListener('scroll', layout.publish);
+  // The pane, and the header parts above the table: the problems list or the settings banner
+  // opening or closing moves the body without resizing the pane. jsdom has no ResizeObserver.
+  const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(fitBodyTop) : null;
+  for (const element of [parent, bar, problems.banner, problems.list]) resize?.observe(element);
+
   /**
    * Show where the grid is: the selected-row class, and the roving tab stop —
    * the one cell in the table that is in the page's tab order, so the keyboard
@@ -629,6 +682,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     draft = { anchor: row.span.from, indent };
     draftInput.value = '';
     build();
+    layout.publish();
     draftInput.focus();
     updateToolbar();
   }
@@ -663,6 +717,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       draft = null;
       draftInput.value = '';
       build();
+      layout.publish();
       restore();
       return;
     }
@@ -951,7 +1006,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     }
     if (block.length > 0) {
       const span = { from: block[0].span.from, to: block[block.length - 1].span.to };
-      frontMatter = { span, text: text.slice(span.from, span.to).split('\n').join(' ') };
+      frontMatter = { line: block[0].line, span, text: text.slice(span.from, span.to).split('\n').join(' ') };
     }
 
     // Diagnostics land on the cell their span belongs to; the rest on the WBS
@@ -985,13 +1040,29 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       problems.update(next, frontMatter?.span ?? null);
       restore();
       updateToolbar();
+      // The problems list may have changed height too.
+      fitBodyTop();
     },
     setCursorLine(line) {
       const row = byLine.get(line);
       if (row) place(row.line, nearest(row, at?.column ?? TITLE), true);
     },
+    onRowLayout(cb) {
+      // The first layout goes out at once, so the spacer is fitted first.
+      fitSpacer();
+      return layout.onRowLayout(cb);
+    },
+    scrollTo(top) {
+      parent.scrollTop = top;
+    },
+    setMinBodyTop(px) {
+      minBodyTop = px;
+      fitBodyTop();
+    },
     destroy() {
       off();
+      resize?.disconnect();
+      parent.removeEventListener('scroll', layout.publish);
       parent.replaceChildren();
     },
   };

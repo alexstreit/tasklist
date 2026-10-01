@@ -80,7 +80,7 @@ function items(model: Model): ItemNode[] {
   return out;
 }
 
-const model = analyze(fixture, 'schedule.plan');
+const model = analyze(fixture, { filename: 'schedule.plan' });
 const node = (title: string) => items(model).find((n) => n.title === title)!;
 
 describe('the schedule fixture (examples/schedule.plan)', () => {

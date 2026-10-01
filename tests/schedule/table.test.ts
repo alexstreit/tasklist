@@ -12,7 +12,7 @@ import fixture from '../../examples/schedule.plan?raw';
 Element.prototype.scrollIntoView = vi.fn();
 
 function render(text: string, cursorLine: number | null = null, setCursorLine = (_line: number) => {}) {
-  const model = analyze(text, 'a.plan');
+  const model = analyze(text, { filename: 'a.plan' });
   const host = document.createElement('div');
   const ctx: RenderContext = { cursorLine, cursorItem: cursorItemFor(itemLines(model), cursorLine), scrollToCursor: false, setCursorLine };
   scheduleRenderer.render(model, host, ctx);

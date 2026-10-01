@@ -6,6 +6,7 @@ export * from './calendar';
 export * from './vocabulary';
 export * from './workspace';
 export { createAnalyzer, includesOf, parsePlan } from './analyze';
+export type { AnalyzeOptions } from './analyze';
 export { readTree } from './read';
 export { PLAN_PROFILE, SCHEDULE_PROFILE } from './profile';
 export { formatDuration } from './duration';

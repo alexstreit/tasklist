@@ -12,7 +12,7 @@ import { scheduleRenderer } from '../../src/plugins/schedule/renderers/table';
 import example from '../../examples/example.plan?raw';
 
 const HEAD = '---\nprofile: schedule\nproject-start: 2026-10-05\n---\n'; // rows start on line 5
-const run = (body: string) => analyze(HEAD + body, 'a.plan');
+const run = (body: string) => analyze(HEAD + body, { filename: 'a.plan' });
 
 function items(model: Model): ItemNode[] {
   const out: ItemNode[] = [];
@@ -102,18 +102,18 @@ describe('diagnostics', () => {
 
   it('no-project-start: core reports it on line 1 when a scheduling role is bound, with the fix', () => {
     const text = '---\nprofile: schedule\n---\nA | 1d\n';
-    const model = analyze(text, 'a.plan');
+    const model = analyze(text, { filename: 'a.plan' });
     expect(found(model, 'no-project-start')).toEqual([{ line: 1, severity: 'info', source: undefined }]);
     const d = model.diagnostics.find((x) => x.code === 'no-project-start')!;
     expect(d.message).toBe('Set a project start to compute the schedule');
     expect(d.span).toBeUndefined();
     const fixed = applyEdits(text, resolveFix(d.fixes![0], '2026-10-05').edits);
     expect(fixed).toBe('---\nprofile: schedule\nproject-start: 2026-10-05\n---\nA | 1d\n');
-    expect(scheduleCodes(analyze(fixed, 'a.plan'))).toEqual([]);
+    expect(scheduleCodes(analyze(fixed, { filename: 'a.plan' }))).toEqual([]);
   });
 
   it('only key-type, not no-project-start, when project-start is not a date', () => {
-    const model = analyze('---\nprofile: schedule\nproject-start: soon\n---\nA | 1d\n', 'a.plan');
+    const model = analyze('---\nprofile: schedule\nproject-start: soon\n---\nA | 1d\n', { filename: 'a.plan' });
     expect(model.diagnostics.map((d) => d.code)).toEqual(['key-type']);
     expect(model.inactive).toEqual([
       { stage: 'schedule.forward', reason: "project-start isn't a date" },
@@ -122,7 +122,7 @@ describe('diagnostics', () => {
   });
 
   it('source: the plugin for a stage diagnostic, unset for core', () => {
-    const model = analyze('---\nprofile: schedule\ncolums: x\n---\nA | 2h\n    B | 1h\n', 'a.plan');
+    const model = analyze('---\nprofile: schedule\ncolums: x\n---\nA | 2h\n    B | 1h\n', { filename: 'a.plan' });
     expect(model.diagnostics.map((d) => [d.code, d.source])).toEqual([
       ['no-project-start', undefined],
       ['unknown-key', undefined],
@@ -226,18 +226,18 @@ describe('parent rows', () => {
 
 describe('degradation', () => {
   it('an estimate-only file (profile: plan) gets no schedule diagnostics', () => {
-    expect(scheduleCodes(analyze(example, 'example.plan'))).toEqual([]);
-    expect(scheduleCodes(analyze('---\nprofile: plan\n---\n^A\nB | 2h\n', 'a.plan'))).toEqual([]);
+    expect(scheduleCodes(analyze(example, { filename: 'example.plan' }))).toEqual([]);
+    expect(scheduleCodes(analyze('---\nprofile: plan\n---\n^A\nB | 2h\n', { filename: 'a.plan' }))).toEqual([]);
   });
 
   it('a profile: schedule file with no project-start gets no-project-start and a greyed schedule table', () => {
-    const model = analyze('---\nprofile: schedule\n---\nA | 1d\n', 'a.plan');
+    const model = analyze('---\nprofile: schedule\n---\nA | 1d\n', { filename: 'a.plan' });
     expect(scheduleCodes(model).map((d) => d.code)).toEqual(['no-project-start']);
     expect(unmetReason(registry, model, scheduleRenderer.requires)).toBe('needs project-start');
   });
 
   it('a file with no deps column schedules everything from hour 0', () => {
-    const model = analyze('---\nprofile: schedule\nproject-start: 2026-10-05\ncolumns: est:duration unit=h hpd=8 dpw=5 | due:date\n---\nA | 1d\nB | 2d\n', 'a.plan');
+    const model = analyze('---\nprofile: schedule\nproject-start: 2026-10-05\ncolumns: est:duration unit=h hpd=8 dpw=5 | due:date\n---\nA | 1d\nB | 2d\n', { filename: 'a.plan' });
     expect(model.bindings.roles.has('deps')).toBe(false);
     expect(['A', 'B'].map((t) => [model.get(node(model, t), start)!.effective, model.get(node(model, t), finish)])).toEqual([
       [0, 8],
