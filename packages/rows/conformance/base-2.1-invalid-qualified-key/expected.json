@@ -1,0 +1,53 @@
+{
+  "spec": [
+    "base §2.1, §6: a key with more than one dot, an empty part, or a leading or trailing dot does not match entry, so its line is malformed"
+  ],
+  "stage": "base",
+  "failed": false,
+  "errors": [
+    {
+      "class": "syntax",
+      "code": "malformed-frontmatter-line",
+      "line": 2
+    },
+    {
+      "class": "syntax",
+      "code": "malformed-frontmatter-line",
+      "line": 3
+    },
+    {
+      "class": "syntax",
+      "code": "malformed-frontmatter-line",
+      "line": 4
+    },
+    {
+      "class": "syntax",
+      "code": "malformed-frontmatter-line",
+      "line": 5
+    },
+    {
+      "class": "syntax",
+      "code": "malformed-frontmatter-line",
+      "line": 6
+    }
+  ],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "est",
+      "type": "text"
+    }
+  ],
+  "rows": [
+    {
+      "line": 9,
+      "lead": "A",
+      "values": {
+        "est": "2"
+      }
+    }
+  ]
+}

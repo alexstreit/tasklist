@@ -1,0 +1,6 @@
+---
+key: id
+---
+A | id=-a
+B | id="has space"
+C | id=ok_1

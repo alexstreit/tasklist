@@ -1,0 +1,90 @@
+{
+  "spec": [
+    "ext §11: roles bind to any column, including the lead and implicit columns; a role name may be qualified; one column may carry several roles; entries are separated by any whitespace"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "est",
+      "type": "duration"
+    },
+    {
+      "name": "dur",
+      "type": "duration"
+    },
+    {
+      "name": "owner",
+      "type": "text"
+    },
+    {
+      "name": "parent",
+      "type": "ref",
+      "implicit": true
+    },
+    {
+      "name": "done",
+      "type": "bool",
+      "implicit": true
+    }
+  ],
+  "roles": [
+    {
+      "role": "effort",
+      "column": "est"
+    },
+    {
+      "role": "duration",
+      "column": "dur"
+    },
+    {
+      "role": "title",
+      "column": "name"
+    },
+    {
+      "role": "propricer.labour-category",
+      "column": "owner"
+    },
+    {
+      "role": "who",
+      "column": "owner"
+    },
+    {
+      "role": "up",
+      "column": "parent"
+    },
+    {
+      "role": "flag",
+      "column": "done"
+    }
+  ],
+  "rows": [
+    {
+      "line": 7,
+      "lead": "Auth",
+      "values": {
+        "est": "2d",
+        "dur": "1d",
+        "owner": "alice"
+      }
+    },
+    {
+      "line": 8,
+      "indent": 4,
+      "lead": "Login",
+      "markers": [
+        "done"
+      ],
+      "values": {
+        "est": "4h",
+        "owner": "bob"
+      },
+      "parent": 7
+    }
+  ]
+}

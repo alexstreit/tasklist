@@ -1,0 +1,4 @@
+---
+include: people.rows | ../shared/rates.rows as rates
+---
+A

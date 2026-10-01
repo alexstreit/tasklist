@@ -1,0 +1,4 @@
+---
+columns: a: | b:enum | f:number[3] | g:foo[bar] | h:Number
+---
+R

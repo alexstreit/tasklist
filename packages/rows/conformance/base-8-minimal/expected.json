@@ -1,0 +1,13 @@
+{
+  "spec": ["base §8 minimal", "base §7"],
+  "stage": "base",
+  "failed": false,
+  "errors": [],
+  "table": "shopping",
+  "columns": [{ "name": "name", "type": "text" }],
+  "rows": [
+    { "line": 1, "lead": "Milk" },
+    { "line": 2, "lead": "Eggs" },
+    { "line": 3, "lead": "Bread" }
+  ]
+}

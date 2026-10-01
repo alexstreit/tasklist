@@ -1,0 +1,10 @@
+---
+format: rows/1
+# a comment
+
+table: "a\"b\\c\n"
+x-private: anything
+unknown_key-2: ignored
+columns:   est   
+---
+A | 1

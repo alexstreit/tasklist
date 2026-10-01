@@ -1,0 +1,7 @@
+---
+table: expenses
+columns: amount:number unit=GBP required | when:date | paid:bool default=false | memo:text
+---
+Rent          | 1200   | 2026-09-01 | true
+Electricity   | 84.20  | 2026-09-03 | memo="estimated; actual bill pending"
+Coffee beans  | 18     | 2026-09-05 | true  | ""

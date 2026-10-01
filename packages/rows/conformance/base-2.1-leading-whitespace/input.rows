@@ -1,0 +1,6 @@
+---
+  table: x
+columns : est
+  # indented comment
+---
+A | 1

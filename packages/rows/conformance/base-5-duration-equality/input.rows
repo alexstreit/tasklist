@@ -1,0 +1,12 @@
+---
+columns: d:duration hpd=8 unique
+---
+a | 1d 4h
+b | 12h
+c | 1w
+d | 1w
+e | 5d
+f | -1h
+g | -60m
+h | +1h
+i | 1h

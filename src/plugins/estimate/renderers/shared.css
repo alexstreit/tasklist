@@ -1,0 +1,2 @@
+.plan-grid tr.total td { border-top: 1px solid var(--border); font-weight: 600; }
+.plan-grid td.level { color: var(--fg-muted); text-align: right; }

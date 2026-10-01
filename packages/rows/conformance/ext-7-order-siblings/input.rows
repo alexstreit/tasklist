@@ -1,0 +1,11 @@
+---
+nest: parent
+order: n
+columns: n:number
+---
+A | 1
+    A1 | 5
+    A2 | 6
+B | 2
+    B1 | 3
+    B2 | 1

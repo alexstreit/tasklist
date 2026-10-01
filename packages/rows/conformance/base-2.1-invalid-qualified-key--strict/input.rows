@@ -1,0 +1,9 @@
+---
+a.b.c: x
+a..b: x
+.a: x
+a.: x
+a.1b: x
+columns: est
+---
+A | 2

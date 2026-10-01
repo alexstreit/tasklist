@@ -1,0 +1,8 @@
+---
+columns: b:bool
+---
+a | true
+b | false
+c | True
+d | 1
+e | yes

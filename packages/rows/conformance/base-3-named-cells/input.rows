@@ -1,0 +1,8 @@
+---
+columns: est | owner | notes
+---
+A | notes="a | b"
+B | 1 | notes=x | owner=bob
+C | owner = bob
+D | "owner=bob"
+E | 2est=4

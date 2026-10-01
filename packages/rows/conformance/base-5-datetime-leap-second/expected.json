@@ -1,0 +1,13 @@
+{
+  "spec": ["base §5 equality: a leap second equals the second that follows it", "base §4 unique"],
+  "stage": "types",
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "not-unique", "line": 4 },
+    { "class": "validation", "code": "not-unique", "line": 5 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "t": "2016-12-31T23:59:60Z" } },
+    { "line": 5, "lead": "b", "values": { "t": "2017-01-01T00:00:00Z" } }
+  ]
+}

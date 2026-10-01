@@ -1,0 +1,4 @@
+{
+  "profiles": { "plan.rows": "---\ncolumns: from-named\n---\n" },
+  "profileFiles": { "plan.rows": "---\ncolumns: from-path\n---\n" }
+}

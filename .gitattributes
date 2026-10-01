@@ -1,0 +1,2 @@
+# Conformance inputs are byte-exact: some carry CRLF, a BOM, tabs or trailing whitespace.
+packages/rows/conformance/**/input.rows -text

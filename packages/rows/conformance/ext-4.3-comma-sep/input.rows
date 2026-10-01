@@ -1,0 +1,6 @@
+---
+sep: ,
+columns: deps:ref many
+---
+A {#a}
+B , "#a, #a"

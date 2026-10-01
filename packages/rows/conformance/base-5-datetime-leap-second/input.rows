@@ -1,0 +1,5 @@
+---
+columns: t:datetime unique
+---
+a | 2016-12-31T23:59:60Z
+b | 2017-01-01T00:00:00Z

@@ -6,6 +6,28 @@
 import { diagnosticCount, forEachDiagnostic } from '@codemirror/lint';
 import { EditorView } from '@codemirror/view';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { CodeMirrorBuffer } from '../../src/buffer';
+import type { Model } from '../../src/core';
+
+// Every model the shell builds, with the buffer's version when it was built.
+const built: { model: Model; bufferVersion: number }[] = [];
+// The shell's buffer is the one its text editor mounts on, which happens before its first analysis.
+let shellBuffer: CodeMirrorBuffer | undefined;
+const createView = CodeMirrorBuffer.prototype.createView;
+CodeMirrorBuffer.prototype.createView = function (this: CodeMirrorBuffer, ...args) {
+  shellBuffer ??= this;
+  return createView.apply(this, args);
+};
+const buffer = () => shellBuffer!;
+vi.mock('../../src/app/registry', async (original) => {
+  const registry = await original<typeof import('../../src/app/registry')>();
+  const analyze: typeof registry.analyze = (text, options) => {
+    const model = registry.analyze(text, options);
+    built.push({ model, bufferVersion: buffer().version() });
+    return model;
+  };
+  return { ...registry, analyze };
+});
 
 let view: EditorView;
 let preview: HTMLElement;
@@ -197,16 +219,18 @@ describe('diagnostics', () => {
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '# heading\nAuth\n    Login | 4x\n' } });
     vi.advanceTimersByTime(60);
     const out = collect();
-    expect(out.map((d) => d.severity)).toEqual(['warning', 'warning']);
+    // A heading line is a rows structural error; 4x a validation error (spec §2.9).
+    expect(out.map((d) => d.severity)).toEqual(['error', 'warning']);
     expect(view.state.doc.sliceString(out[0].from, out[0].to)).toBe('# heading');
     expect(view.state.doc.sliceString(out[1].from, out[1].to)).toBe('4x');
-    expect(out[1].message).toBe('unparseable duration: "4x"');
+    expect(out[1].message).toBe('"4x" is not a valid duration; the text is kept.');
   });
 
   it('underlines only the offending field and marks the gutter', () => {
-    const marks = [...view.contentDOM.querySelectorAll('.cm-lintRange-warning')].map((m) => m.textContent);
-    expect(marks).toEqual(['# heading', '4x']);
-    expect(view.dom.querySelectorAll('.cm-gutter-lint .cm-lint-marker-warning')).toHaveLength(2);
+    const marks = (severity: string) => [...view.contentDOM.querySelectorAll(`.cm-lintRange-${severity}`)].map((m) => m.textContent);
+    expect([marks('error'), marks('warning')]).toEqual([['# heading'], ['4x']]);
+    expect(view.dom.querySelectorAll('.cm-gutter-lint .cm-lint-marker-error')).toHaveLength(1);
+    expect(view.dom.querySelectorAll('.cm-gutter-lint .cm-lint-marker-warning')).toHaveLength(1);
   });
 
   it('clears a diagnostic as soon as its line is fixed', () => {
@@ -225,11 +249,15 @@ describe('renderer switcher', () => {
   const tab = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('#renderers button')].find((b) => b.textContent === label)!;
 
   it('lists every registered renderer, greying out one whose requirements are unmet', () => {
-    expect([...document.querySelectorAll('#renderers button')].map((b) => b.textContent)).toEqual(['Tree', 'Table', 'Gantt']);
+    expect([...document.querySelectorAll('#renderers button')].map((b) => b.textContent)).toEqual(['Tree', 'Table', 'Schedule', 'Gantt', 'Pins']);
     expect(tab('Tree').classList.contains('active')).toBe(true);
     expect(tab('Table').disabled).toBe(false);
+    expect(tab('Schedule').disabled).toBe(true);
+    expect(tab('Schedule').title).toBe('needs project-start');
     expect(tab('Gantt').disabled).toBe(true);
-    expect(tab('Gantt').title).toBe('needs a date column');
+    expect(tab('Gantt').title).toBe('needs project-start');
+    // The pin review requires nothing.
+    expect(tab('Pins').disabled).toBe(false);
   });
 
   it('switches to the table renderer and back', () => {
@@ -256,10 +284,25 @@ describe('renderer switcher', () => {
   });
 
   it('never renders a greyed-out renderer', () => {
-    tab('Gantt').click();
-    expect(tab('Gantt').classList.contains('active')).toBe(false);
+    tab('Schedule').click();
+    expect(tab('Schedule').classList.contains('active')).toBe(false);
     expect(tab('Table').classList.contains('active')).toBe(true);
     expect(preview.querySelector('table')!.className).toContain('plan-table');
+  });
+
+  it('lines the Gantt up with the text editor’s lines, and shows the pin review', () => {
+    const text = '---\nprofile: schedule\nproject-start: 2026-10-05\n---\n// plan\nBuild\n    API | 3d\n    UI | 2d | | 2026-10-12\n';
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    vi.advanceTimersByTime(60);
+    tab('Gantt').click();
+    vi.advanceTimersByTime(60);
+    const bands = [...preview.querySelectorAll<HTMLElement>('.gantt-row')];
+    // The comment and front matter lines are rows with no mark.
+    expect(bands.map((b) => Number(b.dataset.line))).toEqual([6, 7, 8]);
+    expect(bands.map((b) => parseFloat(b.style.top))).toEqual([6, 7, 8].map((line) => view.lineBlockAt(view.state.doc.line(line).from).top));
+    tab('Pins').click();
+    expect([...preview.querySelectorAll<HTMLTableRowElement>('tbody tr')].map((r) => r.cells[1].textContent)).toEqual(['UI']);
+    tab('Table').click();
   });
 });
 
@@ -342,5 +385,71 @@ describe('editor toggle', () => {
     vi.advanceTimersByTime(60);
     expect(view.state.doc.toString()).toBe(before);
     expect(titles()).toEqual(['Auth', 'Login']);
+  });
+});
+
+// Task 32: the shell relays a hovered line between the editor and the view, naming neither.
+describe('hover across panes', () => {
+  const tab = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('#renderers button')].find((b) => b.textContent === label)!;
+  const editorButton = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('#editors button')].find((b) => b.textContent === label)!;
+  const pane = () => document.getElementById('editor')!;
+  const over = (el: Element) => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  const leave = (el: Element) => el.dispatchEvent(new MouseEvent('mouseleave'));
+  const gridHover = () => [...pane().querySelectorAll<HTMLElement>('tbody tr.hover')].map((tr) => Number(tr.dataset.line));
+  const ganttHover = () => [...preview.querySelectorAll<HTMLElement>('.gantt-band.hover')].map((b) => Number(b.dataset.line));
+  const text = '---\nprofile: schedule\nproject-start: 2026-10-05\n---\n// plan\nBuild\n    API | 3d\n    UI | 2d\n';
+
+  it('relays between the grid and the Gantt both ways, a comment row too, and leaving clears both', async () => {
+    const { stackLayout } = await import('../support/layout');
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    vi.advanceTimersByTime(60);
+    tab('Gantt').click();
+    vi.advanceTimersByTime(60);
+    // The text editor doesn't take part in hover: hovering the Gantt with it mounted breaks nothing.
+    over(preview.querySelector('.gantt-row[data-line="7"]')!);
+    leave(preview.querySelector('.gantt-body')!);
+
+    // jsdom lays nothing out; the grid publishes only the rows it measures on screen.
+    const restore = stackLayout(pane(), (el) => (el instanceof HTMLTableRowElement ? 22 : undefined));
+    try {
+      editorButton('Grid').click();
+      vi.advanceTimersByTime(60);
+      over(preview.querySelector('.gantt-row[data-line="7"] .gantt-bar')!);
+      expect(gridHover()).toEqual([7]);
+      leave(preview.querySelector('.gantt-body')!);
+      expect(gridHover()).toEqual([]);
+      over(pane().querySelector('tr[data-line="8"] td')!);
+      expect(ganttHover()).toEqual([8]);
+      over(pane().querySelector('tr[data-line="5"] td')!);
+      expect(ganttHover()).toEqual([5]);
+      leave(pane().querySelector('table')!);
+      expect(ganttHover()).toEqual([]);
+      over(preview.querySelector('.gantt-row[data-line="6"]')!);
+      expect(gridHover()).toEqual([6]);
+      leave(preview.querySelector('.gantt-body')!);
+      expect(gridHover()).toEqual([]);
+
+      // A view that doesn't follow still shows the hovered line, by line.
+      tab('Tree').click();
+      over(pane().querySelector('tr[data-line="7"] td')!);
+      expect([...preview.querySelectorAll<HTMLTableRowElement>('tbody tr.hover')].map((tr) => tr.cells[1].textContent)).toEqual(['API']);
+      leave(pane().querySelector('table')!);
+      expect(preview.querySelector('tbody tr.hover')).toBeNull();
+    } finally {
+      editorButton('Text').click();
+      view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
+      restore();
+    }
+  });
+});
+
+describe('model versions', () => {
+  it('every model the shell built carries the buffer’s version at the time', () => {
+    vi.advanceTimersByTime(60);
+    // Edits, undo, a load, and both editors, by the time this runs: many versions, not one.
+    expect(new Set(built.map(({ model }) => model.version)).size).toBeGreaterThan(5);
+    expect(built.map(({ model }) => model.version)).toEqual(built.map(({ bufferVersion }) => bufferVersion));
+    expect(built[built.length - 1].model.version).toBe(buffer().version());
+    expect(buffer().version()).toBeGreaterThan(0);
   });
 });

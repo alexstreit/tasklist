@@ -1,0 +1,10 @@
+{
+  "spec": ["base §4: a default does not satisfy required"],
+  "stage": "types",
+  "failed": false,
+  "errors": [{ "class": "validation", "code": "required", "line": 4 }],
+  "rows": [
+    { "line": 4, "lead": "A" },
+    { "line": 5, "lead": "B", "values": { "n": "3" } }
+  ]
+}

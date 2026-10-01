@@ -1,0 +1,5 @@
+---
+columns: n:number | t:text
+---
+A | "" | ""
+B |  |

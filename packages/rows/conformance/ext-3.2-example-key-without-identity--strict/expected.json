@@ -1,0 +1,9 @@
+{
+  "spec": ["ext §3.2", "base §6 modes"],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "invalid-cell-name", "line": 1 },
+    { "class": "structural", "code": "too-many-cells", "line": 1 }
+  ]
+}

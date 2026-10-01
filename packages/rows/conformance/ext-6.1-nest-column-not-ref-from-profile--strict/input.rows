@@ -1,0 +1,6 @@
+---
+profile: p
+columns: parent:text
+---
+A
+    B | parent=x

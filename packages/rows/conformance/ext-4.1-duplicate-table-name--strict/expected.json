@@ -1,0 +1,12 @@
+{
+  "spec": ["ext §4.1", "base §6 modes"],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 3 },
+    { "class": "structural", "code": "unresolvable-include", "line": 3 },
+    { "class": "structural", "code": "unresolvable-include", "line": 3 },
+    { "class": "structural", "code": "duplicate-table-name", "line": 3 },
+    { "class": "structural", "code": "duplicate-table-name", "line": 3 }
+  ]
+}

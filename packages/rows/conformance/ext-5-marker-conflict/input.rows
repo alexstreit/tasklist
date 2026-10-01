@@ -1,0 +1,6 @@
+---
+markers: done=~
+columns: est
+---
+~A | done=false
+~B | done=true

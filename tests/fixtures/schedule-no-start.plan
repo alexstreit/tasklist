@@ -1,0 +1,7 @@
+---
+profile: schedule
+---
+// A schedule with no project-start: no-project-start, with "Set project start to today".
+Design
+    Wireframes {#wire}      | 1d
+    Review                  | 4h |    |            | #wire

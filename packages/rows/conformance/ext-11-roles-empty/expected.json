@@ -1,0 +1,18 @@
+{
+  "spec": [
+    "ext intro, §11: an empty roles: declares nothing, and is not an error (by analogy with A1)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "roles": [],
+  "rows": [
+    {
+      "line": 5,
+      "lead": "A",
+      "values": {
+        "est": "2"
+      }
+    }
+  ]
+}

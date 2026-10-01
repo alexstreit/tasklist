@@ -1,0 +1,7 @@
+---
+order: b
+columns: b:bool
+---
+A | false
+B | true
+C | false

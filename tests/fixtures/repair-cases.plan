@@ -1,0 +1,29 @@
+---
+profile: plan
+format: rows/2
+columns: est:duration | owner:text | owner:text | dep:ref | kind:enum[a, b | notes:text
+---
+    Setup | 1h
+Tree | 2d
+        Deep
+    Between
+    Parent mismatch | parent=#e
+Cycle one {#e} | parent=#f
+Cycle two {#f} | parent=#e
+Unterminated | 4h | alice | "call Bob
+After quote | "a"b
+Escape | "a\qb"
+Too many | 1h | a | b | #e | x | n | extra
+Named then not | est=1h | stray
+Undeclared | ratio=2
+Twice | 1h | est=2h
+Invalid | 4 hours
+| 1h
+# Heading
+~~Repeated
+<!-- old -->
+Duplicate {#d}
+Duplicate again {#d}
+Case {#Case}
+Case again {#case}
+Missing | | | | #nowhere

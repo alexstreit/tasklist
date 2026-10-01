@@ -1,0 +1,10 @@
+{
+  "spec": ["ext §9 canonical form: auth.rows", "base §6 modes"],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "unresolvable-include", "line": 2 },
+    { "class": "validation", "code": "unresolved-ref", "line": 8 },
+    { "class": "validation", "code": "unresolved-ref", "line": 9 }
+  ]
+}

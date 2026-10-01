@@ -1,0 +1,9 @@
+---
+nest: parent
+---
+A
+    B
+        C
+      D
+      E
+        F

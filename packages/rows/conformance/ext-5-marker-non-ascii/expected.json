@@ -1,0 +1,14 @@
+{
+  "spec": ["ext §5: CHAR is one code point that is not a Unicode letter or digit"],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    { "class": "structural", "code": "invalid-marker", "line": 2 },
+    { "class": "structural", "code": "invalid-marker", "line": 2 }
+  ],
+  "columns": [
+    { "name": "name", "type": "text" },
+    { "name": "s", "type": "bool", "implicit": true }
+  ],
+  "rows": [{ "line": 4, "lead": "éclair", "markers": ["s"] }]
+}

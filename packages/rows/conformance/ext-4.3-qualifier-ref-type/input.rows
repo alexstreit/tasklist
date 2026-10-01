@@ -1,0 +1,4 @@
+---
+columns: r:ref qualifier=who:ref
+---
+A {#a} | #a #a

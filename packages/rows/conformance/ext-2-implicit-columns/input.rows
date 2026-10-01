@@ -1,0 +1,9 @@
+---
+key: id
+nest: parent
+markers: done=~
+columns: est
+---
+A {#a} | 1
+    ~B | 2 | parent=#a
+C | 3 | done=true | id=c

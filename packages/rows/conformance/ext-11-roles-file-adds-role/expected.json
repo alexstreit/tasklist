@@ -1,0 +1,11 @@
+{
+  "spec": ["base §2.3, ext §11: a file's roles adds to its profile's; the profile's bindings come first (Q43)"],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "roles": [
+    { "role": "effort", "column": "est" },
+    { "role": "who", "column": "owner" }
+  ],
+  "rows": [{ "line": 5, "lead": "A", "values": { "est": "2h", "owner": "bob" } }]
+}

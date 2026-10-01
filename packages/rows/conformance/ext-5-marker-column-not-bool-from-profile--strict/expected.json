@@ -1,0 +1,15 @@
+{
+  "spec": [
+    "base §2.3, ext §5: a profile's marker whose column the file declares as not bool, reported on the file's declaration (Q42)",
+    "base §6 modes"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "marker-column-not-bool",
+      "line": 3
+    }
+  ]
+}

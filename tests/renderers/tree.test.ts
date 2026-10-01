@@ -2,9 +2,10 @@
 // Tree renderer against the §2.10 example. Spec §5.
 
 import { describe, expect, it, vi } from 'vitest';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import type { RenderContext } from '../../src/core';
-import { treeRenderer } from '../../src/renderers/tree';
+import { treeRenderer } from '../../src/plugins/estimate/renderers/tree';
+import { hasValue, rollup, totals } from '../../src/plugins/estimate/fields';
 import { cursorItemFor, itemLines } from '../../src/app/cursor';
 import example from '../../examples/example.plan?raw';
 
@@ -20,8 +21,8 @@ function render(text: string, cursorLine: number | null = null, setCursorLine = 
 }
 
 describe('tree renderer', () => {
-  it('declares no requirements', () => {
-    expect(treeRenderer.requires).toEqual([]);
+  it("requires estimate's roll-ups and totals", () => {
+    expect(treeRenderer.requires).toEqual([rollup, hasValue, totals]);
   });
 
   it('renders one row per item and nothing for comments or blank lines', () => {
@@ -139,5 +140,14 @@ describe('tree renderer', () => {
     const text = Array.from({ length: 500 }, (_, i) => (i % 5 === 0 ? `Item ${i} | 1d` : `    Sub ${i} | 2h`)).join('\n');
     const { rows } = render(text);
     expect(rows).toHaveLength(500);
+  });
+});
+
+describe('the duration role (PLUGINS.md §6)', () => {
+  it('shows no summed dur on a parent in a profile: schedule file', () => {
+    const { host } = render('---\nprofile: schedule\n---\nA | | 5d\n    B | 1d | 2d\n    C | 2d | 3d\n');
+    const dur = [...host.querySelectorAll('thead th')].findIndex((th) => th.textContent === 'dur');
+    // Each row's own cell as written, and no ⟨Σ …⟩ beside the parent's.
+    expect([...host.querySelectorAll<HTMLTableRowElement>('tbody tr')].map((tr) => tr.cells[dur].textContent)).toEqual(['5d', '2d', '3d']);
   });
 });

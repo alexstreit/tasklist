@@ -1,0 +1,110 @@
+// Body rows: cells assigned to columns, named cells and overflow (base §3), with the rows
+// recovery table in base §6.
+import { rowsError } from './errors';
+import type { PhysicalLine } from './text';
+import type { ScannedCell, ScannedRow } from './tokenize';
+import type { Cell, Column, Row, RowsError, Schema } from './types';
+import { readValue } from './values';
+
+function toCell(s: ScannedCell, base: number, column: Column | null): Cell {
+  return {
+    column,
+    from: base + s.from,
+    to: base + s.to,
+    valueFrom: base + s.valueFrom,
+    valueTo: base + s.valueTo,
+    name: s.name && { text: s.name.text, from: base + s.name.from, to: base + s.name.to },
+    quoted: s.quoted,
+    text: s.text,
+    value: s.text !== null && column ? readValue(s.text, column) : null,
+  };
+}
+
+/** A named cell read as an unnamed one: its value is the whole raw text (base §6). */
+function asUnnamed(s: ScannedCell, line: string): ScannedCell {
+  return { ...s, name: null, quoted: false, valueFrom: s.from, valueTo: s.to, text: line.slice(s.from, s.to), escapes: [] };
+}
+
+export function buildRow(line: PhysicalLine, schema: Schema, scan: ScannedRow): Row {
+  const base = line.from;
+  const errors: RowsError[] = scan.errors.map((e) => rowsError(e.code, line.line, e.message, base + e.from, base + e.to));
+  const columns = schema.columns;
+  const cells: (Cell | null)[] = columns.map(() => null);
+  const overflow: Cell[] = [];
+  const lead = toCell(scan.lead, base, columns[0]);
+  cells[0] = lead;
+
+  let next = 1; // the next positional column
+  // Implicit columns follow the declared ones and are set only by name (ext §2).
+  const positional = columns.filter((c) => !c.implicit).length;
+  let named = false;
+  let unnamedAfterNamed = false;
+  let tooMany = false;
+  for (let s of scan.cells) {
+    const at = (code: Parameters<typeof rowsError>[0], message: string) =>
+      errors.push(rowsError(code, line.line, message, base + s.from, base + s.to));
+
+    if (s.name) {
+      const name = s.name.text;
+      const column = columns.find((c) => c.settable && c.name === name);
+      if (!column) {
+        at('invalid-cell-name', name === columns[0].name ? `${name} is the lead column and cannot be set by name.` : `No column named ${name}; read as an unnamed cell.`);
+        s = asUnnamed(s, line.text);
+      } else if (cells[column.index]) {
+        at('column-set-twice', `Column ${name} is set twice; kept as overflow.`);
+        overflow.push(toCell(s, base, null));
+        continue;
+      } else {
+        cells[column.index] = toCell(s, base, column);
+        named = true;
+        continue;
+      }
+    }
+
+    if (named) {
+      // One error per row, as for too many cells (base §6).
+      if (!unnamedAfterNamed) at('unnamed-after-named', 'Unnamed cell after a named cell; kept as overflow.');
+      unnamedAfterNamed = true;
+      overflow.push(toCell(s, base, null));
+    } else if (next < positional) {
+      cells[next] = toCell(s, base, columns[next]);
+      next++;
+    } else {
+      if (!tooMany) at('too-many-cells', `More cells than the ${positional} columns; the extras are kept as overflow.`);
+      tooMany = true;
+      overflow.push(toCell(s, base, null));
+    }
+  }
+
+  // Validation (base §4, §5): every cell against its column, then required columns.
+  for (const cell of cells) {
+    if (cell && cell.text !== null && cell.value === null && cell.column!.kind !== 'ref') {
+      errors.push(rowsError('invalid-value', line.line, `${JSON.stringify(cell.text)} is not a valid ${cell.column!.type}; the text is kept.`, cell.valueFrom, cell.valueTo));
+    }
+  }
+  for (const column of columns) {
+    const cell = cells[column.index];
+    if (column.required && (!cell || cell.text === null)) {
+      const span = cell ? [cell.from, cell.to] : [line.from, line.to];
+      errors.push(rowsError('required', line.line, `${column.name || 'This column'} is required.`, span[0], span[1]));
+    }
+  }
+
+  return {
+    line: line.line,
+    from: line.from,
+    to: line.to,
+    indent: { width: scan.indent.width, from: base + scan.indent.from, to: base + scan.indent.to },
+    markers: scan.markers.map((m) => ({ name: m.name, char: m.char, from: base + m.from, to: base + m.to })),
+    lead,
+    anchors: scan.anchors.map((a) => ({ id: a.id, from: base + a.from, to: base + a.to })),
+    cells,
+    overflow,
+    id: null,
+    aliases: [],
+    parent: null,
+    children: [],
+    depth: 0,
+    errors,
+  };
+}

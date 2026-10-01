@@ -1,0 +1,6 @@
+{
+  "spec": ["ext §6.1", "base §6 modes"],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [{ "class": "structural", "code": "invalid-nest-column", "line": 2 }]
+}

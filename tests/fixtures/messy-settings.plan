@@ -1,0 +1,10 @@
+---
+profile: plan
+sep: /
+columns: est:duration unit=h hpd=8 dpw=5 | owner:text | owner:text | notes:text | due:dat | size:enum[S,M,L | risk:number unit=x hpd=8 | done:text
+---
+Launch site                   | 3d | alice | bob | ship it | 2026-10-01 | M
+    ~Write copy               | 2d | alice
+    Design                    | 1w | carol
+    Build                     | 2w |       | dave
+    Review

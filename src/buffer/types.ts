@@ -20,6 +20,8 @@ export interface BufferChange {
 
 export interface PlanBuffer {
   text(): string;
+  /** How many changes the buffer has had: every edit, undo, redo and load. */
+  version(): number;
   apply(edits: readonly TextEdit[], origin: string): void;
   undo(): void;
   redo(): void;

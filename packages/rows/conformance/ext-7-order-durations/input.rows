@@ -1,0 +1,10 @@
+---
+order: est
+columns: est:duration hpd=8
+---
+A | 30m
+B | 1h
+C | 1d
+D | 4h
+E | 1w
+F | 1h

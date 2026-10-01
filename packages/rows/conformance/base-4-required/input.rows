@@ -1,0 +1,6 @@
+---
+columns: amount:number required | memo
+---
+A | 1
+B |  | m
+C

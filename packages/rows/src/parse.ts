@@ -1,0 +1,90 @@
+// parseRows (DESIGN §3, §4): normalise → frontmatter → schema → rows.
+import { rowsError } from './errors';
+import { readFrontmatter } from './frontmatter';
+import { buildRow } from './rows';
+import { resolveSchema } from './schema';
+import { normalise, splitLines } from './text';
+import { applyExtensions } from './extensions';
+import { classifyBodyLine, scanRow, type ExtensionContext, type ScannedRow } from './tokenize';
+import type { Line, ParseOptions, Row, RowsDocument, RowsError, Schema } from './types';
+import { equalityKey } from './values';
+
+export function parseRows(input: string, options: ParseOptions = {}): RowsDocument {
+  const text = normalise(input);
+  const physical = splitLines(text);
+  const errors: RowsError[] = [];
+  const block = readFrontmatter(physical, errors);
+  const body = physical.slice(block.kinds.length);
+  // Rows are scanned once the delimiter, comment marker and markers are known. Whether any lead
+  // has an anchor decides identity (ext §3.1), which the schema needs for its implicit columns.
+  let scans = new Map<number, ScannedRow>();
+  const scanBody = (sep: string, comment: string, ext: ExtensionContext | null) => {
+    scans = new Map(body.filter((l) => classifyBodyLine(l.text, comment) === 'row').map((l) => [l.line, scanRow(l.text, sep, ext)]));
+    return [...scans.values()].some((s) => s.anchors.length > 0);
+  };
+  const schema = resolveSchema(block.frontmatter, options, errors, scanBody);
+  const ext = options.extensions === false ? null : { markers: new Map(schema.markers.map((m) => [m.char, m.name])) };
+  scanBody(schema.sep, schema.comment, ext);
+
+  const lines: Line[] = [];
+  const rows: Row[] = [];
+  for (const [i, l] of physical.entries()) {
+    const base = { line: l.line, from: l.from, to: l.to };
+    if (i < block.kinds.length) {
+      lines.push({ kind: block.kinds[i], ...base });
+      continue;
+    }
+    const kind = classifyBodyLine(l.text, schema.comment);
+    if (kind !== 'row') {
+      lines.push({ kind, ...base });
+      continue;
+    }
+    const row = buildRow(l, schema, scans.get(l.line)!);
+    rows.push(row);
+    errors.push(...row.errors);
+    lines.push({ kind, ...base, row });
+  }
+
+  errors.push(...uniqueness(schema, rows));
+  errors.push(...applyExtensions(schema, rows));
+
+  return {
+    text,
+    endsWithNewline: text.endsWith('\n'),
+    lines,
+    frontmatter: block.frontmatter,
+    schema,
+    rows,
+    roots: rows.filter((r) => r.parent === null),
+    errors,
+    failed: options.mode === 'strict' && errors.some((e) => e.class !== 'validation'),
+  };
+}
+
+/**
+ * base §4 `unique`: no two rows share a non-null value. Values compare by base §5 equality, and
+ * every row involved gets an error (base §6).
+ */
+function uniqueness(schema: Schema, rows: Row[]): RowsError[] {
+  const errors: RowsError[] = [];
+  // The key column's uniqueness is the rule against duplicate IDs (ext §3.1), checked with identity.
+  for (const column of schema.columns.filter((c) => c.unique && c !== schema.key)) {
+    const byValue = new Map<string, Row[]>();
+    for (const row of rows) {
+      const cell = row.cells[column.index];
+      const key = cell && equalityKey(cell, column);
+      if (key === null || key === undefined) continue;
+      byValue.set(key, [...(byValue.get(key) ?? []), row]);
+    }
+    for (const shared of byValue.values()) {
+      if (shared.length < 2) continue;
+      for (const row of shared) {
+        const cell = row.cells[column.index]!;
+        const error = rowsError('not-unique', row.line, `${column.name} ${JSON.stringify(cell.text)} equals the value in ${shared.length - 1} other row(s).`, cell.valueFrom, cell.valueTo);
+        row.errors.push(error);
+        errors.push(error);
+      }
+    }
+  }
+  return errors;
+}

@@ -1,0 +1,9 @@
+{
+  "spec": ["base §6 rows: column set twice in a row", "base §6 modes"],
+  "stage": "base",
+  "failed": true,
+  "errors": [
+    { "class": "structural", "code": "column-set-twice", "line": 4 },
+    { "class": "structural", "code": "column-set-twice", "line": 5 }
+  ]
+}

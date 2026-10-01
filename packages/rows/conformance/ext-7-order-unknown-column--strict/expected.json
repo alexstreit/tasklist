@@ -1,0 +1,6 @@
+{
+  "spec": ["ext §7", "base §6 modes"],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [{ "class": "structural", "code": "unknown-order-column", "line": 2 }]
+}

@@ -1,0 +1,8 @@
+---
+nest: parent
+markers: done=~
+columns: est:duration | dur:duration | owner
+roles: effort=est  duration=dur	title=name propricer.labour-category=owner who=owner up=parent flag=done
+---
+Auth | 2d | 1d | alice
+    ~Login | 4h | | bob

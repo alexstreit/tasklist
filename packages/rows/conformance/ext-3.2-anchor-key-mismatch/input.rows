@@ -1,0 +1,5 @@
+---
+key: id
+---
+Auth {#auth} | id=auth
+Admin {#admin} | id=adm

@@ -1,0 +1,11 @@
+{
+  "spec": ["base §5 duration: *WSP after the sign (A5)"],
+  "stage": "types",
+  "failed": false,
+  "errors": [],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "d": "+ 2 d 4 h" } },
+    { "line": 5, "lead": "b", "values": { "d": "- 30m" } },
+    { "line": 6, "lead": "c", "values": { "d": "+\t1h" } }
+  ]
+}

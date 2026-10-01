@@ -3,8 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { formatDuration } from '../../src/core';
-import type { TextCell } from '../../src/core';
-import { byTitle, est, flatten, load } from './helpers';
+import { byTitle, est, flatten, load, total } from './helpers';
 
 const text = readFileSync(new URL('../../examples/example.plan', import.meta.url), 'utf8');
 
@@ -12,27 +11,27 @@ describe('spec §2.10 example', () => {
   const { model } = load(text);
 
   it.each([
-    // title, effective, childSum, mode, doneSum
-    ['Auth', 16, 23, 'override', 4],
-    ['Login page', 4, 0, 'override', 4],
-    ['Password reset', 6, 0, 'override', 0],
+    // title, effective, derived (the child sum; absent on a leaf), mode, doneSum
+    ['Auth', 16, 23, 'pinned', 4],
+    ['Login page', 4, undefined, 'pinned', 4],
+    ['Password reset', 6, undefined, 'pinned', 0],
     ['OAuth (Google)', 13, 5, 'additive', 0],
-    ['Consent screen', 2, 0, 'override', 0],
-    ['Token refresh', 3, 0, 'override', 0],
+    ['Consent screen', 2, undefined, 'pinned', 0],
+    ['Token refresh', 3, undefined, 'pinned', 0],
     ['Admin', 8, 8, 'derived', 0],
-    ['User list', 8, 0, 'override', 0],
-  ])('%s: effective %ih, childSum %ih, %s, doneSum %ih', (title, effective, childSum, mode, doneSum) => {
-    const cell = est(byTitle(model, title));
+    ['User list', 8, undefined, 'pinned', 0],
+  ])('%s: effective %ih, derived %s, %s, doneSum %ih', (title, effective, derived, mode, doneSum) => {
+    const cell = est(model, byTitle(model, title));
     expect(cell.effective).toBe(effective);
-    expect(cell.childSum).toBe(childSum);
+    expect(cell.derived).toBe(derived);
     expect(cell.mode).toBe(mode);
     expect(cell.doneSum).toBe(doneSum);
   });
 
   it('formats the headline durations as in the table', () => {
-    expect(formatDuration(est(byTitle(model, 'Auth')).effective)).toBe('2d');
-    expect(formatDuration(est(byTitle(model, 'OAuth (Google)')).effective)).toBe('1d 5h');
-    expect(formatDuration(est(byTitle(model, 'Admin')).effective)).toBe('1d');
+    expect(formatDuration(est(model, byTitle(model, 'Auth')).effective)).toBe('2d');
+    expect(formatDuration(est(model, byTitle(model, 'OAuth (Google)')).effective)).toBe('1d 5h');
+    expect(formatDuration(est(model, byTitle(model, 'Admin')).effective)).toBe('1d');
   });
 
   it.each([
@@ -54,13 +53,13 @@ describe('spec §2.10 example', () => {
   });
 
   it('document total is 3d, doneSum 4h', () => {
-    const total = model.totals[0]!;
-    expect(total.effective).toBe(24);
-    expect(formatDuration(total.effective)).toBe('3d');
-    expect(total.doneSum).toBe(4);
-    expect(formatDuration(total.doneSum)).toBe('4h');
-    expect(model.totals[1]).toBeNull();
-    expect(model.totals[2]).toBeNull();
+    const sum = total(model)!;
+    expect(sum.effective).toBe(24);
+    expect(formatDuration(sum.effective)).toBe('3d');
+    expect(sum.doneSum).toBe(4);
+    expect(formatDuration(sum.doneSum)).toBe('4h');
+    expect(total(model, 'owner')).toBeUndefined();
+    expect(total(model, 'notes')).toBeUndefined();
   });
 
   it('only Login page is done', () => {
@@ -71,11 +70,11 @@ describe('spec §2.10 example', () => {
   });
 
   it('text columns carry owner and notes', () => {
-    expect((byTitle(model, 'Login page').cells[1] as TextCell).value).toBe('alice');
-    expect((byTitle(model, 'Password reset').cells[1] as TextCell).value).toBe('alice');
-    expect((byTitle(model, 'Admin').cells[1] as TextCell).value).toBe('bob');
-    expect((byTitle(model, 'OAuth (Google)').cells[2] as TextCell).value).toBe('may not need for v1');
-    expect((byTitle(model, 'OAuth (Google)').cells[1] as TextCell).value).toBe('');
+    expect(byTitle(model, 'Login page').fields[1]?.text).toBe('alice');
+    expect(byTitle(model, 'Password reset').fields[1]?.text).toBe('alice');
+    expect(byTitle(model, 'Admin').fields[1]?.text).toBe('bob');
+    expect(byTitle(model, 'OAuth (Google)').fields[2]?.text).toBe('may not need for v1');
+    expect(byTitle(model, 'OAuth (Google)').fields[1]).toBeNull();
   });
 
   it('hierarchy matches the indentation', () => {

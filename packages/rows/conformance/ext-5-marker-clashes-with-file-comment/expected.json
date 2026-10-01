@@ -1,0 +1,20 @@
+{
+  "spec": [
+    "base §2.3, ext §5: a profile's marker character that the file's comment marker uses, reported on the file's comment line (Q42)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-marker",
+      "line": 3
+    }
+  ],
+  "rows": [
+    {
+      "line": 6,
+      "lead": ";A"
+    }
+  ]
+}

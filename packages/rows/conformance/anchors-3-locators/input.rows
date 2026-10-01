@@ -1,0 +1,6 @@
+---
+include: people.rows
+columns: dep:ref | owner:ref[people] | doc:ref
+---
+Password reset {#reset}
+Login | #reset | people#alice | ../plans/q4.md#auth

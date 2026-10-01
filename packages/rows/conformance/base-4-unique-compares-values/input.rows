@@ -1,0 +1,8 @@
+---
+columns: n:number unique
+---
+a | 1
+b | 1.0
+c | 01
+d | x
+e | x

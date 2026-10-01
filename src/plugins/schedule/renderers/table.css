@@ -1,0 +1,2 @@
+.plan-schedule tr.critical td.slack { color: var(--diag-error); font-weight: 600; }
+.plan-schedule tr.late { outline: 1px solid var(--diag-warning); outline-offset: -1px; }

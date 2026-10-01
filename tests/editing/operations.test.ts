@@ -1,8 +1,8 @@
 // Line operations, spec §3.8. Plain strings in, text edits out.
 
 import { describe, expect, it } from 'vitest';
-import { analyze } from '../../src/core';
-import { deleteLines, indent, insertLineAbove, moveDown, moveUp, outdent, toggleComment } from '../../src/editing';
+import { analyze } from '../../src/app/registry';
+import { deleteLines, indent, moveDown, moveUp, outdent, toggleComment } from '../../src/editing';
 import type { LineRange } from '../../src/editing';
 import type { TextEdit } from '../../src/buffer';
 
@@ -65,13 +65,6 @@ describe('moveUp / moveDown', () => {
   });
 });
 
-describe('insertLineAbove', () => {
-  it('inserts a line above the range, with the content it is given', () => {
-    expect(applied('a\nb\n', insertLineAbove('a\nb\n', range(2), '    '))).toBe('a\n    \nb\n');
-    expect(applied('a\nb\n', insertLineAbove('a\nb\n', range(1)))).toBe('\na\nb\n');
-  });
-});
-
 describe('deleteLines', () => {
   it('deletes a parent line and leaves its children attached to the previous item', () => {
     const text = 'Auth\n    Login\nAdmin\n    Users\n        Roles\n';
@@ -115,5 +108,12 @@ describe('toggleComment', () => {
     const text = 'a\n\nb\n';
     expect(applied(text, toggleComment(text, range(1, 3)))).toBe('// a\n\n// b\n');
     expect(applied('\n', toggleComment('\n', range(1)))).toBe('// \n');
+  });
+
+  it('uses the comment marker it is given', () => {
+    const text = 'Auth\n    Login // not a comment here\n';
+    const once = applied(text, toggleComment(text, range(2), '#'));
+    expect(once).toBe('Auth\n    # Login // not a comment here\n');
+    expect(applied(once, toggleComment(once, range(2), '#'))).toBe(text);
   });
 });

@@ -1,0 +1,4 @@
+---
+columns: t:text unit=h hpd=8 | r:text required=yes | d:number default | e:duration unit=h hpd=8 hpd=6
+---
+A | x | | | 4

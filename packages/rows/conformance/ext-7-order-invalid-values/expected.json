@@ -1,0 +1,16 @@
+{
+  "spec": ["ext §7: invalid values compare as text; a valid and an invalid value are skipped (by analogy with Q34)"],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "invalid-value", "line": 6 },
+    { "class": "validation", "code": "invalid-value", "line": 7 },
+    { "class": "validation", "code": "out-of-order", "line": 7 }
+  ],
+  "rows": [
+    { "line": 5, "lead": "A", "values": { "n": "1" } },
+    { "line": 6, "lead": "B", "values": { "n": "b" } },
+    { "line": 7, "lead": "C", "values": { "n": "a" } },
+    { "line": 8, "lead": "D", "values": { "n": "0" } }
+  ]
+}

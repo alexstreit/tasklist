@@ -1,0 +1,11 @@
+---
+nest: parent
+---
+A
+  B
+
+  // a comment between rows
+    C
+  D
+E
+   F

@@ -1,0 +1,5 @@
+---
+include: people.rows
+columns: owner:ref[people] | deps:ref many qualifier=lag:duration
+---
+OAuth {#oauth} | #alice | #reset +2d, #login

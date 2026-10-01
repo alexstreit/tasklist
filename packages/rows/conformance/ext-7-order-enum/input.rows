@@ -1,0 +1,7 @@
+---
+order: level
+columns: level:enum[low,mid,high]
+---
+A | low
+B | high
+C | mid

@@ -1,0 +1,6 @@
+{
+  "filename": "example.plan",
+  "profiles": {
+    "plan": "---\nlead: title:text\nnest: parent\nmarkers: done=~\ncolumns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text\n---\n// The plan profile. Only the frontmatter above is used; this body is ignored.\n// Referenced as `profile: plan` by the plan tool, which has these keys built in.\n// Files meant for exchange can use `profile: ./plan.rows` instead."
+  }
+}

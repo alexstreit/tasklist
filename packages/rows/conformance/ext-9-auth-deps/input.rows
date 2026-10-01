@@ -1,0 +1,8 @@
+---
+include: auth.rows
+lead: from:ref[auth]
+columns: to:ref[auth] | lag:duration
+---
+#reset | #login
+#oauth | #reset | +2d
+#oauth | #login

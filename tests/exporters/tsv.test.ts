@@ -1,9 +1,8 @@
 // TSV exporter against the §2.10 example. Spec §3.6.
 
 import { describe, expect, it } from 'vitest';
-import { analyze } from '../../src/core';
-import type { TextCell } from '../../src/core';
-import { tsvExporter } from '../../src/exporters/tsv';
+import { analyze } from '../../src/app/registry';
+import { tsvExporter } from '../../src/plugins/estimate/exporters/tsv';
 import example from '../../examples/example.plan?raw';
 
 describe('tsv exporter', () => {
@@ -33,7 +32,7 @@ describe('tsv exporter', () => {
   it('replaces a tab or newline in a text cell with a space', () => {
     // The format cannot produce these; forge them on the model to prove the defence.
     const model = analyze('A | 4h | alice\n');
-    (model.roots[0].cells[1] as TextCell).value = 'al\tice\nsmith';
+    model.roots[0].fields[1]!.text = 'al\tice\nsmith';
     model.roots[0].title = 'A\tB';
     expect(tsvExporter.export(model).data.split('\n')[1]).toBe("'1\t1\tA B\t4\tal ice smith\t\tFALSE");
   });

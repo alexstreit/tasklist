@@ -1,0 +1,15 @@
+{
+  "spec": [
+    "base §2.3, ext §7: a profile's order naming a column the file's columns replaced, reported on the file's columns line (Q42)",
+    "base §6 modes"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "unknown-order-column",
+      "line": 3
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+---
+columns: f:ref qualifier=note | g:ref qualifier=lag:durations | h:ref qualifier=m:enum
+---
+X {#x} | #x hello | #x 3d | #x any

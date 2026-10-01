@@ -1,0 +1,8 @@
+---
+profile: plan
+columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text
+
+Website relaunch              | 2w | alice
+    Content audit             | 3d | bob
+    New templates             | 1w | carol
+    ~Domain renewal           | 1h | alice

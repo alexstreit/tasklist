@@ -1,0 +1,6 @@
+{
+  "spec": ["base §6: a key with a default set to an empty value", "base §6 modes"],
+  "stage": "base",
+  "failed": true,
+  "errors": [{ "class": "structural", "code": "empty-value", "line": 2 }]
+}

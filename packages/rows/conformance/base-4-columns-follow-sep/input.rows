@@ -1,0 +1,5 @@
+---
+sep: ,
+columns: qty:number | note
+---
+"Widget, large" , 3 , "Has a \"quoted\" word and a newline\nhere"

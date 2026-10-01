@@ -1,0 +1,13 @@
+{
+  "spec": [
+    "base §2.3, ext §11: profile and file roles merge per role; the file's binding wins for a role both bind, keeps the profile's place, and is not an error (Q43)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "roles": [
+    { "role": "effort", "column": "owner" },
+    { "role": "who", "column": "owner" }
+  ],
+  "rows": [{ "line": 5, "lead": "A", "values": { "est": "2h", "owner": "bob" } }]
+}

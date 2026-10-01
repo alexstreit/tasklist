@@ -1,0 +1,15 @@
+{
+  "spec": ["base §5 equality: the sign counts; a bare number with unit= converts like its unit"],
+  "stage": "types",
+  "failed": false,
+  "errors": [
+    { "class": "validation", "code": "not-unique", "line": 6 },
+    { "class": "validation", "code": "not-unique", "line": 7 }
+  ],
+  "rows": [
+    { "line": 4, "lead": "a", "values": { "d": "+1d" } },
+    { "line": 5, "lead": "b", "values": { "d": "1d" } },
+    { "line": 6, "lead": "c", "values": { "d": "4" } },
+    { "line": 7, "lead": "d", "values": { "d": "4h" } }
+  ]
+}

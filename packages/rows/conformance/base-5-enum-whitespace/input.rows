@@ -1,0 +1,5 @@
+---
+columns: level:enum[ low , high ] required | note
+---
+a | high
+b | mid

@@ -1,0 +1,34 @@
+/* The Gantt chart (spec §5.5). The scale sits above the body and slides sideways with it; the body
+   scrolls up and down with the leading editor, and sideways on its own. */
+.gantt { position: relative; height: 100%; overflow: hidden; font-size: 12px; }
+.gantt-scale { position: absolute; top: 0; left: 0; right: 0; overflow: hidden; border-bottom: 1px solid var(--gantt-scale-line); }
+.gantt-scale-inner { position: absolute; left: 0; bottom: 0; height: 40px; }
+.gantt-week { position: absolute; top: 2px; padding-left: 3px; white-space: nowrap; color: var(--fg-muted); border-left: 1px solid var(--gantt-scale-line); }
+.gantt-day { position: absolute; bottom: 2px; text-align: center; color: var(--fg-faint); }
+.gantt-deadline-label { position: absolute; top: 2px; transform: translateX(-100%); padding-right: 3px; white-space: nowrap; color: var(--gantt-deadline); }
+.gantt-body { position: absolute; left: 0; right: 0; bottom: 0; overflow: auto; }
+.gantt-canvas { position: relative; min-width: 100%; }
+.gantt-line { position: absolute; top: 0; bottom: 0; width: 0; pointer-events: none; }
+.gantt-week-line { border-left: 1px solid var(--gantt-scale-line); }
+.gantt-deadline { border-left: 1px dashed var(--gantt-deadline); }
+.gantt-finish { border-left: 1px solid var(--gantt-finish); }
+.gantt-today { border-left: 2px solid var(--gantt-today); }
+/* Layers are as wide as the canvas and have no height, so only their rows take the pointer. */
+.gantt-layer { position: absolute; top: 0; left: 0; width: 100%; height: 0; }
+.gantt-band { position: absolute; left: 0; right: 0; }
+.gantt-band.hover { background: var(--hover); }
+.gantt-band.near-cursor { box-shadow: inset 3px 0 var(--near-row-edge); background: var(--near-row-bg); }
+.gantt-band.at-cursor { background: var(--cursor-row-bg); }
+.gantt-row { position: absolute; left: 0; right: 0; cursor: pointer; }
+.gantt-row.done { opacity: 0.45; }
+.gantt-bar, .gantt-summary, .gantt-milestone { position: absolute; box-sizing: border-box; }
+.gantt-bar { top: 25%; height: 50%; background: var(--gantt-bar); border-radius: 2px; min-width: 2px; }
+.gantt-bar.critical { background: var(--gantt-critical); }
+/* A bracket: a thin bar with its ends turned down. */
+.gantt-summary { top: 30%; height: 35%; border: 3px solid var(--gantt-summary); border-bottom: none; }
+.gantt-summary.critical { border-color: var(--gantt-critical); }
+.gantt-milestone { top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--gantt-milestone); transform: rotate(45deg); }
+.gantt-milestone.critical { background: var(--gantt-critical); }
+.gantt-bar.late, .gantt-summary.late, .gantt-milestone.late { outline: 2px solid var(--diag-warning); outline-offset: 1px; }
+.gantt-pin { position: absolute; top: 15%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--gantt-pin); pointer-events: none; }
+.gantt-deadline-marker { position: absolute; top: 20%; bottom: 20%; width: 0; border-left: 2px solid var(--gantt-deadline); pointer-events: none; }

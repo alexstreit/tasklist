@@ -1,0 +1,27 @@
+{
+  "spec": [
+    "base §2.1, §2.2: a key may be a qualified name, one dot between two names; unknown keys, qualified or not, are ignored"
+  ],
+  "stage": "base",
+  "failed": false,
+  "errors": [],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "est",
+      "type": "text"
+    }
+  ],
+  "rows": [
+    {
+      "line": 7,
+      "lead": "A",
+      "values": {
+        "est": "2"
+      }
+    }
+  ]
+}

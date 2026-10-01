@@ -1,0 +1,6 @@
+---
+lead: task
+columns: owner | owner | task
+---
+A | x | y | z
+B | owner=w

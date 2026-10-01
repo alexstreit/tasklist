@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryBuffer } from '../../src/buffer';
-import { analyze } from '../../src/core';
+import { analyze } from '../../src/app/registry';
 import { mountGrid } from '../../src/grid';
 import type { GridEditor } from '../../src/grid';
 import example from '../../examples/example.plan?raw';
@@ -101,10 +101,11 @@ describe('cell editing', () => {
     expect(buffer.text()).toBe('Auth | 4h\n');
   });
 
-  it('pads a title-only line when a later column is edited, and trims the padding when it is cleared', () => {
+  it('names a later column on a title-only line rather than padding, and removes it when it is cleared', () => {
     open('Auth\n');
     edit(1, NOTES, 'later');
-    expect(buffer.text()).toBe('Auth | | | later\n');
+    expect(buffer.text()).toBe('Auth | notes=later\n');
+    expect(cell(1, NOTES).textContent).toBe('later');
     edit(1, NOTES, '');
     expect(buffer.text()).toBe('Auth\n');
   });
@@ -143,7 +144,7 @@ describe('cell editing', () => {
   it('does not open an editor on an additive cell', () => {
     open('Auth | +1d\n    Login | 4h\n');
     click(cell(1, EST), 'dblclick');
-    expect(host.querySelector('tbody input.cell-input')).toBeNull();
+    expect(host.querySelector('tbody td[data-column] input.cell-input')).toBeNull();
   });
 
   it('toggles done with the checkbox', () => {
@@ -265,11 +266,11 @@ describe('rows and structure', () => {
     expect(host.querySelector('tr.draft')).toBeNull();
   });
 
-  it('deletes a row and re-attaches its children to the previous item', () => {
+  it('deletes a row and promotes its children one level, so the rest of the tree keeps its shape', () => {
     open('Auth\n    Login | 4h\n        Deep | 1h\nAdmin\n');
     select(2);
     button('delete').click();
-    expect(buffer.text()).toBe('Auth\n        Deep | 1h\nAdmin\n');
+    expect(buffer.text()).toBe('Auth\n    Deep | 1h\nAdmin\n');
     expect(outline()).toEqual(['1', '1.1', '2']);
     // The selection lands on the row that took the deleted line.
     expect(row(2)!.cells[TITLE + 1].textContent).toBe('Deep');
@@ -299,16 +300,34 @@ describe('rows and structure', () => {
     expect(button('indent').disabled).toBe(true);
   });
 
-  it('moves a row with children by itself, and the selection goes with it', () => {
-    open('Auth\n    Login | 4h\nAdmin\n');
+  it('moves a row with its subtree past its sibling, and the selection goes with it', () => {
+    open('Auth\n    Login | 4h\n    Reset\nAdmin\n');
+    select(3);
+    button('up').click();
+    expect(buffer.text()).toBe('Auth\n    Reset\n    Login | 4h\nAdmin\n');
+    expect(row(2)!.cells[TITLE + 1].textContent).toBe('Reset');
+    expect(row(2)!.classList.contains('selected')).toBe(true);
+    button('down').click();
+    expect(buffer.text()).toBe('Auth\n    Login | 4h\n    Reset\nAdmin\n');
+    expect(row(3)!.classList.contains('selected')).toBe(true);
     select(1);
     button('down').click();
-    expect(buffer.text()).toBe('    Login | 4h\nAuth\nAdmin\n');
-    expect(row(2)!.cells[TITLE + 1].textContent).toBe('Auth');
+    expect(buffer.text()).toBe('Admin\nAuth\n    Login | 4h\n    Reset\n');
     expect(row(2)!.classList.contains('selected')).toBe(true);
-    button('up').click();
-    expect(buffer.text()).toBe('Auth\n    Login | 4h\nAdmin\n');
-    expect(row(1)!.classList.contains('selected')).toBe(true);
+    expect(outline()).toEqual(['1', '2', '2.1', '2.2']);
+  });
+
+  it('enables move up and move down only when there is a sibling on that side', () => {
+    const text = 'Auth\n    Login | 4h\nAdmin\n';
+    open(text);
+    select(1);
+    expect([button('up').disabled, button('down').disabled]).toEqual([true, false]);
+    select(2);
+    expect([button('up').disabled, button('down').disabled]).toEqual([true, true]);
+    press(cell(2, WBS), 'ArrowDown', { altKey: true });
+    expect(buffer.text()).toBe(text);
+    select(3);
+    expect([button('up').disabled, button('down').disabled]).toEqual([false, true]);
   });
 
   it('disables move up on the first line and move down on the last', () => {
@@ -351,9 +370,7 @@ describe('keys', () => {
     expect(document.activeElement).toBe(cell(2, EST));
     key('Enter');
     expect(document.activeElement).toBe(cell(3, EST));
-    // Line 4 is the blank line the trailing newline leaves; it has only a raw cell.
-    key('Enter');
-    expect(document.activeElement).toBe(cell(4, TITLE));
+    // The file ends with a newline, which leaves no line after it: the last row is line 3.
     key('Enter');
     expect(document.activeElement).toBe(newTaskInput());
     select(1);
@@ -370,15 +387,15 @@ describe('keys', () => {
 
   it('comes back off the new-task row with ArrowUp and Shift+Tab', () => {
     open(plan);
-    focus(4, TITLE); // the trailing blank line, the last row
+    focus(3, TITLE); // the last row
     key('ArrowDown');
     expect(document.activeElement).toBe(newTaskInput());
     key('ArrowUp');
-    expect(document.activeElement).toBe(cell(4, TITLE));
+    expect(document.activeElement).toBe(cell(3, TITLE));
     key('ArrowDown');
     key('Tab', { shiftKey: true });
     // Shift+Tab mirrors the forward wrap: the last cell of the last row.
-    expect(document.activeElement).toBe(cell(4, TITLE));
+    expect(document.activeElement).toBe(cell(3, NOTES));
   });
 
   it('commits from the new-task row when leaving it with text typed', () => {
@@ -495,7 +512,7 @@ describe('keys', () => {
     expect(buffer.text()).toBe('Auth\n    Login | 4h\nAdmin | 1d\n');
     select(1);
     key('Delete');
-    expect(buffer.text()).toBe('    Login | 4h\nAdmin | 1d\n');
+    expect(buffer.text()).toBe('Login | 4h\nAdmin | 1d\n');
   });
 
   it('Insert opens a draft above the row, from a cell or a selected row', () => {
@@ -518,11 +535,11 @@ describe('keys', () => {
     expect(buffer.text()).toBe(plan);
   });
 
-  it('Alt+Up/Down move the row line', () => {
+  it('Alt+Up/Down move the row and its subtree', () => {
     open(plan);
     select(3);
     key('ArrowUp', { altKey: true });
-    expect(buffer.text()).toBe('Auth | 2d\nAdmin | 1d\n    Login | 4h\n');
+    expect(buffer.text()).toBe('Admin | 1d\nAuth | 2d\n    Login | 4h\n');
     key('ArrowDown', { altKey: true });
     expect(buffer.text()).toBe(plan);
   });
@@ -556,7 +573,7 @@ describe('keys', () => {
     key('8');
     expect(input().value).toBe('8');
     press(input(), 'z', { ctrlKey: true });
-    expect(host.querySelector('tbody input.cell-input')).toBeNull();
+    expect(host.querySelector('tbody td[data-column] input.cell-input')).toBeNull();
     expect(buffer.text()).toBe(plan);
   });
 
@@ -593,7 +610,7 @@ describe('non-item rows', () => {
     expect(raw(2).colSpan).toBe(2 + 3);
   });
 
-  it('turns a comment row into an item row when the // goes, and back again', () => {
+  it('turns a comment row into an item row when the // goes', () => {
     open('Auth | 2d\n    // Audit log | 2d\n');
     click(cell(2, TITLE), 'dblclick');
     expect(input().value).toBe('    // Audit log | 2d');
@@ -603,11 +620,13 @@ describe('non-item rows', () => {
     expect(row(2)!.classList.contains('item')).toBe(true);
     expect(cell(2, WBS).textContent).toBe('1.1');
     expect(cell(2, EST).textContent).toBe('2d');
-    // And back: the row becomes a comment again.
+    // Not back through the title cell: a title is a title, so `//` typed there is quoted (spec §4b.1).
     click(cell(2, TITLE), 'dblclick');
-    input().value = '    // Audit log | 2d';
+    input().value = '// Audit log';
     press(input(), 'Enter');
-    expect(row(2)!.classList.contains('line')).toBe(true);
+    expect(buffer.text()).toBe('Auth | 2d\n    "// Audit log" | 2d\n');
+    expect(row(2)!.classList.contains('item')).toBe(true);
+    expect(cell(2, TITLE).textContent).toBe('// Audit log');
   });
 
   it('deletes exactly the comment line', () => {
@@ -657,7 +676,7 @@ describe('diagnostics', () => {
     open('Auth | 4 hours\n');
     const est = cell(1, EST);
     expect(est.classList.contains('warning')).toBe(true);
-    expect(est.title).toBe('unparseable duration: "4 hours"');
+    expect(est.title).toBe(analyze('Auth | 4 hours\n').diagnostics[0].message);
     click(est, 'dblclick');
     input().value = '4h';
     press(input(), 'Enter');
@@ -671,24 +690,147 @@ describe('diagnostics', () => {
     expect(cell(1, EST).title).toBe('override differs from children (2d vs 4h)');
   });
 
-  it('puts a diagnostic with no span on the row WBS cell', () => {
+  it('puts a diagnostic on an overflow cell on the row WBS cell', () => {
     open('Auth | 2d | bob | note | extra\n');
-    // "more fields than columns" spans a field beyond the declared columns.
-    expect(cell(1, WBS).classList.contains('warning')).toBe(true);
-    expect(cell(1, WBS).title).toBe('more fields than declared columns; extra fields are ignored');
+    // "too many cells" spans a cell beyond the declared columns.
+    expect(cell(1, WBS).classList.contains('error')).toBe(true);
+    expect(cell(1, WBS).title).toBe(analyze('Auth | 2d | bob | note | extra\n').diagnostics[0].message);
   });
 
-  it('shows the unclosed front matter warning on the front matter row', () => {
+  it('shows the unclosed front matter error on the front matter row, and keeps the rows after it', () => {
     open('---\ncolumns: est:duration\nAuth | 2d\n');
     const front = host.querySelector<HTMLTableRowElement>('tr.front-matter')!.querySelector<HTMLTableCellElement>('td.raw')!;
-    expect(front.classList.contains('warning')).toBe(true);
-    expect(front.title).toBe('front matter not closed');
+    expect(front.classList.contains('error')).toBe(true);
+    expect(front.title).toBe(analyze('---\ncolumns: est:duration\nAuth | 2d\n').diagnostics[0].message);
+    expect([row(2)!.classList.contains('item'), row(3)!.classList.contains('item')]).toEqual([true, true]);
   });
 
-  it('marks a reserved # line on its raw cell', () => {
+  it('marks a heading line, which is an item, on its title cell', () => {
     open('# heading\nAuth | 2d\n');
-    const cellForLine = row(1)!.querySelector<HTMLTableCellElement>('td.raw')!;
-    expect(cellForLine.classList.contains('warning')).toBe(true);
-    expect(cellForLine.title).toBe("'#' lines are reserved for future headings");
+    expect(cell(1, TITLE).classList.contains('error')).toBe(true);
+    expect(cell(1, TITLE).title).toBe(analyze('# heading\nAuth | 2d\n').diagnostics[0].message);
+  });
+});
+
+describe('named and quoted cells, markers and anchors', () => {
+  // A named cell, a quoted value containing the delimiter, a marker and anchors.
+  const FILE = [
+    '---',
+    'profile: plan',
+    '---',
+    'Auth {#auth}                | 2d',
+    '    ~Login page {#login}    | 4h  | owner=bob',
+    '    Password reset          | 6h  | alice | "see a | b"',
+    'Admin                       |     | bob',
+    '',
+  ].join('\n');
+  const lineOf = (text: string, line: number) => text.split('\n')[line - 1];
+  /** A cell's text without any notice beside it. */
+  const shown = (td: HTMLElement) =>
+    [...td.childNodes].filter((n) => !(n instanceof HTMLElement && n.classList.contains('sheet-notice'))).map((n) => n.textContent).join('');
+
+  it('shows decoded values, named cells in their column, and titles without markers or anchors', () => {
+    open(FILE);
+    expect(cell(4, TITLE).textContent).toBe('Auth');
+    expect(cell(5, TITLE).textContent).toBe('Login page');
+    expect(cell(5, OWNER).textContent).toBe('bob');
+    expect(cell(6, NOTES).textContent).toBe('see a | b');
+    expect(cell(5, DONE).querySelector('input')!.checked).toBe(true);
+  });
+
+  it('edits a quoted value as its decoded text, and writes it back quoted', () => {
+    open(FILE);
+    click(cell(6, NOTES), 'dblclick');
+    expect(input().value).toBe('see a | b');
+    input().value = 'see c | d';
+    press(input(), 'Enter');
+    expect(lineOf(buffer.text(), 6)).toBe('    Password reset          | 6h  | alice | "see c | d"');
+    expect(cell(6, NOTES).textContent).toBe('see c | d');
+  });
+
+  it('typing a | b into notes writes a quoted cell, named or positional, that reads back as a | b', () => {
+    open(FILE);
+    // Line 5 sets owner by name, so notes is named too.
+    edit(5, NOTES, 'a | b');
+    expect(lineOf(buffer.text(), 5)).toBe('    ~Login page {#login}    | 4h  | owner=bob | notes="a | b"');
+    expect(cell(5, NOTES).textContent).toBe('a | b');
+    // On line 7 notes is the next slot.
+    edit(7, NOTES, 'a | b');
+    expect(lineOf(buffer.text(), 7)).toBe('Admin                       |     | bob | "a | b"');
+    expect(cell(7, NOTES).textContent).toBe('a | b');
+  });
+
+  it('edits and clears a named cell in place', () => {
+    open(FILE);
+    edit(5, OWNER, 'carol');
+    expect(lineOf(buffer.text(), 5)).toBe('    ~Login page {#login}    | 4h  | owner=carol');
+    edit(5, OWNER, '');
+    expect(lineOf(buffer.text(), 5)).toBe('    ~Login page {#login}    | 4h');
+  });
+
+  it('renaming a row with an anchor keeps the anchor, the marker and the cells', () => {
+    open(FILE);
+    edit(5, TITLE, 'Sign-in page');
+    expect(lineOf(buffer.text(), 5)).toBe('    ~Sign-in page {#login}    | 4h  | owner=bob');
+    expect(cell(5, TITLE).textContent).toBe('Sign-in page');
+  });
+
+  it('toggling done on a row with a marker and anchors changes only the marker', () => {
+    open(FILE);
+    click(cell(5, DONE).querySelector('input')!);
+    expect(buffer.text()).toBe(FILE.replace('~Login page', 'Login page'));
+    click(cell(4, DONE).querySelector('input')!);
+    expect(lineOf(buffer.text(), 4)).toBe('~Auth {#auth}                | 2d');
+  });
+
+  it('pads with empty cells up to a column that can’t be named, and otherwise shows why rows refused', () => {
+    const text = '---\nprofile: plan\ncolumns: est:duration unit=h | owner:text | my.notes:text\n---\nAuth\nAdmin | owner=bob\n';
+    open(text);
+    edit(5, NOTES, 'later');
+    expect(lineOf(buffer.text(), 5)).toBe('Auth |  |  | later');
+    expect(shown(cell(5, NOTES))).toBe('later');
+    // Padding after a named cell would make an unnamed cell follow it.
+    const before = buffer.text();
+    edit(6, NOTES, 'later');
+    expect(buffer.text()).toBe(before);
+    expect(shown(cell(6, NOTES))).toBe('');
+    const note = cell(6, NOTES).querySelector('.sheet-notice')!;
+    expect(note.getAttribute('role')).toBe('status');
+    expect(note.textContent).toBe('The "my.notes" column can\'t be filled in on this row until its name is fixed in the settings.');
+    // The next edit clears it.
+    edit(6, EST, '4h');
+    expect(host.querySelector('.sheet-notice')).toBeNull();
+  });
+
+  it('keeps a refused new row as a draft, with the reason beside it', () => {
+    // Line 3 at indent 4 matches no open level after A at 0 and B at 8.
+    const text = 'A\n        B\n    // note\n';
+    open(text);
+    click(cell(3, WBS));
+    press(cell(3, WBS), 'Insert');
+    const draft = host.querySelector<HTMLInputElement>('tr.draft input')!;
+    draft.value = 'X';
+    press(draft, 'Enter');
+    expect(buffer.text()).toBe(text);
+    expect(host.querySelector('tr.draft')!.textContent).toContain("A task can't be added here without breaking the indentation of the tasks below it.");
+    expect(draft.value).toBe('X');
+    press(draft, 'Escape');
+    expect(host.querySelector('tr.draft')).toBeNull();
+    expect(buffer.text()).toBe(text);
+  });
+
+  it('refuses to edit against a model older than the buffer, and says so', () => {
+    grid.destroy();
+    host.remove();
+    host = document.createElement('div');
+    document.body.append(host);
+    buffer = new InMemoryBuffer('Auth | 2d\n');
+    grid = mountGrid(buffer, host, { onCursorLine: () => {} });
+    grid.update(analyze(buffer.text()));
+    // A change the grid has not had a model for yet, as during the shell's debounce.
+    buffer.apply([{ from: 0, to: 0, insert: 'New\n' }], 'text-editor');
+    edit(1, EST, '3d');
+    expect(buffer.text()).toBe('New\nAuth | 2d\n');
+    expect(cell(1, EST).querySelector('.sheet-notice')!.textContent).toBe('Still catching up with the last change. Try again in a moment.');
   });
 });

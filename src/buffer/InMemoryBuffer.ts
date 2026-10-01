@@ -24,6 +24,7 @@ function mapper(edits: readonly TextEdit[]): (pos: number) => number {
 
 export class InMemoryBuffer implements PlanBuffer {
   private doc: string;
+  private changes = 0;
   private readonly undone: TextEdit[][] = [];
   private readonly redone: TextEdit[][] = [];
   private readonly listeners = new Set<(change: BufferChange) => void>();
@@ -34,6 +35,10 @@ export class InMemoryBuffer implements PlanBuffer {
 
   text(): string {
     return this.doc;
+  }
+
+  version(): number {
+    return this.changes;
   }
 
   apply(edits: readonly TextEdit[], origin: string): void {
@@ -71,6 +76,7 @@ export class InMemoryBuffer implements PlanBuffer {
     }
     for (const e of [...sorted].reverse()) text = text.slice(0, e.from) + e.insert + text.slice(e.to);
     this.doc = text;
+    this.changes++;
     const change: BufferChange = { text, edits: sorted, mapPos: mapper(sorted), origin };
     for (const listener of [...this.listeners]) listener(change);
     return inverse;
