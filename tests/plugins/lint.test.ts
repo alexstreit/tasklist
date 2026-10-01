@@ -19,6 +19,7 @@ describe('lint rules for the plugin seams', () => {
     ['../app/registry', 'src/core/probe.ts'],
     ['../grid', 'src/core/probe.ts'],
     ['../editor', 'src/core/probe.ts'],
+    ['../ui/grid', 'src/core/probe.ts'],
   ])('core may not import %s', async (specifier, path) => {
     expect(await lint(path, `import '${specifier}';\n`)).toEqual(['src/core may only import from within src/core, and the rows library.']);
   });
@@ -29,7 +30,7 @@ describe('lint rules for the plugin seams', () => {
     expect(await lint('src/app/registry.ts', probe)).toEqual([]);
   });
 
-  it.each(['src/plugins/estimate/renderers/probe.ts', 'src/plugins/estimate/exporters/probe.ts', 'src/views/gantt/probe.ts'])('%s may not import rows', async (path) => {
+  it.each(['src/plugins/estimate/renderers/probe.ts', 'src/plugins/estimate/exporters/probe.ts', 'src/views/probe/probe.ts'])('%s may not import rows', async (path) => {
     expect(await lint(path, "import { parseRows } from 'rows';\n")).toContain(
       'Renderers and exporters read computed model fields; Model.doc and rows are for editors only.',
     );
@@ -39,9 +40,17 @@ describe('lint rules for the plugin seams', () => {
     expect(await lint('src/plugins/estimate/probe.ts', "import { parseDuration } from 'rows';\n")).toEqual([]);
   });
 
-  it('views import only core', async () => {
-    expect(await lint('src/views/gantt/probe.ts', "import { rollup } from '../../plugins/estimate/fields';\n")).toEqual(['src/views may only import core.']);
-    expect(await lint('src/views/gantt/probe.ts', "import { defineField } from '../../core';\n")).toEqual([]);
+  it('views import only core and src/ui', async () => {
+    expect(await lint('src/views/probe/probe.ts', "import { rollup } from '../../plugins/estimate/fields';\n")).toEqual(['src/views may only import core and src/ui.']);
+    expect(await lint('src/views/probe/probe.ts', "import { defineField } from '../../core';\n")).toEqual([]);
+    expect(await lint('src/views/probe/probe.ts', "import { addItemRow } from '../../ui/grid';\n")).toEqual([]);
+  });
+
+  it('src/ui imports only core types', async () => {
+    expect(await lint('src/ui/probe.ts', "import { formatDuration } from '../core';\n")).toEqual(['src/ui may only import core types.']);
+    expect(await lint('src/ui/probe.ts', "import { rollup } from '../plugins/estimate/fields';\n")).toEqual(['src/ui may only import core types.']);
+    expect(await lint('src/ui/probe.ts', "import { parseRows } from 'rows';\n")).toEqual(['src/ui may only import core types.']);
+    expect(await lint('src/ui/probe.ts', "import type { ItemNode } from '../core';\nimport './grid.css';\n")).toEqual([]);
   });
 
   it.each(['src/core/probe.ts', 'src/plugins/estimate/probe.ts'])('%s may not read the clock', async (path) => {

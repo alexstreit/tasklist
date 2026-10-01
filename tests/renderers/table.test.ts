@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { analyze } from '../../src/app/registry';
 import type { RenderContext, Renderer } from '../../src/core';
 import { cursorItemFor, itemLines } from '../../src/app/cursor';
-import { ganttRenderer } from '../../src/views/gantt';
 import { tableRenderer } from '../../src/plugins/estimate/renderers/table';
 import { treeRenderer } from '../../src/plugins/estimate/renderers/tree';
 import { hasValue, rollup, totals } from '../../src/plugins/estimate/fields';
@@ -50,12 +49,5 @@ describe('table renderer', () => {
     expect(rows[7].classList.contains('near-cursor')).toBe(true);
     rows[4].click();
     expect(setCursorLine).toHaveBeenCalledWith(9);
-  });
-});
-
-describe('gantt stub', () => {
-  it('requires a field of the schedule plugin and refuses to render', () => {
-    expect(ganttRenderer.requires.map((key) => key.plugin)).toEqual(['schedule']);
-    expect(() => ganttRenderer.render(analyze(''), document.createElement('div'), {} as RenderContext)).toThrow();
   });
 });

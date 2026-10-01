@@ -1,0 +1,10 @@
+---
+lead: title:text
+nest: parent
+markers: done=~ milestone=^
+columns: est:duration unit=h hpd=8 dpw=5 | dur:duration unit=h hpd=8 dpw=5 | start:date | deps:ref many qualifier=lag:duration | due:date | owner:text | notes:text
+roles: effort=est duration=dur start=start deps=deps deadline=due
+---
+// The schedule profile: the plan profile plus the scheduling columns and roles.
+// Only the frontmatter above is used; this body is ignored.
+// Referenced as `profile: schedule` by the plan tool, which has these keys built in.

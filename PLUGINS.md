@@ -164,7 +164,9 @@ An optional role is the normal case, not an error: in a file with no start colum
 
 **Renderers and exporters** declare `requires: FieldKey[]` in place of today's `ColumnRequirement[]`. When a required field's stage was skipped, the app greys them out and shows the reason of the first skipped stage in stage order, as it does today. When the plugin that owns a required field isn't registered at all, the reason is "needs the estimate plugin".
 
-**Diagnostics.** A stage's diagnostics carry `source: pluginId` so the problems list can group them. Codes stay as they are today; a new plugin's codes start with its id (`schedule-pin-no-effect`), which keeps them unique without a registry of codes. A message names the column or key it is about ("the start column", "project-start"), never a bare word shared by a field, a role and a key.
+**Diagnostics.** The runner sets `source: pluginId` on every stage diagnostic, so the problems list can group them; core's leave it unset. Codes stay as they are today; a new plugin's codes start with its id (`schedule-pin-no-effect`), which keeps them unique without a registry of codes. A message names the column or key it is about ("the start column", "project-start"), never a bare word shared by a field, a role and a key.
+
+**Fixes that need today.** A fix is data, and `analyze` never reads the clock, so a fix can't hold today's date. `Fix.input` gains `suggest?: 'today'`, with `before?` and `after?` text around the value: the fix writes `before + value + after` in place of `span`. Core's pure `resolveFix(fix, date)` completes such a fix: it fills the date into its edits and its label, and the fix suggests nothing more. The text editor and the grid, and their confirm panels, call it with `today()` when they show a fix, so it writes the date it showed; the fix-invariant test calls it with a fixed date. Core stays clock-free because the date is passed in; the editors may read the clock because they are UI code, and `src/ui/today.ts` holds the one function that does.
 
 **Purity.** Stages import nothing from the DOM, CodeMirror or the app, and never read the clock. The whole run is synchronous and recomputes everything on each change, which the 500-line timing in Task 21 allows many times over. Incremental compute is not planned.
 
@@ -204,9 +206,9 @@ Markers are resolved before this step: rows turns each glyph into its marker nam
 
 **Interpreters** are not a phase. The format's readings (hours, typed values through `cell()`, markers through `marked()`) are core's. A reading that only one plugin needs is a pure function in that plugin, and another plugin that needs it imports it like a field key.
 
-**Estimate is only roll-ups.** It rolls up every `duration` and `number` column, as today, so no existing file changes behaviour, and it declares no roles. The `effort` role is what _scheduling_ uses to find the one column that is effort. Since hours and `done` are core's, a build without estimate still schedules.
+**Estimate is only roll-ups.** It rolls up every `duration` and `number` column, as today, so no existing file changes behaviour, except the column bound to the `duration` role, its one (optional) role: durations are spans, and don't add up across parallel tasks. The `effort` role is what _scheduling_ uses to find the one column that is effort. Since hours and `done` are core's, a build without estimate still schedules.
 
-**No `project-start`, no schedule.** When the key is absent, no calendar is built and every stage that requires it is skipped with "needs project-start". The schedule plugin's diagnostic offers a click fix that writes today's date into the frontmatter. The fix is an edit, so it may read the clock; `analyze` never does, so two clients either side of midnight compute the same schedule from the same text.
+**No `project-start`, no schedule.** When the key is absent, no calendar is built and every stage that requires it is skipped with "needs project-start"; when it isn't a date, the bindings record it as mistyped, `key-type` says so, and the reason is "project-start isn't a date". Whether the key is expected is vocabulary, so core decides it: `project-start` records in `src/core/vocabulary.ts` that it is expected when `duration`, `start`, `deps` or `deadline` is bound, and core reports `no-project-start` (info, line 1) when one is and the key isn't written. Estimate-only files bind only `effort`, so they are never told. Both `no-project-start` and `key-type` carry the click fix "Set project start to today", made by one core helper (`todayFix`). The date is filled in when an editor shows the fix (§5); `analyze` never reads the clock, so two clients either side of midnight compute the same schedule from the same text.
 
 **Includes are gathered before analysis.** The shell calls `includesOf` on the open file, reads what it names, calls `includesOf` on those, and repeats until no new file appears; then it calls `analyze` with the snapshot. A file that can't be read is left out of the snapshot, and the reference to it is the rows validation error it already is.
 
@@ -288,19 +290,22 @@ src/
                         Workspace and Calendar interfaces, naive calendar
   plugins/
     estimate/           the roll-up stages and their fields; tree, table and TSV move here
-    schedule/           (Task 28 onwards)
+    schedule/           the forward and backward passes and their fields; the schedule table (Task 28), Gantt next
+  ui/                   shared UI code for renderers and editors: the row-per-item table, cursor highlight,
+                        click-to-line and their CSS; today's date for fixes; imports only core's types
   views/                renderers that belong to no plugin: the pin review (with scheduling)
   app/                  shell, registry wiring, single-file workspace
   editor/ grid/ buffer/ editing/   unchanged: editors are not plugins
 ```
 
-Tree, table and TSV go into estimate because each reads estimate's roll-ups; a renderer that read only core fields would go in `views/`.
+Tree, table and TSV go into estimate because each reads estimate's roll-ups; a renderer that read only core fields would go in `views/`. What renderers and editors share goes in `ui/`. A plugin can't import another it doesn't require, so the schedule table uses the same rows and cursor rules as the tree through `ui/`, without depending on estimate; the text editor and the grid take today's date for fixes from it.
 
 | Rule                                                                     | Enforced by                                                                              |
 | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
 | `core/` imports nothing from `plugins/`, `views/`, `app/` or the editors | ESLint `no-restricted-imports` (extends today's core rule)                               |
-| A plugin imports only core, `rows` and the plugins in its `requires`     | A test that reads each plugin folder's imports and compares them with its manifest       |
-| `views/` import only core                                                | ESLint                                                                                   |
+| A plugin imports only core, `ui/`, `rows` and the plugins in its `requires` | A test that reads each plugin folder's imports and compares them with its manifest    |
+| `views/` import only core and `ui/`                                      | ESLint                                                                                   |
+| `ui/` imports only core's types                                          | ESLint (`@typescript-eslint/no-restricted-imports` with `allowTypeImports`)              |
 | A stage writes only its declared fields, at their scope                  | `ctx.set` and `ctx.setValue` throw; a test runs every stage on the fixtures              |
 | Analysis never reads the clock                                           | ESLint: no `Date.now()` or argument-less `new Date()` in `core/` or in a plugin's stages |
 | Renderers and exporters don't import `rows`                              | Today's lint rule, with the new paths                                                    |

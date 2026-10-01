@@ -9,7 +9,8 @@ import type { Text } from '@codemirror/state';
 import { EditorView, showPanel } from '@codemirror/view';
 import type { Panel } from '@codemirror/view';
 import type { TextEdit } from '../buffer';
-import { preview } from '../core';
+import { inputEdit, preview, resolveFix } from '../core';
+import { today } from '../ui/today';
 import type { Diagnostic, Fix } from '../core';
 
 /** Applies a fix's edits; the text editor sends them through the buffer (spec §4.4). */
@@ -46,7 +47,9 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
  * (spec §4b.6.2). Apply writes it; Cancel or Escape writes nothing. A fix that
  * takes a typed value shows it in an input, and the preview follows it.
  */
-function previewPanel(view: EditorView, { fix, doc, apply }: Pending): Panel {
+function previewPanel(view: EditorView, pending: Pending): Panel {
+  const { doc, apply } = pending;
+  const fix = resolveFix(pending.fix, today());
   const dom = element('div', 'cm-fix-preview');
   dom.setAttribute('role', 'region');
   dom.setAttribute('aria-label', `Preview: ${fix.label}`);
@@ -69,13 +72,13 @@ function previewPanel(view: EditorView, { fix, doc, apply }: Pending): Panel {
   if (fix.warning) dom.append(element('p', 'cm-fix-warning', fix.warning));
   let first: HTMLElement = ok;
   if (fix.input) {
-    const { span } = fix.input;
+    const typed = fix.input;
     const input = element('input', 'cm-fix-input');
     input.value = fix.input.value;
     input.setAttribute('aria-label', 'New name');
     input.addEventListener('input', () => {
       const value = input.value.trim();
-      edits = [{ ...span, insert: value }];
+      edits = [inputEdit(typed, value)];
       pre.textContent = preview(doc.toString(), edits);
       ok.disabled = value === '';
     });
@@ -101,16 +104,18 @@ function previewPanel(view: EditorView, { fix, doc, apply }: Pending): Panel {
  * Fixes become lint actions, whatever their tier; a confirm fix shows its
  * preview first. Their edits are in the coordinates of `doc`, so an action
  * does nothing once the text has changed; the diagnostics for the new text
- * are on their way.
+ * are on their way. A fix that suggests today's date gets it here, so the
+ * action writes the date its label showed.
  */
 export function toLintDiagnostics(diagnostics: readonly Diagnostic[], doc: Text, apply?: ApplyFix): LintDiagnostic[] {
+  const day = today();
   return diagnostics.map((d) => {
     const lineStart = doc.line(Math.min(d.line, doc.lines)).from;
     const from = d.span ? Math.min(d.span.from, doc.length) : lineStart;
     const to = d.span ? Math.min(d.span.to, doc.length) : lineStart;
     const out: LintDiagnostic = { from, to, severity: d.severity, message: d.message };
     if (apply && d.fixes) {
-      out.actions = d.fixes.map((fix) => ({
+      out.actions = d.fixes.map((suggested) => resolveFix(suggested, day)).map((fix) => ({
         name: fix.label,
         apply: (view: EditorView) => {
           if (!view.state.doc.eq(doc)) return;

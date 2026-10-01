@@ -9,7 +9,7 @@ import { fieldName } from './fields';
 import type { FieldKey } from './fields';
 import type { Registry, Stage, StageContext } from './plugin';
 import type { Diagnostic, ItemNode, Model } from './types';
-import { isPlanName, PLAN_PROFILE } from './profile';
+import { isPlanName, PLAN_PROFILE, SCHEDULE_PROFILE } from './profile';
 import { readTree } from './read';
 
 /**
@@ -25,7 +25,7 @@ export function parsePlan(text: string, filename?: string): { doc: RowsDocument;
   });
   const doc = parseRows(lines.join('\n'), {
     filename,
-    profiles: { plan: PLAN_PROFILE },
+    profiles: { plan: PLAN_PROFILE, schedule: SCHEDULE_PROFILE },
     defaultProfile: isPlanName(filename) ? 'plan' : undefined,
   });
   return { doc, tabs };
@@ -42,6 +42,7 @@ export function includesOf(text: string): string[] {
  */
 export function createAnalyzer(registry: Registry): (text: string, filename?: string, files?: ReadonlyMap<string, string>) => Model {
   const plugins = new Set(registry.plugins.map((p) => p.id));
+  const plugin = new Map(registry.plugins.flatMap((p) => p.stages.map((s) => [s, p.id] as const)));
   return (text, filename) => {
     const { doc, tabs } = parsePlan(text, filename);
     const tree = readTree(doc, (edited) => parsePlan(edited, filename).doc);
@@ -74,7 +75,7 @@ export function createAnalyzer(registry: Registry): (text: string, filename?: st
       const role = stage.roles?.required?.find((r) => !bindings.roles.has(r));
       if (role) return bindings.mistyped.get(role) ?? `needs a column with the ${role} role`;
       const key = stage.keys?.required?.find((k) => !bindings.keys.has(k));
-      if (key) return `needs ${key}`;
+      if (key) return bindings.mistypedKeys.get(key) ?? `needs ${key}`;
       const unread = stage.reads.find((k) => !written.has(k));
       if (unread) return skippedBecause.get(unread) ?? `needs ${fieldName(unread)}, which no stage writes`;
       return null;
@@ -113,7 +114,7 @@ export function createAnalyzer(registry: Registry): (text: string, filename?: st
           writable(key, 'document');
           documentFields.set(key, value);
         },
-        diagnose: (d) => void diagnostics.push(d),
+        diagnose: (d) => void diagnostics.push({ ...d, source: plugin.get(stage)! }),
       };
       stage.run(ctx);
       for (const key of stage.writes) written.add(key);

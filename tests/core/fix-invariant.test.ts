@@ -1,12 +1,14 @@
 // The fix invariant (spec §4b.6.1): applying any fix the plan layer offers
 // removes the diagnostic it is offered on, and adds no syntax or structural
 // error. Checked on every fixture, and on every conformance input, read both as
-// a plan (an unsaved document) and as a plain rows file.
+// a plan (an unsaved document) and as a plain rows file. A fix that suggests
+// today's date is resolved with a fixed one, as an editor resolves it with today.
 
 import { describe, expect, it } from 'vitest';
 import { applyEdits } from 'rows';
 import type { TextEdit } from 'rows';
 import { analyze } from '../../src/app/registry';
+import { resolveFix } from '../../src/core';
 import type { Diagnostic, Fix, Model } from '../../src/core';
 
 const fixtures = import.meta.glob(['../fixtures/*.plan', '../../examples/*.plan'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -37,7 +39,8 @@ function casesOf(name: string, text: string, filename: string | undefined): Case
   return analyze(text, filename).diagnostics.flatMap((d) => (d.fixes ?? []).map((fix): Case => [`${name}:${d.line} ${d.code} → ${fix.label}`, text, filename, d, fix]));
 }
 
-function check([, text, filename, d, fix]: Case): void {
+function check([, text, filename, d, offered]: Case): void {
+  const fix = resolveFix(offered, '2026-10-05');
   const before = analyze(text, filename);
   const source = before.doc.text; // the text the fix's edits are for, tabs converted
   const edited = applyEdits(source, fix.edits);

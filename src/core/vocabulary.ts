@@ -13,9 +13,32 @@ export const CORE_ROLES: Readonly<Record<string, readonly TypeKind[]>> = {
   deadline: ['date'],
 };
 
-/** Each core frontmatter key, and its value's type. */
-export const CORE_KEYS: Readonly<Record<string, TypeKind>> = {
-  'project-start': 'date', // hour 0 of the schedule; no calendar without it
+/** A core frontmatter key: its value's type, and what the file is told about it. */
+export interface CoreKey {
+  type: TypeKind;
+  /** A valid value, for the message when the value isn't the type. */
+  example: string;
+  /** What a value that isn't the type means for the file. */
+  ignored: string;
+  /** Roles that make the key expected: with one bound and the key not written, the file gets `no-KEY`. */
+  expectedWith: readonly string[];
+  /** The `no-KEY` message. */
+  missing: string;
+  /** The label of the fix that writes today's date, for both `no-KEY` and `key-type`. */
+  fix: string;
+}
+
+/** Each core frontmatter key. */
+export const CORE_KEYS: Readonly<Record<string, CoreKey>> = {
+  // Hour 0 of the schedule; no calendar without it. Estimate-only files bind only effort, so they are never told about it.
+  'project-start': {
+    type: 'date',
+    example: '2026-10-05',
+    ignored: "the schedule isn't computed",
+    expectedWith: ['duration', 'start', 'deps', 'deadline'],
+    missing: 'Set a project start to compute the schedule',
+    fix: 'Set project start to today',
+  },
 };
 
 /** The core marker names. */

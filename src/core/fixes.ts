@@ -161,3 +161,36 @@ export function identityFixes(doc: RowsDocument, diagnosticOf: (e: RowsError) =>
     (diagnosticOf(error).fixes ??= []).push(confirm(doc.text, 'Rename the later one', edits, warning ? { warning } : {}));
   });
 }
+
+/**
+ * A click fix that writes today's date as `key`'s value: in place of the value when the key is
+ * written, else as a new line before the closing `---`. The date is left for the editor to fill in
+ * (`resolveFix`); null when the file has no frontmatter to write it in.
+ */
+export function todayFix(doc: RowsDocument, key: string, label: string): Fix | null {
+  const frontmatter = doc.frontmatter;
+  if (!frontmatter) return null;
+  const entry = frontmatter.entries.find((e) => e.key === key);
+  const close = doc.lines.find((l) => l.from <= frontmatter.to && frontmatter.to <= l.to)!.from;
+  const input: NonNullable<Fix['input']> = entry
+    ? { span: { from: entry.valueFrom, to: entry.valueTo }, value: '', suggest: 'today' }
+    : { span: { from: close, to: close }, value: '', suggest: 'today', before: `${key}: `, after: '\n' };
+  return { label, tier: 'click', edits: [inputEdit(input, '')], input };
+}
+
+/** The edit that writes `value` in place of the input's span, between its `before` and `after`. */
+export function inputEdit(input: NonNullable<Fix['input']>, value: string): TextEdit {
+  return { ...input.span, insert: `${input.before ?? ''}${value}${input.after ?? ''}` };
+}
+
+/**
+ * The fix with its edits complete: one whose input suggests today's date gets `date` in its edits,
+ * its value and its label, and no longer suggests anything. Pure: the caller passes the date, so core stays clock-free. The editors
+ * call it with today's date when they show a fix; any other fix comes back as it is.
+ */
+export function resolveFix(fix: Fix, date: string): Fix {
+  if (fix.input?.suggest !== 'today') return fix;
+  // Resolved, it suggests nothing more, so resolving it again changes nothing.
+  const { suggest: _, ...input } = fix.input;
+  return { ...fix, label: `${fix.label} (${date})`, edits: [inputEdit(input, date)], input: { ...input, value: date } };
+}

@@ -38,10 +38,28 @@ const noPlugins = {
   message: 'Only src/app/registry.ts may import from src/plugins/.',
 };
 
-// Views belong to no plugin and read only core fields (PLUGINS.md §8).
+// Views belong to no plugin and read only core fields, drawn with the shared UI layer (PLUGINS.md §8).
 const viewsCoreOnly = {
-  regex: '^(?!\\./|(\\.\\./)+core$)',
-  message: 'src/views may only import core.',
+  regex: '^(?!\\./|(\\.\\./)+core$|(\\.\\./)+ui/)',
+  message: 'src/views may only import core and src/ui.',
+};
+
+// The shared UI layer imports only core's types (PLUGINS.md §8), so any renderer can use it.
+const uiRule = {
+  files: ['src/ui/**/*.ts'],
+  languageOptions: { parser: tseslint.parser },
+  plugins: { '@typescript-eslint': tseslint.plugin },
+  rules: {
+    '@typescript-eslint/no-restricted-imports': [
+      'error',
+      {
+        patterns: [
+          { regex: '^(?!\\./)(?!(\\.\\./)+core$)', message: 'src/ui may only import core types.' },
+          { regex: '^(\\.\\./)+core$', allowTypeImports: true, message: 'src/ui may only import core types.' },
+        ],
+      },
+    ],
+  },
 };
 
 // Analysis never reads the clock (PLUGINS.md §5): the same text gives the same model on any day.
@@ -82,6 +100,7 @@ export default [
   restrict(['src/plugins/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly], ['src/plugins/*/renderers/**', 'src/plugins/*/exporters/**']),
   restrict(['src/plugins/*/renderers/**/*.ts', 'src/plugins/*/exporters/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows]),
   restrict(['src/views/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows, viewsCoreOnly]),
+  uiRule,
   noClock,
   restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['src/grid/**/*.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),

@@ -25,8 +25,12 @@ export interface Fix {
   preview?: string;
   /** Shown with the preview: what the change may do beyond the lines it shows. */
   warning?: string;
-  /** A fix that writes text the user types, in place of `span`: `edits` and `preview` are for the suggested `value`. */
-  input?: { span: Span; value: string };
+  /**
+   * A fix that writes a value in place of `span`, between `before` and `after`: `edits` and
+   * `preview` are for the suggested `value`. With `suggest: 'today'`, the editor fills in today's
+   * date when it shows the fix (`resolveFix`), since analysis never reads the clock.
+   */
+  input?: { span: Span; value: string; suggest?: 'today'; before?: string; after?: string };
 }
 
 export interface Diagnostic {
@@ -37,6 +41,8 @@ export interface Diagnostic {
   code: string;
   message: string;
   fixes?: Fix[];
+  /** The plugin whose stage gave it; unset for core's diagnostics (PLUGINS.md §5). */
+  source?: string;
 }
 
 /** A declared column. `type` is the rows type kind; only `duration` and `number` are summed (spec §2.6). */

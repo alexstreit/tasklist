@@ -1,5 +1,5 @@
-// PLUGINS.md §8: a plugin imports only core, `rows`, its own folder and the
-// plugins in its `requires`. Lint can't see a manifest, so this test reads each
+// PLUGINS.md §8: a plugin imports only core, the shared UI layer, `rows`, its
+// own folder and the plugins in its `requires`. Lint can't see a manifest, so this test reads each
 // plugin folder's imports and compares them with it.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -27,7 +27,7 @@ function violations(id: string, requires: string[], sources: { path: string; tex
       if (specifier === 'rows') continue;
       const target = specifier.startsWith('.') ? relative(src, resolve(dirname(path), specifier)) : null;
       const [top, name] = target?.split('/') ?? [];
-      const allowed = top === 'core' || (top === 'plugins' && (name === id || requires.includes(name)));
+      const allowed = top === 'core' || top === 'ui' || (top === 'plugins' && (name === id || requires.includes(name)));
       if (!allowed) out.push(`${relative(src, path)}: ${specifier}`);
     }
   }
@@ -41,7 +41,7 @@ describe('plugin imports', () => {
     expect(plugins.map((p) => p.id).sort()).toEqual(readdirSync(join(src, 'plugins')).sort());
   });
 
-  it.each(plugins.map((p) => [p.id, p] as const))('%s imports only core, rows, itself and what it requires', (id, plugin) => {
+  it.each(plugins.map((p) => [p.id, p] as const))('%s imports only core, src/ui, rows, itself and what it requires', (id, plugin) => {
     const sources = files(join(src, 'plugins', id)).map((path) => ({ path, text: readFileSync(path, 'utf8') }));
     expect(sources.length).toBeGreaterThan(0);
     expect(violations(id, plugin.requires, sources)).toEqual([]);
@@ -53,6 +53,7 @@ describe('plugin imports', () => {
       "import { start } from '../schedule/fields';",
       "import type { Model } from '../../core';",
       "import { rollup } from './fields';",
+      "import { addItemRow } from '../../ui/grid';",
       "import { mountGrid } from '../../grid';",
       "import { applyEdits } from 'rows';",
       "import { EditorView } from '@codemirror/view';",

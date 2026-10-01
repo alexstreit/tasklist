@@ -1,5 +1,6 @@
 // The roll-up stage. Spec §2.7–2.8. Walks the tree bottom-up, reading each
-// summable cell as readTree read it.
+// summable cell as readTree read it. The column bound to the duration role is
+// not rolled up: durations are spans, and don't add up across parallel tasks.
 
 import { formatDuration } from '../../core';
 import type { FieldKey, ItemNode, Pinnable, Stage } from '../../core';
@@ -8,11 +9,15 @@ import type { Amount, Total } from './fields';
 
 export const rollupStage: Stage = {
   id: 'estimate.rollup',
+  roles: { optional: ['duration'] },
   reads: [],
   writes: [rollup, hasValue, doneSum, totals],
   run(ctx) {
     const { model } = ctx;
-    const summable = model.columns.flatMap((column, index) => (column.type === 'duration' || column.type === 'number' ? [{ column, index }] : []));
+    const span = ctx.bindings.roles.get('duration');
+    const summable = model.columns.flatMap((column, index) =>
+      (column.type === 'duration' || column.type === 'number') && column.name !== span ? [{ column, index }] : [],
+    );
     // A child's value, which this stage has already set.
     const at = <T>(node: ItemNode, key: FieldKey<Map<string, T>>, name: string): T => model.get(node, key)!.get(name)!;
 

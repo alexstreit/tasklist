@@ -1,0 +1,13 @@
+---
+profile: schedule
+project-start: 2026-10-05
+---
+// The schedule reference fixture (Task 28, VISION §5.2). Its expected values were worked out by hand.
+Design
+    Wireframes {#wire}      | 1d |    | 2026-10-05
+    Review {#review}        | 4h |    |            | #wire
+Build
+    API {#api}              | 3d |    | 2026-10-05 | #review
+    UI {#ui}                | 2d |    | 2026-10-12 | #review
+    ^Beta ready {#beta}     |    |    |            | #api, #ui  | 2026-10-12
+Docs                        | 1d | 3d |            | #review 1d

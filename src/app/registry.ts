@@ -3,9 +3,9 @@
 import { createAnalyzer, createRegistry } from '../core';
 import type { Exporter, Renderer } from '../core';
 import { estimatePlugin } from '../plugins/estimate';
-import { ganttRenderer } from '../views/gantt';
+import { schedulePlugin } from '../plugins/schedule';
 
-export const registry = createRegistry([estimatePlugin]);
+export const registry = createRegistry([estimatePlugin, schedulePlugin]);
 export const analyze = createAnalyzer(registry);
-export const renderers: Renderer[] = [...registry.renderers, ganttRenderer];
+export const renderers: Renderer[] = [...registry.renderers];
 export const exporters: Exporter[] = [...registry.exporters];

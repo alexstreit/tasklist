@@ -3,6 +3,7 @@
 
 import { KNOWN_KEYS, readValue, tokenizeLine } from 'rows';
 import type { RowsDocument } from 'rows';
+import { todayFix } from './fixes';
 import type { Diagnostic } from './types';
 import { CORE_KEYS, CORE_MARKERS, CORE_ROLES, pluginOf } from './vocabulary';
 
@@ -13,6 +14,8 @@ export interface Bindings {
   mistyped: ReadonlyMap<string, string>;
   /** Core and qualified key → its value. A core key whose value doesn't read as its type is not here. */
   keys: ReadonlyMap<string, string>;
+  /** Core keys left out because their value isn't their type, with the reason in plain words. */
+  mistypedKeys: ReadonlyMap<string, string>;
   /** The marker names the file uses. */
   markers: ReadonlySet<string>;
 }
@@ -25,8 +28,9 @@ const article = (types: readonly string[]) => `a ${types.join(' or ')}`;
 /**
  * Binds the vocabulary and reports, on the line that binds the name: a bare name outside the
  * vocabulary (info), a qualified name whose plugin isn't registered (info), a role written in this
- * file on a column of the wrong type (warning), and a core key whose value isn't its type (warning).
- * A profile's role on a file column of the wrong type is left unbound with no diagnostic, as rows
+ * file on a column of the wrong type (warning), a core key whose value isn't its type (warning), and
+ * a core key that isn't written while a role that expects it is bound (info). Both key diagnostics
+ * carry the fix that writes today's date. A profile's role on a file column of the wrong type is left unbound with no diagnostic, as rows
  * drops a profile's role whose column the file replaced (rows Q43).
  */
 export function bindVocabulary(doc: RowsDocument, plugins: ReadonlySet<string>): { bindings: Bindings; diagnostics: Diagnostic[] } {
@@ -50,20 +54,24 @@ export function bindVocabulary(doc: RowsDocument, plugins: ReadonlySet<string>):
   };
 
   const keys = new Map<string, string>();
+  const mistypedKeys = new Map<string, string>();
   for (const entry of entries) {
     if (ROWS_KEYS.has(entry.key) || entry.key.startsWith('x-')) continue;
     const at = { line: entry.line, span: { from: entry.keyFrom, to: entry.keyTo } };
     unknown(entry.key, Object.keys(CORE_KEYS), 'unknown-key', 'frontmatter key', at);
   }
   for (const [key, value] of Object.entries(schema.keys)) {
-    const type = CORE_KEYS[key];
+    const core = CORE_KEYS[key];
     const plugin = pluginOf(key);
-    if (type === undefined && (plugin === null || !plugins.has(plugin))) continue;
-    if (type !== undefined && !readValue(value, { kind: type })) {
+    if (core === undefined && (plugin === null || !plugins.has(plugin))) continue;
+    if (core !== undefined && !readValue(value, { kind: core.type })) {
+      mistypedKeys.set(key, `${key} isn't ${article([core.type])}`);
       const entry = entryOf(key);
       if (entry) {
         const span = { from: entry.valueFrom, to: entry.valueTo };
-        diagnostics.push({ line: entry.line, span, severity: 'warning', code: 'key-type', message: `${key} "${value}" is not ${article([type])}; it is ignored` });
+        const message = `${key} must be ${article([core.type])} like ${core.example}; '${value}' is ignored, so ${core.ignored}.`;
+        const fix = todayFix(doc, key, core.fix);
+        diagnostics.push({ line: entry.line, span, severity: 'warning', code: 'key-type', message, ...(fix ? { fixes: [fix] } : {}) });
       }
       continue;
     }
@@ -100,5 +108,12 @@ export function bindVocabulary(doc: RowsDocument, plugins: ReadonlySet<string>):
     }
   }
 
-  return { bindings: { roles, mistyped, keys, markers: new Set(schema.markers.map((m) => m.name)) }, diagnostics };
+  // A key that isn't written at all; one written with the wrong type already has key-type.
+  for (const [key, core] of Object.entries(CORE_KEYS)) {
+    if (key in schema.keys || !core.expectedWith.some((role) => roles.has(role))) continue;
+    const fix = todayFix(doc, key, core.fix);
+    diagnostics.push({ line: 1, severity: 'info', code: `no-${key}`, message: core.missing, ...(fix ? { fixes: [fix] } : {}) });
+  }
+
+  return { bindings: { roles, mistyped, keys, mistypedKeys, markers: new Set(schema.markers.map((m) => m.name)) }, diagnostics };
 }

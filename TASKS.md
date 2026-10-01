@@ -875,14 +875,14 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 - `src/core/plugin.ts`: `Plugin`, `Stage`, `StageContext`, `Registry`, `createRegistry` and `unmetReason`. The order is computed once in `createRegistry`.
 - `src/core/analyze.ts`: `createAnalyzer(registry)` runs `parsePlan`, `readTree`, then the stages. Node fields are a `Map` per key, keyed by node. `hours(node, column)` returns the field's `amount`. `set` and `setValue` check `writes` and scope, and a diagnostic from `diagnose` is sorted by line with the rest, as `compute` did.
 - `readTree` (`src/core/read.ts`) is `readPlan` renamed. It also sets inherited done: `ItemNode.done` is own or inherited, and the new `ItemNode.ownDone` is the item's own marker (the old `ItemNode.done`). `Model.roots` is `ItemNode[]`: `ModelNode`, `Cell`, `SummableCell`, `TextCell`, `DocumentTotal`, `RollupMode` and `ColumnRequirement` are gone. Text cells are read from `node.fields[i].text`.
-- `src/plugins/estimate/`: `fields.ts` (`rollup`, `hasValue`, `doneSum` as `has-value` and `done-sum`, `totals`), `rollup.ts` (one stage, `estimate.rollup`, which is `compute` with the new shapes), `renderers/` (tree, table, `shared.ts` and `shared.css`, moved from `src/renderers/`), `exporters/tsv.ts`, and `index.ts`, the manifest.
+- `src/plugins/estimate/`: `fields.ts` (`rollup`, `hasValue`, `doneSum` as `has-value` and `done-sum`, `totals`), `rollup.ts` (one stage, `estimate.rollup`, which is `compute` with the new shapes), `renderers/` (tree, table, `shared.ts` and `shared.css`, moved from `src/renderers/`), `exporters/tsv.ts`, and `index.ts`, the manifest. _(Task 28: the row builder, cursor highlight, click-to-line and their CSS moved on to `src/ui/`; `rollup.ts` now declares the optional `duration` role and leaves its column out.)_
 - `src/app/registry.ts` builds the registry, `analyze`, and the renderer and exporter lists, which add the views' renderers after the plugins'. The shell asks `unmetReason` for every renderer and exporter. Exporter buttons are now made once and greyed out like renderer tabs. They are never greyed out with estimate registered.
 - Grid (`src/grid/index.ts`, `edits.ts`): reads `rollup`, `hasValue` and `totals` through the keys. A column counts as summable when it has a roll-up. `node.source.*` became `node.*`.
-- Lint (`eslint.config.js`): `app/` may import `plugins/` only in `registry.ts`; `views/` import only core; renderers and exporters in `plugins/*/renderers`, `plugins/*/exporters` and `views/` may not import `rows`; no `Date.now()` or argument-less `new Date()` in `core/` or `plugins/` outside renderers and exporters. The core rule already forbade everything but `./` and `rows`, so it is unchanged. `parsePlan` and `readTree` are the core names forbidden outside core.
+- Lint (`eslint.config.js`): `app/` may import `plugins/` only in `registry.ts`; `views/` import only core _(and `src/ui/`, since Task 28)_; renderers and exporters in `plugins/*/renderers`, `plugins/*/exporters` and `views/` may not import `rows`; no `Date.now()` or argument-less `new Date()` in `core/` or `plugins/` outside renderers and exporters. The core rule already forbade everything but `./` and `rows`, so it is unchanged. `parsePlan` and `readTree` are the core names forbidden outside core.
 
 **Decisions taken:**
 
-- **Gantt stub:** it can't require "a date column" any more, so it moved to `src/views/gantt/` and requires a stand-in for the schedule plugin's `start` field, defined in the stub. Its tooltip is now "needs the schedule plugin". This also fixes a latent crash: before, a file with a `date` column enabled the tab, and clicking it threw. Task 28 replaces the stub.
+- **Gantt stub:** it can't require "a date column" any more, so it moved to `src/views/gantt/` and requires a stand-in for the schedule plugin's `start` field, defined in the stub. Its tooltip is now "needs the schedule plugin". This also fixes a latent crash: before, a file with a `date` column enabled the tab, and clicking it threw. Task 28 replaces the stub. _(Done in Task 28: the stub and its placeholder key are deleted, and the Schedule tab takes its place.)_
 - **A skipped stage's reason passes on.** A stage skipped because an input's writer was skipped gets that writer's reason, so `inactive` and a greyed-out view name the cause ("needs project-start"), not the chain. In this task nothing can skip a stage in the app: roles and keys arrive in Task 27. The only way to skip one now is a field that a plugin owns but no stage writes, whose readers get "needs estimate.x, which no stage writes". The tests use that.
 - **An extra registry check:** a stage may write only fields its own plugin owns. Without it, "one owner per field" didn't stop another plugin writing the field.
 - **Field names are kebab-case** (`has-value`, `done-sum`), like rows names. The exported constants are `hasValue` and `doneSum`.
@@ -903,7 +903,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 - `tests/grid/repair.test.ts`: the rejoined notes value is read from `fields[2].text`.
 - `tests/grid/edits.test.ts`: `ModelNode` became `ItemNode` in its helper types.
 
-**Follow-up (Task 28):** move the Gantt renderer into `src/plugins/schedule/` and delete the placeholder `schedule.start` key in `src/views/gantt/index.ts`. The renderer then requires the schedule plugin's own field.
+**Follow-up (Task 28):** move the Gantt renderer into `src/plugins/schedule/` and delete the placeholder `schedule.start` key in `src/views/gantt/index.ts`. The renderer then requires the schedule plugin's own field. _(Done in Task 28: the placeholder is deleted and the schedule table requires the plugin's own fields. The Gantt renderer itself is Task 29.)_
 
 **Spec:** plan-format-spec §3.1 (`readTree`, `ownDone` and inherited `done`), §3.2 (stages, field keys, the estimate fields and how they map to §2.7's terms, `createAnalyzer`), §3.3 and §3.6 (`requires: FieldKey[]`, greying reasons, where renderers and exporters live), and the §5.2 path. CLAUDE.md non-negotiable 5 names the estimate fields by key, and non-negotiable 10 and the repo layout have the new paths. §2.7 keeps its terms (`childSum`, `override`), since its semantics are unchanged. No rows spec is touched, and there are no spec questions.
 
@@ -948,7 +948,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
   - an 8-hour task starting Monday shows Monday for both `toDate(start, 'start')` and `toDate(finish, 'end')`;
   - `hpd=6` on the effort column gives 6-hour days. — also through `analyze`, in `tests/core/vocabulary.test.ts`.
 - [x] Nothing in `core/` or a plugin's stages reads the clock (lint). `analyze` on the same text gives the same model on different days (a test with the clock faked). — Task 26's lint rule and its probe test cover `calendar.ts`; "analysis never reads the clock" in `tests/core/vocabulary.test.ts`.
-- [ ] The Task 4 criteria still pass through the workspace. In the download fallback, `write` returns `downloaded` and the unsaved-changes indicator stays on. **Browser pass pending review**, in Chrome and Firefox. — jsdom: `tests/app/workspace.test.ts`, `tests/app/shell.test.ts` (unchanged) and `tests/app/shell-download.test.ts`. In the Firefox pass, also check the leave-page prompt after a download (see Visible changes).
+- [x] The Task 4 criteria still pass through the workspace. In the download fallback, `write` returns `downloaded` and the unsaved-changes indicator stays on. **Browser pass pending review**, in Chrome and Firefox. — jsdom: `tests/app/workspace.test.ts`, `tests/app/shell.test.ts` (unchanged) and `tests/app/shell-download.test.ts`. In the Firefox pass, also check the leave-page prompt after a download (see Visible changes).
 - [x] The app's other tests pass unchanged, apart from the unknown-key diagnostics, which are listed. — no `unknown-key` expectation changed: the existing ones are bare keys outside the vocabulary. The one rewritten test file is listed below.
 
 **Visible changes:**
@@ -957,7 +957,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 - Leaving the page after a download doesn't prompt; it prompts again once the buffer is edited. The prompt now compares the buffer with the text last opened, saved or downloaded, and the indicator with the text last opened or saved in place.
 - Qualified keys get `missing-plugin` in place of `unknown-key`: `propricer.rate-table` is "frontmatter key "propricer.rate-table" needs the propricer plugin".
 - Unknown roles and markers are now reported: `markers: done=~ blocked=!` gets `unknown-marker` on `blocked`.
-- A role the file binds to a column of the wrong type gets a `role-type` warning, and `project-start` that isn't a date gets `key-type`.
+- A role the file binds to a column of the wrong type gets a `role-type` warning, and `project-start` that isn't a date gets `key-type`. _(Task 28 changed its message and added a fix.)_
 - The plan profile binds `roles: effort=est`. Nothing shows it yet.
 
 **Human review:** read the vocabulary file and the calendar tests first. They fix what a day and a deadline mean for everything after.
@@ -965,7 +965,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 **How it's built:**
 
 - `src/core/vocabulary.ts`: `CORE_ROLES` (each with its column types), `CORE_KEYS` (with its value type), `CORE_MARKERS`, and `pluginOf(name)`, the part before the dot.
-- `src/core/bindings.ts`: `Bindings` (`roles`, role → column name; `mistyped`, role → reason; `keys`, key → value; `markers`) and `bindVocabulary(doc, plugins)`. Key diagnostics go on the key's span, role diagnostics on the whole `role=column` entry, and marker diagnostics on the marker name, which it finds with rows' `tokenizeLine`, since `Schema.markers` has no spans. `keys` holds the core keys whose values read as their type, and the qualified keys of registered plugins, as written.
+- `src/core/bindings.ts`: `Bindings` (`roles`, role → column name; `mistyped`, role → reason; `keys`, key → value; `markers`; _Task 28 adds `mistypedKeys`, key → reason_) and `bindVocabulary(doc, plugins)`. Key diagnostics go on the key's span, role diagnostics on the whole `role=column` entry, and marker diagnostics on the marker name, which it finds with rows' `tokenizeLine`, since `Schema.markers` has no spans. `keys` holds the core keys whose values read as their type, and the qualified keys of registered plugins, as written.
 - `src/core/calendar.ts`: `Calendar`, `IsoDate`, `WorkHours`, `Edge` and `naiveCalendar(start, hoursPerDay)`. It counts working days from a fixed Monday, so a weekend day counts as the Monday after it. Hour 0 is the first working hour on or after `project-start`. `toDate(t, 'end')` takes the day of the instant just before `t` (`ceil(t / hpd) - 1`), which is PLUGINS.md's "hour t − 1" for whole hours, and keeps a part-day finish on its own day.
 - `src/core/plugin.ts`: `Stage` gains `roles`, `keys` and `markers`. `StageContext` gains `bindings`, `calendar`, `cell` and `marked`. `pluginReads(plugin)` is the union of the plugin's stages' declarations, and `createRegistry` checks it against the vocabulary and the plugin's id.
 - `src/core/analyze.ts`: after `readTree`, `bindVocabulary`, then the calendar when `project-start` is bound, with `hpd` from the effort column (8 if unset). The runner checks required roles, then required keys, then reads. `cell` returns the rows `Value` in the role's column. `marked` is rows' `readFlag` on the marker's column, so `done=true` counts, as for `ownDone`. `includesOf(text)` returns rows' include paths. `analyze` takes `files`, which is unused until M3.
@@ -999,3 +999,196 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 **Noticed, not changed:** VISION §4.1 says a plugin's own marker names are qualified, but a rows marker name is a column name, and column names can't contain a dot (rows base §4), so no file can use a qualified marker. The registry accepts one a plugin declares. It needs a rows spec change once a plugin wants its own marker.
 
 **Spec:** plan-format-spec §2.1 (`roles: effort=est`, the vocabulary, `project-start`), §2.9 (`unknown-role`, `unknown-marker`, `missing-plugin`, `role-type`, `key-type`), §3.1–§3.2 (the diagram, `bindVocabulary`, bindings, stage declarations, the calendar, `analyze`'s `files` and `includesOf`), §3.9 (`readValue`) and §6 (the workspace, the indicator and the leave-page prompt). PLUGINS.md §6 records the `role-type` and include decisions. rows DESIGN §4 lists `readValue`. No spec version changes.
+
+---
+
+## Task 28 — Schedule plugin: compute and schedule table
+
+**Serves:** M1 (VISION §5; `PLUGINS.md` §4–§7). The schedule plugin computes dates, slack and lateness from dependencies, pins, milestones and deadlines, and shows them in a plain schedule table. The Gantt chart and the pin review come in Task 29, and editing IDs and dependencies in the grid in Task 30.
+
+**Deliverables**
+
+- **A second built-in profile, `schedule`** (`profiles/schedule.rows`, plus the built-in copy, which a test keeps identical). It is the plan profile plus the scheduling columns and roles:
+  ```
+  lead: title:text
+  nest: parent
+  markers: done=~ milestone=^
+  columns: est:duration unit=h hpd=8 dpw=5 | dur:duration unit=h hpd=8 dpw=5 | start:date | deps:ref many qualifier=lag:duration | due:date | owner:text | notes:text
+  roles: effort=est duration=dur start=start deps=deps deadline=due
+  ```
+  A PM writes `profile: schedule`. Files that say `profile: plan`, and `.plan` files with no `profile:`, are unchanged: estimate-only files stay terse, and `^` in their titles means what it did. Document the profile in plan-format-spec §2.1.
+- **The schedule plugin** (`src/plugins/schedule/`), which requires no other plugin:
+  - It requires the key `project-start`. The roles `effort`, `duration`, `start`, `deps` and `deadline` are all optional, and so is the marker `milestone`.
+  - Fields (`fields.ts`):
+    - `start`, a `Pinnable<WorkHours>`;
+    - `duration`, a `Pinnable<number>` (hours);
+    - `finish`, `lateStart`, `lateFinish` and `slack`, all `WorkHours`;
+    - `critical` (`slack <= 0`, for every row, summaries included) and `late` (the finish passes the row's own deadline), both booleans;
+    - `milestone`, a boolean, for the schedule table (see Decisions);
+    - the document-scope `projectFinish`.
+  - Two stages, `schedule.forward` and `schedule.backward`, following the rules below.
+- **Forward pass rules:**
+  - **Duration of a leaf.**
+    - Derived: the leaf's effort hours, at one full-time person. It is 0 when there is no effort.
+    - Pinned: the `dur` cell.
+    - A leaf with a duration of 0 that isn't a milestone gets the info `schedule-no-duration`.
+  - **Milestones.**
+    - A row with the milestone marker has a duration of 0. A filled `est` or `dur` on it gets the warning `schedule-milestone-effort`, and is ignored.
+    - A milestone marker on a parent row gets the warning `schedule-milestone-parent`, and the row is treated as a summary.
+  - **Start.** The derived start is the latest of: the project start (hour 0); each dependency's `finish`, plus its lag; and the effective start of each ancestor. The start pin is a floor: the effective start is the later of the pin and the derived start. Convert a pin with `fromDate(d, 'start')`, with a one-line comment saying why that edge.
+  - **Pins and dependencies on a parent row** act as floors for every descendant. A `dur` pin on a parent gets the info `schedule-summary-duration` and is ignored, because a summary's span comes from its children.
+  - **Pin diagnostics**, both info:
+    - `schedule-pin-no-effect` when `effective > pin`;
+    - `schedule-pin-equals-derived` when a start or duration pin equals its derived value, in `pinned` mode.
+  - **Lag.** A lag is calendar time, so the schedule plugin converts it with the calendar's `hoursPerDay` and 5 days a week. It is a reading only this plugin needs, so it is a pure function in the plugin. A negative lag is treated as zero, with a warning, as in plan spec §2.6.
+  - **Dependency targets.**
+    - A dependency on a parent (summary) row gets the warning `schedule-dep-on-summary`, and is ignored.
+    - A dependency that can't be resolved is already a rows validation error; the schedule ignores it.
+    - The dependencies in a cycle are ignored, and each row in the cycle gets the error `schedule-dep-cycle`. This must be deterministic.
+  - **Finish.** Every finish is `calendar.add(start, duration)`. No stage adds hours itself.
+  - **Summaries.** A summary's start is its earliest descendant start, and its finish its latest descendant finish. `projectFinish` is the latest finish of all.
+  - **Done** has no effect on dates in this task (the open question in PLUGINS.md §9, for M2).
+- **Backward pass rules:**
+  - A leaf's late finish is the earliest of: `projectFinish`; each successor's late start, minus its lag; its own deadline, `fromDate(d, 'end')` (comment why that edge); and any ancestor's deadline.
+  - A leaf's late start is `calendar.add(lateFinish, -duration)`.
+  - Slack is `lateStart - start`, and `critical` is `slack <= 0`.
+  - A summary's slack is the smallest slack among its descendants.
+  - A row whose finish passes its own deadline gets the warning `schedule-late`, for example "finishes 2026-10-13, after its deadline 2026-10-12". Negative slack on the rows upstream is visible in the fields, and gets no diagnostic of its own.
+- **Missing or invalid start** (as decided; see Decisions):
+  - Core, not a stage, reports it: `project-start` records in the vocabulary that it is expected when `duration`, `start`, `deps` or `deadline` is bound. When one is and the key isn't written, core gives the info `no-project-start` on line 1, with no span: "Set a project start to compute the schedule". Estimate-only files are never told about it.
+  - When the key is written but isn't a date, only `key-type` fires. `Bindings` records mistyped keys, so a skipped stage's reason is "project-start isn't a date" rather than "needs project-start".
+  - Both `no-project-start` and `key-type` get the click fix "Set project start to today", from one core helper. `key-type`'s message becomes "project-start must be a date like 2026-10-05; 'soon' is ignored, so the schedule isn't computed."
+  - `analyze` must not read the clock, so the fix carries no date. `Fix.input` gains `suggest?: 'today'`, plus `before?` and `after?` around the value. The text editor and the grid fill in today's date when they show the fix, and they may read the clock because they are UI code.
+- **Schedule table renderer** (in the schedule plugin), replacing the Gantt stub. Delete the stub and its placeholder key from `src/views/`.
+  - Columns: `#`, title, start, finish, duration and slack.
+  - Starts show with `toDate(t, 'start')`, and finishes and milestones with `toDate(t, 'end')`.
+  - Durations and slack show in days and hours, using the calendar's `hoursPerDay`.
+  - A pinned start or duration shows the derived value muted beside it, as the tree shows `⟨Σ …⟩`.
+  - Critical rows are marked, and late rows outlined.
+  - It shares the cursor highlight and click-to-line rules through `RenderContext`, using the shared UI layer `src/ui/` (see Decisions), and is greyed out with the skip reason ("needs project-start") when a stage is skipped.
+- **Estimate and the duration role** (as decided): estimate declares `duration` as an optional role and doesn't roll up the column bound to it. Durations are spans, and don't add up across parallel tasks.
+- **`Diagnostic.source`:** the runner sets it to the plugin's id on every stage diagnostic. Core's diagnostics leave it unset.
+- **Spec:** plan-format-spec gains a scheduling section (§2.11 or its own section) stating the rules above, the new codes in §2.9, and the `schedule` profile in §2.1. VISION is unchanged.
+
+**The reference fixture: `examples/schedule.plan`**
+
+It is written by hand. Its expected values below were worked out by hand, so never generate them from output.
+
+`profile: schedule`, `project-start: 2026-10-05` (a Monday), 8-hour days. Hour 0 is Monday 5 October at the start of the day; each working day adds 8 hours, and weekends are skipped.
+
+| #   | Row                     | Cells                                      |
+| --- | ----------------------- | ------------------------------------------ |
+| 1   | Design                  | parent                                     |
+| 1.1 | Wireframes `{#wire}`    | est 1d, start 2026-10-05                   |
+| 1.2 | Review `{#review}`      | est 4h, deps `#wire`                       |
+| 2   | Build                   | parent                                     |
+| 2.1 | API `{#api}`            | est 3d, start 2026-10-05, deps `#review`   |
+| 2.2 | UI `{#ui}`              | est 2d, start 2026-10-12, deps `#review`   |
+| 2.3 | `^`Beta ready `{#beta}` | deps `#api` and `#ui`, due 2026-10-12      |
+| 3   | Docs                    | est 1d, dur 3d, deps `#review` with lag 1d |
+
+Expected, in work hours, with the displayed dates:
+
+| Row              | start (derived / pin / effective) | duration                  | finish | late start | late finish | slack              | shown                   | diagnostics                                  |
+| ---------------- | --------------------------------- | ------------------------- | ------ | ---------- | ----------- | ------------------ | ----------------------- | -------------------------------------------- |
+| Wireframes       | 0 / 0 / 0, pinned                 | 8                         | 8      | 12         | 20          | 12                 | Mon 5 Oct – Mon 5 Oct   | `schedule-pin-equals-derived`                |
+| Review           | 8 / – / 8                         | 4                         | 12     | 20         | 24          | 12                 | Tue 6 Oct – Tue 6 Oct   |                                              |
+| API              | 12 / 0 / 12, pinned               | 24                        | 36     | 24         | 48          | 12                 | Tue 6 Oct – Fri 9 Oct   | `schedule-pin-no-effect`                     |
+| UI               | 12 / 40 / 40, pinned              | 16                        | 56     | 32         | 48          | −8, critical       | Mon 12 Oct – Tue 13 Oct |                                              |
+| Beta ready       | 56 / – / 56                       | 0 (milestone)             | 56     | 48         | 48          | −8, critical, late | Tue 13 Oct              | `schedule-late` (deadline 12 Oct is hour 48) |
+| Docs             | 20 / – / 20                       | 24 (derived 8, pinned 24) | 44     | 32         | 56          | 12                 | Wed 7 Oct – Mon 12 Oct  |                                              |
+| Design (summary) | 0 / – / 0                         |                           | 12     |            |             | 12                 | Mon 5 Oct – Tue 6 Oct   |                                              |
+| Build (summary)  | 0 / – / 12                        |                           | 56     |            |             | −8, critical       | Tue 6 Oct – Tue 13 Oct  |                                              |
+
+`projectFinish` is 56, shown as Tue 13 Oct. Where the numbers come from:
+
+- Review's late finish is the earliest of API's late start (24), UI's (32), Docs' late start minus its lag (32 − 8 = 24) and the project finish (56).
+- Docs starts at Review's finish plus a 1-day lag: `add(12, 8)`, which is 20, on Wednesday.
+- A summary's start is derived / pin / effective: derived is the floor the rest of the file gives it (hour 0 for both), and effective its earliest descendant start. Summaries have no duration, late start or late finish; the blank cells are asserted absent. Build is critical, like every row with `slack <= 0`.
+
+**Acceptance criteria**
+
+- [x] The fixture test asserts every cell of the table above, the displayed dates, and each diagnostic's code, row and severity. — `tests/schedule/fixture.test.ts`, written from the table; the code agreed with every value on the first run. It also asserts `source: 'schedule'`, that the blank summary cells are absent, and the `schedule-late` message.
+- [x] A test for each diagnostic in this task, each asserting its line and severity. The dependency cycle test asserts the same result regardless of row order. — `tests/schedule/schedule.test.ts`, "diagnostics" and "dependency cycles" (three row orders; also a self-dependency and a parent depending on its own child); `key-type` in `tests/core/vocabulary.test.ts`.
+- [x] A dependency or start pin on a parent row pushes all its descendants. A deadline on a parent row limits all its descendants' late finish. — "parent rows" in `tests/schedule/schedule.test.ts`, which also covers a parent as a successor in the backward pass.
+- [x] Sensible degradation: — "degradation" in `tests/schedule/schedule.test.ts`.
+  - an estimate-only file (`profile: plan`) gets no schedule diagnostics;
+  - a `profile: schedule` file with no `project-start` gets `no-project-start` and a greyed schedule table;
+  - a file with no `deps` column schedules everything from hour 0.
+- [x] The "Set project start to today" fix writes the date shown when it was offered, in both editors. With the clock faked to two different days, `analyze` gives the same model, and neither day appears in its output. — `tests/app/today-fix.test.ts`: offered at 23:59 and applied at 00:01, for a missing key and for one that isn't a date, in the text editor and in the grid (banner and problems list). "analysis never reads the clock" in `tests/schedule/registries.test.ts`: the same diagnostics and schedule fields on both days, and neither day in the output. (Reworded before commit: it said the output "contains no date the file didn't hold", which the computed dates the task specifies, such as `schedule-late`'s "finishes 2026-10-13", would break.)
+- [x] With only the estimate plugin registered, the example and every estimate test are unchanged. With only the schedule plugin registered, the fixture still schedules. — `tests/schedule/registries.test.ts`: on every fixture and example, estimate's fields and every non-schedule diagnostic are the same with estimate alone as with both plugins; with schedule alone, the fixture's schedule fields and diagnostics equal the full registry's. Every existing estimate test passes, unchanged apart from those listed below.
+- [x] `analyze` on a 500-line `profile: schedule` file with dependencies stays under 5 ms median. — 4.39 ms median (p99 8.78 ms), median of 1,000 runs after warm-up, on 50 phases of 9 chained tasks (lags, pins, `dur` pins, deadlines, phase-to-phase links). On the same file: 2.92 ms with no plugins, 3.02 ms with estimate alone, 4.25 ms with schedule alone. Most of the cost is reading the wider rows, not scheduling. Measured once; there is no timing test.
+- [x] Manual: the schedule table on the fixture matches the expected table, in both themes. **Browser pass pending review.** Also check the late row's outline, drawn with `outline` on a `tr`, in Chrome and Firefox.
+
+**Visible changes:**
+
+- The Gantt tab is replaced by a Schedule tab. On a file without a schedule it is greyed out with "needs project-start", or "project-start isn't a date".
+- The `schedule` profile is available.
+- `key-type` on `project-start` has a new message and a fix, "Set project start to today (DATE)", whose label shows the date it writes.
+- A file that binds `duration`, `start`, `deps` or `deadline` without `project-start` gets the info `no-project-start` on line 1, with the same fix, in the grid's settings banner too.
+- In a file that binds the `duration` role (`profile: schedule`), the tree, the table, the grid and the TSV export show that column's cells as written: no sum on parents, no total, and no `override-differs` on it.
+- Diagnostics from a plugin carry `source`. Nothing shows it yet.
+
+**Not in this task:**
+
+- Gantt bars.
+- The pin review.
+- Editing IDs and dependencies in the grid.
+- `done` affecting dates.
+- Link types other than finish-to-start.
+- The follow-up from Task 27 that takes include paths from the model rather than parsing the text again. It waits for M3.
+
+**Human review:** read the fixture test against the table above first. Any disagreement is a question about the rules, not the code.
+
+**How it's built:**
+
+- `src/core/vocabulary.ts`: a core key is a `CoreKey` (`type`, `example`, `ignored`, `expectedWith`, `missing`, `fix`), so `project-start`'s messages, its expectation and its fix label are vocabulary data.
+- `src/core/bindings.ts`: `Bindings.mistypedKeys`; `key-type`'s new message and fix; `no-project-start` for each core key that isn't written while a role in its `expectedWith` is bound. A key written with the wrong type never gets `no-…`.
+- `src/core/fixes.ts`: `todayFix(doc, key, label)` replaces the key's value when it is written, else inserts `KEY: ` + date + newline before the closing `---`; the date is left empty. `resolveFix(fix, date)` fills it in, in the edits, the value and the label, and drops `suggest`, so resolving twice changes nothing; it is pure, since the date is passed in. `inputEdit(input, value)` is the `before + value + after` edit both of them, and the confirm panels, use.
+- `src/core/types.ts`: `Fix.input` gains `suggest`, `before` and `after`; `Diagnostic.source`. `src/core/analyze.ts`: the runner sets `source` on stage diagnostics, a mistyped required key gives its reason, and `parsePlan` knows both profiles. `src/core/profile.ts`: `SCHEDULE_PROFILE`, published as `profiles/schedule.rows`.
+- `src/plugins/schedule/`: `fields.ts`; `lag.ts` (`lagHours`, a pure reading); `network.ts` (`readNetwork`: the links, the ignored ones with their diagnostics, Tarjan's strongly connected components over the links plus parent → child, and a topological order, a reverse post-order walk in document order); `forward.ts` and `backward.ts`, the two stages; `renderers/table.ts` and `table.css`; `index.ts`, the manifest. Both stages read the network: `schedule.backward` reads it again without reporting, rather than passing it through a field.
+- `src/ui/`, shared UI code for renderers and editors: `grid.ts` (`createGrid(className, headers)`, `addItemRow`, `mount`, `muted`) and `grid.css`, moved from estimate's `renderers/shared.*` unchanged. Estimate's `shared.css` keeps only the total row and level column rules. `today.ts` is the one UI function that reads the clock.
+- Editors: `src/editor/diagnostics.ts` and `src/grid/problems.ts` pass every fix through `resolveFix` with `today()` when they show it: the text editor when it builds lint actions, the grid on each model update. Their confirm panels call it too, and write a typed value with `inputEdit`, so they honour `before` and `after`.
+- Estimate: `rollup.ts` declares `roles: { optional: ['duration'] }` and leaves that column out of the roll-ups and totals, so its cells show as written, like a text column.
+- Lint (`eslint.config.js`): `src/ui/` may import only type-only imports from core and its own files (`@typescript-eslint/no-restricted-imports`, `allowTypeImports`); `src/views/` may import core and `src/ui/`. The plugin import test allows `ui/`.
+- `src/views/gantt/` is deleted; `src/views/` is empty until the pin review. `src/app/registry.ts` registers estimate and schedule.
+
+**Decisions taken** (by the spec owner, when asked):
+
+- **A summary's start:** `derived` is the floor the rest of the file gives it (hour 0, its links, its parent's floor), `pin` its start cell, and `effective` its earliest descendant start. It passes `max(derived, pin)` down. The pin diagnostics then apply unchanged: "no effect" when no descendant starts at the pin. Build in the fixture is 0 / – / 12.
+- **Summaries in the backward pass:** they get start, finish, `slack` (the smallest among their descendants), `late` (against their own deadline) and `critical`, which is `slack <= 0` for every row, so a PM sees which phase is on the critical path. They get no `duration`, `lateStart` or `lateFinish`.
+- **A parent as successor:** its predecessor's late finish is bounded by the earliest late start among the parent's descendants, minus the lag. A parent that depends on its own descendant is `schedule-dep-cycle`; cycles are strongly connected components.
+- **The missing start is core's**, not a `schedule.check` stage: the condition is vocabulary. The code is `no-project-start` (not `schedule-no-start`), info, line 1, no span. No `StageContext` change.
+- **Only `key-type` on an invalid date,** with mistyped keys recorded in `Bindings`.
+- **`Fix.input`** gains `suggest?: 'today'` and `before?`/`after?`.
+- **`schedule-negative-lag`**, warning.
+- **Dates** read `Mon 5 Oct`, with the year when it isn't project-start's year (`Mon 4 Jan 2027`).
+- **The shared UI layer `src/ui/`** for the cursor highlight, click-to-line, the basic row builder and their CSS, rather than copying estimate's helpers. Plugins and `views/` may import it; it imports only core types.
+- **Estimate leaves the `duration` role's column out**, as above.
+- **Before commit:** core's pure `resolveFix(fix, date)` completes a "today" fix, and both editors and their confirm panels call it with `today()`; the fix-invariant test calls it with a fixed date and covers two new schedule fixtures; the clock criterion is reworded to what its test checks; PLUGINS.md §8 says `src/ui/` holds shared UI code for renderers and editors.
+- Accepted defaults: `no-project-start` on line 1; the fix label shows its date; a milestone shows its date (end edge) in both date columns and "milestone" as its duration; durations and slack in days and hours only (`1d 4h`, `−1d`, `0h`); a `+` on a lag or `dur` is read as the value; rows without a deadline get `late: false`.
+
+**Decisions taken** (by me, within the task):
+
+- **A `milestone` field.** The schedule table shows a milestone as a point, and a renderer can't read markers (CLAUDE.md non-negotiable 5), so the forward stage writes `milestone`: true for a leaf with the marker, false otherwise (a parent with the marker is a summary).
+- **The `key-type` message is built from the vocabulary**, so its wording for `project-start` is the task's, and a later core key needs only data.
+- **`no-project-start` counts a key as written when the file or the profile sets it,** as `schedule.keys` does.
+- **Where a pin is both without effect and equal to its derived value** (only possible on a summary), only `schedule-pin-no-effect` is reported.
+- **Message wording:** each names its column by the name the file gives it ("the dur column's value is ignored"), per PLUGINS.md §5. A cycle's message lists the other rows' titles sorted, so it is the same in any row order.
+- **Critical and late styling** reuse the diagnostic colours (`--diag-error` for a critical row's slack, `--diag-warning` for the late outline), so the theme gains no tokens.
+- **`today()` lives in `src/ui/`** and the text editor and the grid import it, as PLUGINS.md §8 now allows.
+- **`resolveFix` drops `suggest`** once it has filled the date in, so a panel that resolves a fix the list already resolved changes nothing, and the label never shows two dates.
+
+**Rewritten tests:**
+
+- `tests/core/vocabulary.test.ts`: "warns on a project-start that is not a date" asserts the new `key-type` message (it was `project-start "2026-02-30" is not a date; it is ignored`) and `mistypedKeys`.
+- `tests/app/shell.test.ts`: the third tab is "Schedule" (was "Gantt"), greyed out with "needs project-start" (was "needs the schedule plugin").
+- `tests/renderers/table.test.ts`: the "gantt stub" test is deleted with the stub.
+- `tests/plugins/lint.test.ts`: "views import only core" became "views import only core and src/ui", with the new message and a passing `src/ui` import; its probe path is `src/views/probe/` (was `src/views/gantt/`).
+- `tests/plugins/imports.test.ts`: `ui/` is allowed, and the planted-import case includes an allowed `src/ui` import.
+- `tests/core/fix-invariant.test.ts`: `check` resolves each fix with `resolveFix(fix, '2026-10-05')` before applying it (it applied the edits as offered). Its fixtures gain `tests/fixtures/schedule-no-start.plan` (`no-project-start`) and `schedule-bad-start.plan` (`project-start: soon`, `key-type`); both fixes pass.
+- `tests/schedule/registries.test.ts`: the clock test's comment and criterion say what it checks (above).
+
+**New tests:** `tests/schedule/fixture.test.ts`, `schedule.test.ts`, `table.test.ts` and `registries.test.ts`; `tests/app/today-fix.test.ts`; the schedule profile's identity in `tests/core/columns.test.ts`; the fix, `resolveFix` (including that a second resolve changes nothing) and the "project-start isn't a date" skip reason in `tests/core/vocabulary.test.ts`; the duration role in `tests/core/compute.test.ts` and `tests/renderers/tree.test.ts`; the `src/ui` rule and a core probe of `src/ui` in `tests/plugins/lint.test.ts`.
+
+**Spec:** plan-format-spec §2.1 (the schedule profile, `project-start` expected), §2.9 (`no-project-start`, the scheduling codes, `key-type`'s message, `source`), the new §2.11 Scheduling, §3.2 (estimate and the duration role, the schedule stages), §3.3 (`src/ui/`), §4b.6.2 (`Fix.input`, `resolveFix`, `inputEdit`), §5.2 and the new §5.4 Schedule table, and §7. PLUGINS.md §5 (`source`, fixes that need today), §6 (estimate's role, the missing start) and §8 (`src/ui/`, its lint rule). CLAUDE.md's repo layout and non-negotiable 5 name `src/ui/` and the schedule fields. VISION is unchanged. No rows spec is touched, and rows is unchanged.

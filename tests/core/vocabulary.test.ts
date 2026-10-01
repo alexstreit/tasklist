@@ -3,7 +3,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { analyze } from '../../src/app/registry';
-import { createAnalyzer, createRegistry } from '../../src/core';
+import { applyEdits } from 'rows';
+import { createAnalyzer, createRegistry, resolveFix } from '../../src/core';
 import type { Plugin, Stage, StageContext } from '../../src/core';
 import { estimatePlugin } from '../../src/plugins/estimate';
 import example from '../../examples/example.plan?raw';
@@ -64,11 +65,36 @@ describe('bindVocabulary', () => {
   it('warns on a project-start that is not a date, and treats the key as absent', () => {
     const text = '---\nproject-start: 2026-02-30\n---\nA\n';
     expect(found(text)).toEqual([
-      { line: 2, severity: 'warning', code: 'key-type', at: '2026-02-30', message: 'project-start "2026-02-30" is not a date; it is ignored' },
+      {
+        line: 2,
+        severity: 'warning',
+        code: 'key-type',
+        at: '2026-02-30',
+        message: "project-start must be a date like 2026-10-05; '2026-02-30' is ignored, so the schedule isn't computed.",
+      },
     ]);
     const model = analyze(text);
     expect(model.bindings.keys.has('project-start')).toBe(false);
+    expect(model.bindings.mistypedKeys).toEqual(new Map([['project-start', "project-start isn't a date"]]));
     expect(model.calendar).toBeUndefined();
+  });
+
+  it('offers "Set project start to today" on key-type, replacing the value, with the date left to the editor', () => {
+    const text = '---\nproject-start: soon\n---\nA\n';
+    const [fix] = analyze(text).diagnostics.find((d) => d.code === 'key-type')!.fixes!;
+    const at = text.indexOf('soon');
+    expect(fix).toEqual({
+      label: 'Set project start to today',
+      tier: 'click',
+      edits: [{ from: at, to: at + 4, insert: '' }],
+      input: { span: { from: at, to: at + 4 }, value: '', suggest: 'today' },
+    });
+    const filled = resolveFix(fix, '2026-09-29');
+    expect(filled.label).toBe('Set project start to today (2026-09-29)');
+    expect(filled.input).toEqual({ span: { from: at, to: at + 4 }, value: '2026-09-29' });
+    // Resolved, it suggests nothing more, so a second resolve changes nothing.
+    expect(resolveFix(filled, '2026-09-30')).toBe(filled);
+    expect(applyEdits(text, filled.edits)).toBe('---\nproject-start: 2026-09-29\n---\nA\n');
   });
 
   it('binds the plan profile with no diagnostics', () => {
@@ -114,6 +140,11 @@ describe('required roles and keys', () => {
     expect(model.inactive).toEqual([]);
     expect(seen?.start).toBe('2026-10-05');
     expect(model.calendar).toBe(seen);
+  });
+
+  it("gives the key's type as the reason when project-start isn't a date", () => {
+    const stage = { keys: { required: ['project-start'] } };
+    expect(withProbe(stage)('---\nproject-start: soon\n---\nA\n').inactive).toEqual([{ stage: 'probe.stage', reason: "project-start isn't a date" }]);
   });
 });
 

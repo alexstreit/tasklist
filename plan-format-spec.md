@@ -35,7 +35,21 @@ roles: effort=est
 - The tool writes `profile: plan` into the frontmatter of every file it creates, so the file says what it is even if it is renamed.
 - Exports, and later canonical form, write the resolved keys out in full.
 - A file may override any key the profile sets. A file's own `columns:` replaces the whole column list, including options, so a duration column declared there needs its own `unit=h hpd=8 dpw=5` (§2.6).
-- `roles: effort=est` marks `est` as the effort column, which scheduling reads. A file's own `roles:` merges with it per role (rows ext §11). A file whose own `columns:` has no `est` loses the binding, with no error; one whose `est` is not a duration or number column keeps it unbound, also with no error, and whatever needs the effort role says why.
+- `roles: effort=est` marks `est` as the effort column, which scheduling reads. The plan profile binds no other role and has no milestone marker, so an estimate-only file is never scheduled, and `^` in its titles means what it always did. A file's own `roles:` merges with it per role (rows ext §11). A file whose own `columns:` has no `est` loses the binding, with no error; one whose `est` is not a duration or number column keeps it unbound, also with no error, and whatever needs the effort role says why.
+
+**The schedule profile.** `profile: schedule` names the profile published as `profiles/schedule.rows`, the plan profile plus the scheduling columns, their roles and the milestone marker. A PM writes it to schedule a file (§2.11):
+
+```
+---
+lead: title:text
+nest: parent
+markers: done=~ milestone=^
+columns: est:duration unit=h hpd=8 dpw=5 | dur:duration unit=h hpd=8 dpw=5 | start:date | deps:ref many qualifier=lag:duration | due:date | owner:text | notes:text
+roles: effort=est duration=dur start=start deps=deps deadline=due
+---
+```
+
+Files that say `profile: plan`, and `.plan` files with no `profile:`, are unchanged.
 
 **Vocabulary.** The plan format owns a fixed set of bare names (`src/core/vocabulary.ts`, `PLUGINS.md` §3):
 
@@ -50,7 +64,7 @@ roles: effort=est
 | marker | `done`          | (every marker: bool) |
 | marker | `milestone`     |                      |
 
-A plugin's own roles and keys are qualified with its id (`propricer.rate-table`). `project-start: 2026-10-05` is the first working day of the schedule; with it, the model has a calendar (§3.2). A value that isn't a date is a warning, and the key counts as absent.
+A plugin's own roles and keys are qualified with its id (`propricer.rate-table`). `project-start: 2026-10-05` is the first working day of the schedule; with it, the model has a calendar (§3.2). A value that isn't a date is a warning, `key-type`, and the key counts as absent. The key is **expected** when the `duration`, `start`, `deps` or `deadline` role is bound: a file that binds one of them and doesn't write the key gets `no-project-start`, from core, since the rule is vocabulary. Both diagnostics carry the click fix "Set project start to today" (§4b.6.2).
 
 ### 2.2 Normalisation
 
@@ -137,9 +151,13 @@ Every diagnostic carries a line, a severity, a code, a message, a span where one
 | Qualified key or role whose plugin isn't registered ("needs the propricer plugin")                    | info     | `missing-plugin`                           |
 | Role the file's `roles:` binds to a column of the wrong type; the role is left unbound                | warning  | `role-type`                                |
 | Core key whose value isn't its type (`project-start` not a date); the key counts as absent            | warning  | `key-type`                                 |
+| `project-start` not written while `duration`, `start`, `deps` or `deadline` is bound (§2.1), line 1   | info     | `no-project-start`                         |
 | Line beginning `<!--` (§2.3)                                                                          | info     | `html-comment`                             |
 | Tabs converted on load                                                                                | info     | `tabs-converted`                           |
 | Override differs from child sum (only when `childrenHaveValue`)                                       | info     | `override-differs`                         |
+| Scheduling (§2.11)                                                                                    | see §2.11 | `schedule-…`                              |
+
+`key-type` on `project-start` reads "project-start must be a date like 2026-10-05; 'soon' is ignored, so the schedule isn't computed." A diagnostic from a plugin's stage carries `source`, the plugin's id; core's leave it unset.
 
 Rows ignores unknown keys silently. The plan tool reports them as info, because in a hand-edited file an unknown key is usually a typo, such as `colums:`. A name that belongs to a plugin the reader doesn't have is only an info, since files move between people with different plugins. The vocabulary diagnostics are reported on the line that binds the name; a binding that comes from the profile gets none.
 
@@ -177,6 +195,49 @@ Computed:
 
 The fixture lives at `examples/example.plan` and is shared by tests and the app. It is also a rows conformance case.
 
+### 2.11 Scheduling
+
+The **schedule** plugin (`src/plugins/schedule/`) computes dates, slack and lateness from dependencies, pins, milestones and deadlines. It requires `project-start`; its roles (`effort`, `duration`, `start`, `deps`, `deadline`) and the `milestone` marker are all optional. It works in working hours from the project start (hour 0), and every date conversion and every finish goes through the calendar (§3.2): a start pin converts with `fromDate(d, 'start')`, a deadline with `fromDate(d, 'end')`, so a row that finishes at the end of its deadline day is not late. A parent row is a **summary**. `done` has no effect on dates yet (`PLUGINS.md` §9).
+
+**Duration of a leaf.** Derived: its effort hours, at one full-time person, or 0 with no effort. Pinned: the `dur` cell. A leaf with a duration of 0 that isn't a milestone gets `schedule-no-duration`.
+
+**Milestones.** A leaf with the milestone marker has a duration of 0; a filled `est` or `dur` on it is ignored, with `schedule-milestone-effort`. A milestone marker on a parent row gets `schedule-milestone-parent`, and the row is a summary.
+
+**Dependencies.** `deps` holds finish-to-start links, each with an optional lag (`#review 1d`). A lag is calendar time: a day is the calendar's `hoursPerDay` and a week 5 days, whatever the effort column's `dpw`; a negative lag counts as 0, with `schedule-negative-lag`. A link to a summary is ignored, with `schedule-dep-on-summary`. A link that doesn't resolve is already a rows validation error, and is ignored. The links, together with each parent's hold on its descendants, are a graph; the links inside each strongly connected component of it are ignored, and each row in one gets `schedule-dep-cycle`, so the result doesn't depend on row order. A parent that depends on its own descendant is such a cycle.
+
+**Forward pass.**
+
+- A row's derived start is its **floor**: the latest of hour 0, each link's `add(finish, lag)`, and its parent's floor passed down. The start pin is a floor too: a row passes `max(derived, pin)` to its descendants, so pins and links on a parent push every descendant.
+- A leaf's effective start is `max(derived, pin)`, and its finish `add(start, duration)`.
+- A summary's effective start is its earliest descendant start, and its finish its latest descendant finish. A `dur` pin on a summary is ignored, with `schedule-summary-duration`.
+- `projectFinish` is the latest finish of all.
+
+**Backward pass.**
+
+- A leaf's late finish is the earliest of: `projectFinish`; each successor's late start minus its lag, where a summary successor's late start is the earliest among its descendants; its own deadline; and each ancestor's deadline.
+- A leaf's late start is `add(lateFinish, -duration)`, and its slack `lateStart - start`. A summary's slack is the smallest among its descendants.
+- Every row is **critical** when its slack is at most 0, so a phase on the critical path shows as one.
+- A row is **late** when its finish passes its own deadline, and gets `schedule-late`: "finishes 2026-10-13, after its deadline 2026-10-12". Negative slack upstream shows in the fields, with no diagnostic of its own.
+
+**Fields.** `start` (a `Pinnable`: `derived` is the floor, `pin` the start cell, `effective` as above), `duration` (a `Pinnable`, leaves only), `finish`, `lateStart` and `lateFinish` (leaves only), `slack`, `critical`, `late`, `milestone` (a leaf with the marker, for the schedule table) and the document's `projectFinish`. A summary has no `duration`, `lateStart` or `lateFinish`.
+
+**Pin diagnostics.** On a start pin: `schedule-pin-no-effect` when the effective start is later than the pin (on a summary, when no descendant starts at it); else `schedule-pin-equals-derived` when the pin equals the derived start. On a duration pin: `schedule-pin-equals-derived` when it equals the effort.
+
+| Case                                                        | Severity | Code                          |
+| ----------------------------------------------------------- | -------- | ----------------------------- |
+| A leaf with no effort or duration that isn't a milestone    | info     | `schedule-no-duration`        |
+| A filled `est` or `dur` on a milestone; ignored             | warning  | `schedule-milestone-effort`   |
+| A milestone marker on a parent; the row is a summary        | warning  | `schedule-milestone-parent`   |
+| A `dur` pin on a parent; ignored                            | info     | `schedule-summary-duration`   |
+| A start pin later than nothing it pushes                    | info     | `schedule-pin-no-effect`      |
+| A start or duration pin equal to its derived value          | info     | `schedule-pin-equals-derived` |
+| A negative lag; counts as 0                                 | warning  | `schedule-negative-lag`       |
+| A dependency on a parent row; ignored                       | warning  | `schedule-dep-on-summary`     |
+| Each row in a dependency cycle; the cycle's links ignored   | error    | `schedule-dep-cycle`          |
+| A row that finishes after its own deadline                  | warning  | `schedule-late`               |
+
+The reference fixture is `examples/schedule.plan`, whose values were worked out by hand (`TASKS.md`, Task 28). It is the scheduling counterpart of §2.10.
+
 ## 3. Architecture
 
 ```
@@ -184,7 +245,7 @@ The fixture lives at `examples/example.plan` and is shared by tests and the app.
             │                                                        │
  editors ───┤ apply(edits) / undo / redo            onChange ────────┼──► analyze ──► model ──► renderer(s)
  text, grid │                                                        │    (parseRows →        tree, table
-            └────────────────────────────────────────────────────────┘     readTree →          (future: gantt)
+            └────────────────────────────────────────────────────────┘     readTree →          schedule (Gantt next)
                                                                             bindVocabulary →──► exporter(s)
                                                                             stages)
    edits come from src/editing (line ops) and the rows edit API (cells)                         TSV
@@ -212,8 +273,11 @@ The **estimate** plugin (`src/plugins/estimate/`) computes §2.7–§2.8 for eve
 
 - `rollup`, a by-column `Pinnable`: per column name, `{ derived?, pin?, effective, mode }`. `derived` is §2.7's `childSum`, present only when a child has a value (§2.7's `childrenHaveValue`); `pin` is the node's own value; `mode` is `derived`, `pinned` (§2.7's `override`) or `additive`.
 - `hasValue` and `doneSum`, per column name, beside it.
+- The column bound to the `duration` role, an optional role of the stage, is not rolled up: durations are spans, and don't add up across parallel tasks. Its cells show as written.
 - `totals`, a document-scope field: per column name, the document's `effective` and `doneSum`.
 - the `override-differs` info.
+
+The **schedule** plugin's stages, `schedule.forward` and `schedule.backward`, compute §2.11.
 
 No renderer or exporter performs arithmetic: they read these fields.
 
@@ -244,7 +308,7 @@ interface Renderer {
 
 `requires` lets the app grey out a renderer whose needs aren't met instead of rendering nonsense; an unsatisfied renderer is never called. When the plugin that owns a required field isn't registered, the reason is "needs the estimate plugin"; when a stage that writes a required field was skipped, it is the reason of the first such stage in stage order. The app asks core for the reason (`unmetReason`) and special-cases no renderer.
 
-Renderers that read a plugin's fields belong to that plugin: tree and table are in `src/plugins/estimate/renderers/`. A renderer that reads only core fields goes in `src/views/`, as does the Gantt placeholder until the schedule plugin exists.
+Renderers that read a plugin's fields belong to that plugin: tree and table are in `src/plugins/estimate/renderers/`, and the schedule table in `src/plugins/schedule/renderers/`. A renderer that reads only core fields goes in `src/views/`. The row-per-item table, its cursor highlight and click-to-line, and their CSS are in `src/ui/`, shared UI code for renderers and editors, which imports only core's types (`PLUGINS.md` §8).
 
 `RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), and `setCursorLine(line)` for click-to-line. It is renderer-agnostic.
 
@@ -469,9 +533,12 @@ interface Fix {
   edits: TextEdit[];
   preview?: string; // required for 'confirm': the affected lines before and after
   warning?: string; // shown with the preview: what the change may do beyond those lines
-  input?: { span: Span; value: string }; // the fix writes typed text in place of span; edits and preview are for value, a suggestion
+  input?: { span: Span; value: string; suggest?: "today"; before?: string; after?: string };
+  // the fix writes before + value + after in place of span; edits and preview are for value, a suggestion
 }
 ```
+
+A fix with `suggest: 'today'` leaves the date to the editor: analysis never reads the clock, so the text editor and the grid, and their confirm panels, fill in today's date when they show the fix with core's pure `resolveFix(fix, date)`, in its edits and in its label ("Set project start to today (2026-09-29)"), and it writes the date it showed. A resolved fix suggests nothing more. A typed value is written with `inputEdit`, as `before + value + after`. "Set project start to today" replaces `project-start`'s value when the key is written, or adds a `project-start:` line before the closing `---`.
 
 The text editor offers every fix as a lint action, whatever its tier; `confirm` fixes show their preview first.
 
@@ -570,7 +637,17 @@ The extra values are the overflow cells other than a column's repeat, and any ce
 
 ### 5.2 Table renderer
 
-Same data as the tree, flat: `#`, `level`, title, declared columns. Same cell, highlight and click rules via `RenderContext`. Tree and table share a row builder in `src/plugins/estimate/renderers/shared.ts`.
+Same data as the tree, flat: `#`, `level`, title, declared columns. Same cell, highlight and click rules via `RenderContext`. Tree and table share their estimate cells in `src/plugins/estimate/renderers/shared.ts`, and the row builder in `src/ui/grid.ts`.
+
+### 5.4 Schedule table
+
+The schedule plugin's renderer (§2.11): one row per item, nested like the tree, with `#`, title, start, finish, duration and slack.
+
+- Starts show as `toDate(t, 'start')`, finishes as `toDate(t, 'end')`, and a milestone shows its date, at the end edge, in both columns. Dates read `Mon 5 Oct`, with the year when it isn't project-start's (`Mon 4 Jan 2027`).
+- Durations and slack show in days and hours of the calendar's `hoursPerDay` (`1d 4h`, `−1d`, `0h`); a milestone's duration reads `milestone`, and a summary has none.
+- A pinned start or duration shows the derived value muted beside it, as the tree shows `⟨Σ …⟩`: `Mon 12 Oct ⟨Tue 6 Oct⟩`.
+- Critical rows show their slack in the error colour; late rows are outlined in the warning colour.
+- Same highlight and click rules via `RenderContext`. It is greyed out with the skip reason ("needs project-start", "project-start isn't a date") when its stages are skipped.
 
 ### 5.3 Theming
 
@@ -591,7 +668,7 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
 - Estimate ranges / confidence, PERT roll-up
 - Markdown headings (`# `) as un-indented parents. Rows reserves the form.
 - Status roll-up (all children done ⇒ parent done)
-- Column **roles** for renderers such as Gantt; dependencies from `deps:ref many qualifier=lag:duration`
+- Link types other than finish-to-start; `done` affecting dates
 - Additional roll-up types: `max`, `count`, `done%`, `remaining`
 - Negative values and negative additive values
 - Showing and editing anchors, IDs and `ref` columns in the grid

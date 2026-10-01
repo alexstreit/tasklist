@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { rollup, totals } from '../../src/plugins/estimate/fields';
 import { byTitle, est, load } from './helpers';
 
 describe('roll-up (§2.7)', () => {
@@ -101,5 +102,23 @@ describe('the rollup field (PLUGINS.md §4)', () => {
     const { model } = load('A | 1d\n    B\n    C');
     expect(est(model, model.roots[0])).toEqual({ pin: 8, effective: 8, mode: 'pinned', hasValue: true, doneSum: 0 });
     expect(model.diagnostics).toEqual([]);
+  });
+});
+
+describe('the duration role (PLUGINS.md §6)', () => {
+  // Durations are spans: they don't add up across parallel tasks.
+  const text = '---\nprofile: schedule\n---\nA | | 5d\n    B | 1d | 2d\n    C | 2d | 3d\n';
+
+  it('estimate leaves the column bound to the duration role out of its roll-ups', () => {
+    const { model } = load(text);
+    const [a] = model.roots;
+    expect(model.bindings.roles.get('duration')).toBe('dur');
+    expect(model.get(a, rollup)!.has('dur')).toBe(false);
+    expect(model.value(totals)!.has('dur')).toBe(false);
+    expect(est(model, a)).toMatchObject({ mode: 'derived', effective: 24 });
+  });
+
+  it('gives no override-differs on it', () => {
+    expect(load(text).model.diagnostics.filter((d) => d.code === 'override-differs')).toEqual([]);
   });
 });

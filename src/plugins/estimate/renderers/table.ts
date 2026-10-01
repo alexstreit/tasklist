@@ -1,7 +1,8 @@
 // Flat table renderer. One row per item with a level column, no nesting.
 
 import type { ItemNode, Model, RenderContext, Renderer } from '../../../core';
-import { addItemRow, addTotalRow, addValueCells, createGrid, mount, requires } from './shared';
+import { addItemRow, createGrid, mount } from '../../../ui/grid';
+import { addTotalRow, addValueCells, requires } from './shared';
 
 export const tableRenderer: Renderer = {
   id: 'table',
@@ -9,7 +10,7 @@ export const tableRenderer: Renderer = {
   requires,
 
   render(model: Model, host: HTMLElement, ctx: RenderContext): void {
-    const table = createGrid('plan-table', ['#', 'level', ''], model);
+    const table = createGrid('plan-table', ['#', 'level', '', ...model.columns.map((c) => c.name)]);
     const visit = (node: ItemNode, level: number): void => {
       const row = addItemRow(table, node, ctx);
       const levelCell = row.insertCell();

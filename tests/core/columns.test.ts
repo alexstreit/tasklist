@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../../src/app/registry';
-import { PLAN_PROFILE } from '../../src/core';
+import { PLAN_PROFILE, SCHEDULE_PROFILE } from '../../src/core';
 import { rollup, totals } from '../../src/plugins/estimate/fields';
 
 const DEFAULTS = [
@@ -53,6 +53,11 @@ describe('the plan profile (§2.1)', () => {
   it('is built in with the text published as profiles/plan.rows', () => {
     const published = readFileSync(new URL('../../profiles/plan.rows', import.meta.url), 'utf8');
     expect(published.startsWith(PLAN_PROFILE)).toBe(true);
+  });
+
+  it('the schedule profile is built in with the text published as profiles/schedule.rows', () => {
+    const published = readFileSync(new URL('../../profiles/schedule.rows', import.meta.url), 'utf8');
+    expect(published.startsWith(SCHEDULE_PROFILE)).toBe(true);
   });
 
   it('applies to a .plan file or an unnamed one, and not to other files', () => {

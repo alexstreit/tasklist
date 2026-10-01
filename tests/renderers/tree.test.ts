@@ -142,3 +142,12 @@ describe('tree renderer', () => {
     expect(rows).toHaveLength(500);
   });
 });
+
+describe('the duration role (PLUGINS.md §6)', () => {
+  it('shows no summed dur on a parent in a profile: schedule file', () => {
+    const { host } = render('---\nprofile: schedule\n---\nA | | 5d\n    B | 1d | 2d\n    C | 2d | 3d\n');
+    const dur = [...host.querySelectorAll('thead th')].findIndex((th) => th.textContent === 'dur');
+    // Each row's own cell as written, and no ⟨Σ …⟩ beside the parent's.
+    expect([...host.querySelectorAll<HTMLTableRowElement>('tbody tr')].map((tr) => tr.cells[dur].textContent)).toEqual(['5d', '2d', '3d']);
+  });
+});

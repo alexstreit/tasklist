@@ -3,7 +3,8 @@
 // and its one write path; this module builds the panels and runs the fixes.
 
 import type { EditResult } from 'rows';
-import { preview } from '../core';
+import { inputEdit, preview, resolveFix } from '../core';
+import { today } from '../ui/today';
 import type { Diagnostic, Fix, Model, Span } from '../core';
 
 export interface ProblemsHooks {
@@ -54,13 +55,17 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
   list.append(count, entries);
 
   let model: Model | null = null;
+  /** Today, as of the last update: a fix that suggests it writes the date its button showed. */
+  let day = '';
+  const fixesOf = (d: Diagnostic) => (d.fixes ?? []).map((fix) => resolveFix(fix, day));
 
   /**
    * Apply a fix; a confirm fix shows its exact change first, with its warning,
    * and cancelling writes nothing (spec §4b.6.1). A fix that takes a typed
    * value (a column's new name) shows it in an input, and the preview follows it.
    */
-  function runFix(host: HTMLElement, fix: Fix): void {
+  function runFix(host: HTMLElement, offered: Fix): void {
+    const fix = resolveFix(offered, day);
     if (fix.tier !== 'confirm') {
       hooks.write(host, () => ({ edits: fix.edits }));
       return;
@@ -75,7 +80,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
     if (fix.warning) box.append(part('fix-warning', fix.warning));
     let first: HTMLElement = ok;
     if (fix.input) {
-      const { span } = fix.input;
+      const typed = fix.input;
       const text = model?.doc.text ?? '';
       const input = document.createElement('input');
       input.className = 'fix-input';
@@ -83,7 +88,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
       input.setAttribute('aria-label', 'New name');
       input.addEventListener('input', () => {
         const value = input.value.trim();
-        edits = [{ ...span, insert: value }];
+        edits = [inputEdit(typed, value)];
         pre.textContent = preview(text, edits);
         ok.disabled = value === '';
       });
@@ -105,7 +110,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
     const where = hooks.titleOf(diagnostic.line) ?? `Line ${diagnostic.line}`;
     const go = button('problem', '', () => hooks.focus(diagnostic));
     go.append(part('severity', diagnostic.severity), part('where', where), part('message', diagnostic.message));
-    li.append(go, ...(diagnostic.fixes ?? []).map((fix) => button('fix', fix.label, () => runFix(li, fix))));
+    li.append(go, ...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(li, fix))));
     return li;
   }
 
@@ -147,7 +152,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
         item.className = `banner-item ${diagnostic.severity}`;
         const message = more > 0 ? `${diagnostic.message} (and ${more} more like it)` : diagnostic.message;
         item.append(part('severity', diagnostic.severity), part('message', message));
-        item.append(...(diagnostic.fixes ?? []).map((fix) => button('fix', fix.label, () => runFix(item, fix))));
+        item.append(...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(item, fix))));
         return item;
       }),
     );
@@ -158,6 +163,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
     list,
     update(next, settings) {
       model = next;
+      day = today();
       renderBanner(settings);
       renderList();
     },

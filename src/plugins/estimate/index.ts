@@ -1,5 +1,6 @@
 // The estimate plugin: roll-ups of every duration and number column, and the
-// views that show them (PLUGINS.md §4, §6). It declares no roles.
+// views that show them (PLUGINS.md §4, §6). Its only role is the optional
+// duration role, whose column it leaves out.
 
 import type { Plugin } from '../../core';
 import { tsvExporter } from './exporters/tsv';

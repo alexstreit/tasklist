@@ -7,6 +7,6 @@ export * from './vocabulary';
 export * from './workspace';
 export { createAnalyzer, includesOf, parsePlan } from './analyze';
 export { readTree } from './read';
-export { PLAN_PROFILE } from './profile';
+export { PLAN_PROFILE, SCHEDULE_PROFILE } from './profile';
 export { formatDuration } from './duration';
-export { preview } from './fixes';
+export { inputEdit, preview, resolveFix } from './fixes';

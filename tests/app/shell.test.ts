@@ -227,11 +227,11 @@ describe('renderer switcher', () => {
   const tab = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('#renderers button')].find((b) => b.textContent === label)!;
 
   it('lists every registered renderer, greying out one whose requirements are unmet', () => {
-    expect([...document.querySelectorAll('#renderers button')].map((b) => b.textContent)).toEqual(['Tree', 'Table', 'Gantt']);
+    expect([...document.querySelectorAll('#renderers button')].map((b) => b.textContent)).toEqual(['Tree', 'Table', 'Schedule']);
     expect(tab('Tree').classList.contains('active')).toBe(true);
     expect(tab('Table').disabled).toBe(false);
-    expect(tab('Gantt').disabled).toBe(true);
-    expect(tab('Gantt').title).toBe('needs the schedule plugin');
+    expect(tab('Schedule').disabled).toBe(true);
+    expect(tab('Schedule').title).toBe('needs project-start');
   });
 
   it('switches to the table renderer and back', () => {
@@ -258,8 +258,8 @@ describe('renderer switcher', () => {
   });
 
   it('never renders a greyed-out renderer', () => {
-    tab('Gantt').click();
-    expect(tab('Gantt').classList.contains('active')).toBe(false);
+    tab('Schedule').click();
+    expect(tab('Schedule').classList.contains('active')).toBe(false);
     expect(tab('Table').classList.contains('active')).toBe(true);
     expect(preview.querySelector('table')!.className).toContain('plan-table');
   });
