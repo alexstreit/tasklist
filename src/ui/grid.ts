@@ -29,6 +29,7 @@ export function createGrid(className: string, headers: string[]): HTMLTableEleme
 /** An item row: done and cursor classes, click-to-line, the outline number, then the caller adds the rest. */
 export function addItemRow(table: HTMLTableElement, node: ItemNode, ctx: RenderContext): HTMLTableRowElement {
   const row = table.tBodies[0].insertRow();
+  row.dataset.line = String(node.line);
   row.classList.toggle('done', node.done);
   if (node.line === ctx.cursorItem?.line) row.classList.add(ctx.cursorItem.exact ? 'at-cursor' : 'near-cursor');
   row.addEventListener('click', () => ctx.setCursorLine(node.line));
@@ -41,4 +42,8 @@ export function addItemRow(table: HTMLTableElement, node: ItemNode, ctx: RenderC
 export function mount(host: HTMLElement, table: HTMLTableElement, ctx: RenderContext): void {
   host.replaceChildren(table);
   if (ctx.scrollToCursor) table.querySelector('.at-cursor, .near-cursor')?.scrollIntoView({ block: 'nearest' });
+  // The line hovered in the editor bands the item row on exactly that line, if there is one.
+  ctx.onHoverLine?.((line) => {
+    for (const row of table.tBodies[0].rows) row.classList.toggle('hover', row.dataset.line === String(line));
+  });
 }

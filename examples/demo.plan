@@ -1,0 +1,29 @@
+---
+profile: schedule
+project-start: 2026-09-21
+---
+// The demo plan (Task 32), for the browser pass: the grid and the Gantt read side by side.
+// Its dates are checked by hand in tests/schedule/demo.test.ts.
+Discovery
+    ~Stakeholder interviews {#interviews} | 3d |  |            |                                 |            | alice
+    Requirements doc {#requirements}      | 2d |  |            | #interviews                     |            | alice
+    ^Requirements signed off {#signoff}   |    |  |            | #requirements
+Design
+    Architecture {#architecture}          | 2d |  |            | #signoff                        |            | bob
+    UX wireframes {#wireframes}           | 3d |  |            | #signoff                        |            | carol
+    Design review {#review}               | 4h |  |            | #architecture, #wireframes      |            | bob
+Build
+    API {#api}                            | 5d |  |            | #review                         |            | bob
+    Web app {#web}                        | 6d |  |            | #review                         |            | carol
+    Integrations {#integrations}          | 4d |  |            | #api                            |            | dave
+    Data migration {#migration}           | 3d |  | 2026-10-19 | #architecture                   |            | dave
+Test
+    System test {#system}                 | 4d |  |            | #web, #integrations, #migration |            | erin
+    UAT {#uat}                            | 3d |  |            | #system 2d                      |            | customer
+    ^UAT signed off {#uat-signoff}        |    |  |            | #uat
+Release
+    Deployment {#deploy}                  | 1d |  |            | #uat-signoff                    |            | bob
+    ^Go-live {#golive}                    |    |  |            | #deploy                         | 2026-11-02
+Docs
+    User guide {#guide}                   | 3d |  |            | #web                            |            | carol
+    Training {#training}                  | 1d |  |            | #guide, #uat-signoff            |            | carol

@@ -43,6 +43,10 @@ export interface GridEditor extends Leader {
   /** Also republishes the row layout. */
   update(model: Model): void;
   setCursorLine(line: number): void;
+  /** Band the row on `line`, hovered in the other pane; null clears it. */
+  setHoverLine(line: number | null): void;
+  /** The line of the row under the pointer; null off the rows, or on one with no line. Replaces any earlier callback. */
+  onHoverLine(cb: (line: number | null) => void): void;
   destroy(): void;
 }
 
@@ -123,6 +127,12 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   // The cell that is in the page's tab order; every other cell is -1.
   let tabStop: HTMLTableCellElement | null = null;
   let selectedRow: HTMLTableRowElement | null = null;
+  // The row the place is on, which has the current-row band.
+  let currentRow: HTMLTableRowElement | null = null;
+  // Hover across panes: the line under the pointer here, and the one hovered in the other pane.
+  let hovered: number | null = null;
+  let onHover: ((line: number | null) => void) | null = null;
+  let relayed: number | null = null;
   // A row being typed into that is not in the buffer yet: the insert-above
   // row and the new-task row. Nothing is written until a title is committed.
   let draft: { anchor: number; indent: number } | null = null;
@@ -434,6 +444,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
     byLine.clear();
     selectedRow = null;
+    currentRow = null;
     for (const row of rows) {
       if (row.line === draftLine) addDraftRow(body, columns);
       byLine.set(row.line, row);
@@ -443,6 +454,13 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     // The line the draft was anchored to is no longer a row (an undo, say).
     // Keep the draft on screen rather than dropping what was typed.
     if (draftLine !== null && !byLine.has(draftLine)) addDraftRow(body, columns);
+
+    // The last body row; the total row below it stays at the bottom of the pane (spec §4b.1).
+    const adder = body.insertRow();
+    adder.className = 'new-task';
+    for (let i = 0; i < leading(); i++) adder.insertCell();
+    adder.insertCell().append(newTask);
+    columns.forEach(() => adder.insertCell());
 
     const foot = table.createTFoot();
     const total = foot.insertRow();
@@ -455,20 +473,32 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       if (!sum) return;
       td.append(format(column, sum.effective), muted(`done ${format(column, sum.doneSum)}`));
     });
-
-    const adder = foot.insertRow();
-    adder.className = 'new-task';
-    for (let i = 0; i < leading(); i++) adder.insertCell();
-    adder.insertCell().append(newTask);
-    columns.forEach(() => adder.insertCell());
     markPlace();
+    markHover();
+  }
+
+  /** The line a body row is on: the front matter's first line, or its own; null for the draft and new-task rows. */
+  function lineOf(tr: HTMLTableRowElement): number | null {
+    if (tr.classList.contains('front-matter')) return frontMatter!.line;
+    return tr.dataset.line === undefined ? null : Number(tr.dataset.line);
+  }
+
+  /** Band the row hovered in the other pane. */
+  function markHover(): void {
+    for (const tr of table.tBodies[0]?.rows ?? []) tr.classList.toggle('hover', relayed !== null && lineOf(tr) === relayed);
+  }
+
+  function hover(line: number | null): void {
+    if (line === hovered) return;
+    hovered = line;
+    onHover?.(line);
   }
 
   // Row alignment (spec §3.4). The whole pane scrolls, header included, so the body's top is
   // measured in the pane's content.
   let minBodyTop = 0;
 
-  /** The body rows that are on screen: comment, blank and front matter rows too, and a draft row as `at: null`. */
+  /** The body rows that are on screen: comment, blank and front matter rows too, and the draft and new-task rows as `at: null`. */
   function measure(): RowLayout {
     const scrollTop = parent.scrollTop;
     const paneTop = parent.getBoundingClientRect().top;
@@ -480,7 +510,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       const rect = tr.getBoundingClientRect();
       // Off screen: above the pane's top, or below its bottom.
       if (rect.bottom <= paneTop || rect.top >= paneTop + parent.clientHeight) continue;
-      const line = tr.classList.contains('front-matter') ? frontMatter!.line : tr.classList.contains('draft') ? null : Number(tr.dataset.line);
+      const line = lineOf(tr);
       rows.push({ at: line === null ? null : { line }, top: rect.top - paneTop + scrollTop - bodyTop, height: rect.height });
     }
     return { version: model?.version ?? 0, bodyTop, contentHeight: parent.scrollHeight - bodyTop, scrollTop, rows };
@@ -519,10 +549,16 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    */
   function markPlace(): void {
     const line = at ? lineAt(buffer.text(), at.anchor) : null;
-    const row = at?.column === WBS && line !== null ? cellFor(line, WBS)?.parentElement : null;
+    const current = line !== null ? ((cellFor(line, WBS)?.parentElement as HTMLTableRowElement | undefined) ?? null) : null;
+    if (current !== currentRow) {
+      currentRow?.classList.remove('at-cursor');
+      currentRow = current;
+      currentRow?.classList.add('at-cursor');
+    }
+    const row = at?.column === WBS ? current : null;
     if (row !== selectedRow) {
       selectedRow?.classList.remove('selected');
-      selectedRow = (row as HTMLTableRowElement | null) ?? null;
+      selectedRow = row;
       selectedRow?.classList.add('selected');
     }
 
@@ -1018,6 +1054,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const hit = cellAt(event);
     if (hit && !editing) place(hit.row.line, hit.column);
   });
+  table.addEventListener('mouseover', (event) => {
+    const tr = (event.target as HTMLElement).closest('tr');
+    hover(tr && tr.parentElement === table.tBodies[0] ? lineOf(tr) : null);
+  });
+  table.addEventListener('mouseleave', () => hover(null));
   table.addEventListener('dblclick', (event) => {
     const hit = cellAt(event);
     if (hit && hit.column !== DONE && hit.column !== WBS) beginEdit(hit.row, hit.column);
@@ -1143,6 +1184,13 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     setCursorLine(line) {
       const row = byLine.get(line);
       if (row) place(row.line, nearest(row, at?.column ?? TITLE), true);
+    },
+    setHoverLine(line) {
+      relayed = line;
+      markHover();
+    },
+    onHoverLine(cb) {
+      onHover = cb;
     },
     onRowLayout(cb) {
       // The first layout goes out at once, so the spacer is fitted first.

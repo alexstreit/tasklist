@@ -101,7 +101,7 @@ describe('the Gantt renderer', () => {
     const { host, render } = setup();
     const model = at(0);
     render(model, { cursorLine: 11, cursorItem: { line: 11, exact: true } });
-    expect([...host.querySelectorAll<HTMLElement>('.gantt-row.at-cursor')].map((b) => b.dataset.line)).toEqual(['11']);
+    expect([...host.querySelectorAll<HTMLElement>('.gantt-band.at-cursor')].map((b) => b.dataset.line)).toEqual(['11']);
     render(model, { cursorLine: 12, cursorItem: { line: 12, exact: false } });
     expect(host.querySelector('.at-cursor')).toBeNull();
     expect(host.querySelector<HTMLElement>('.near-cursor')!.dataset.line).toBe('12');
@@ -138,6 +138,67 @@ describe('the Gantt renderer', () => {
     render(analyze(fixture.replace('    Review {#review}', '    ~Review {#review}'), { filename: 'schedule.plan' }));
     expect(host.querySelector('.gantt-row[data-line="8"]')!.classList.contains('done')).toBe(true);
     expect(host.querySelector('.gantt-row[data-line="7"]')!.classList.contains('done')).toBe(false);
+  });
+
+  it('draws, bottom to top, the bands, the week lines, the marks, then the deadline, finish and today lines (Task 32)', () => {
+    const { host, render } = setup();
+    render(at(0), { cursorLine: 11, cursorItem: { line: 11, exact: true } });
+    const order = [...host.querySelectorAll<HTMLElement>('.gantt-band, .gantt-week-line, .gantt-row, .gantt-deadline, .gantt-finish, .gantt-today')].map((e) =>
+      e.classList.contains('gantt-band') ? 'band' : e.classList.contains('gantt-row') ? 'marks' : e.classList[1],
+    );
+    const runs = order.filter((kind, i) => kind !== order[i - 1]);
+    expect(runs).toEqual(['band', 'gantt-week-line', 'marks', 'gantt-deadline', 'gantt-finish', 'gantt-today']);
+    // Nothing positioned is stacked out of document order.
+    expect([...host.querySelectorAll<HTMLElement>('.gantt-canvas *')].every((e) => e.style.zIndex === '')).toBe(true);
+  });
+
+  it('bands every layout row with a line, an empty one too, and puts marks only on items (Task 32)', () => {
+    const { channel, host, render } = setup();
+    channel.follower.layout(layoutOf(0, [1, 5, 6, 9, 10]));
+    render(at(0));
+    const band = (line: number) => host.querySelector<HTMLElement>(`.gantt-band[data-line="${line}"]`)!;
+    expect([...host.querySelectorAll<HTMLElement>('.gantt-band')].map((b) => Number(b.dataset.line))).toEqual([1, 5, 6, 9, 10]);
+    expect([band(5).style.top, band(5).style.height]).toEqual(['20px', '20px']);
+    expect(band(5).children).toHaveLength(0);
+  });
+
+  it('reports the line hovered anywhere on a row, an empty one too, and null on leaving (Task 32)', () => {
+    const { channel, host, render } = setup();
+    const hovers: (number | null)[] = [];
+    channel.follower.layout(layoutOf(0, [1, 5, 6, 9, 10]));
+    render(at(0), { setHoverLine: (line) => hovers.push(line) });
+    const over = (el: Element) => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    over(host.querySelector('.gantt-row[data-line="10"] .gantt-bar')!);
+    over(host.querySelector('.gantt-row[data-line="10"]')!);
+    over(host.querySelector('.gantt-band[data-line="5"]')!);
+    over(host.querySelector('.gantt-canvas')!);
+    over(host.querySelector('.gantt-row[data-line="9"]')!);
+    expect(host.querySelector<HTMLElement>('.gantt-band.hover')!.dataset.line).toBe('9');
+    // A render, after a click say, replays the other pane's hover, which doesn't clear this one.
+    render(at(0), { setHoverLine: (line) => hovers.push(line), onHoverLine: (cb) => cb(null) });
+    expect(host.querySelector<HTMLElement>('.gantt-band.hover')!.dataset.line).toBe('9');
+    host.querySelector('.gantt-body')!.dispatchEvent(new MouseEvent('mouseleave'));
+    expect(hovers).toEqual([10, 5, null, 9, null]);
+    expect(host.querySelector('.gantt-band.hover')).toBeNull();
+  });
+
+  it('bands the line hovered in the other pane, an empty row too, keeps it across a redraw, and clears it (Task 32)', () => {
+    const { channel, host, render } = setup();
+    let relay: (line: number | null) => void = () => {};
+    const ctx: Partial<RenderContext> = { onHoverLine: (cb) => void ((relay = cb), cb(null)) };
+    channel.follower.layout(layoutOf(0, [1, 5, 6, 9, 10]));
+    render(at(0), ctx);
+    const hovered = () => [...host.querySelectorAll<HTMLElement>('.gantt-band.hover')].map((b) => Number(b.dataset.line));
+    relay(5);
+    expect(hovered()).toEqual([5]);
+    relay(9);
+    render(at(0), { ...ctx, onHoverLine: (cb) => void ((relay = cb), cb(9)) });
+    expect(hovered()).toEqual([9]);
+    // The cursor band and the hover band are separate classes, on the same band.
+    render(at(0), { ...ctx, cursorItem: { line: 9, exact: true }, onHoverLine: (cb) => void ((relay = cb), cb(9)) });
+    expect([...host.querySelector('.gantt-band[data-line="9"]')!.classList].sort()).toEqual(['at-cursor', 'gantt-band', 'hover']);
+    relay(null);
+    expect(hovered()).toEqual([]);
   });
 
   it('reports a scroll of its body', () => {

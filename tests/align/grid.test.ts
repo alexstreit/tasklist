@@ -65,8 +65,10 @@ describe('the grid leading', () => {
       [7, 'Code', 88, 22],
       [8, null, 110, 22],
       [9, 'Ship', 132, 22],
+      // The new-task row, the last body row (Task 32).
+      [null, null, 154, 22],
     ]);
-    // Toolbar, closed problems list and the header row; the totals and new-task rows are in the content.
+    // Toolbar, closed problems list and the header row; the new-task and total rows are in the content.
     expect(panes.stub.last()).toMatchObject({ kind: 'render', bodyTop: 60, contentHeight: 7 * 22 + 2 * 22, scrollTop: 0 });
   });
 

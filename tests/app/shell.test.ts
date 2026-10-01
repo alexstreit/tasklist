@@ -388,6 +388,61 @@ describe('editor toggle', () => {
   });
 });
 
+// Task 32: the shell relays a hovered line between the editor and the view, naming neither.
+describe('hover across panes', () => {
+  const tab = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('#renderers button')].find((b) => b.textContent === label)!;
+  const editorButton = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('#editors button')].find((b) => b.textContent === label)!;
+  const pane = () => document.getElementById('editor')!;
+  const over = (el: Element) => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  const leave = (el: Element) => el.dispatchEvent(new MouseEvent('mouseleave'));
+  const gridHover = () => [...pane().querySelectorAll<HTMLElement>('tbody tr.hover')].map((tr) => Number(tr.dataset.line));
+  const ganttHover = () => [...preview.querySelectorAll<HTMLElement>('.gantt-band.hover')].map((b) => Number(b.dataset.line));
+  const text = '---\nprofile: schedule\nproject-start: 2026-10-05\n---\n// plan\nBuild\n    API | 3d\n    UI | 2d\n';
+
+  it('relays between the grid and the Gantt both ways, a comment row too, and leaving clears both', async () => {
+    const { stackLayout } = await import('../support/layout');
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    vi.advanceTimersByTime(60);
+    tab('Gantt').click();
+    vi.advanceTimersByTime(60);
+    // The text editor doesn't take part in hover: hovering the Gantt with it mounted breaks nothing.
+    over(preview.querySelector('.gantt-row[data-line="7"]')!);
+    leave(preview.querySelector('.gantt-body')!);
+
+    // jsdom lays nothing out; the grid publishes only the rows it measures on screen.
+    const restore = stackLayout(pane(), (el) => (el instanceof HTMLTableRowElement ? 22 : undefined));
+    try {
+      editorButton('Grid').click();
+      vi.advanceTimersByTime(60);
+      over(preview.querySelector('.gantt-row[data-line="7"] .gantt-bar')!);
+      expect(gridHover()).toEqual([7]);
+      leave(preview.querySelector('.gantt-body')!);
+      expect(gridHover()).toEqual([]);
+      over(pane().querySelector('tr[data-line="8"] td')!);
+      expect(ganttHover()).toEqual([8]);
+      over(pane().querySelector('tr[data-line="5"] td')!);
+      expect(ganttHover()).toEqual([5]);
+      leave(pane().querySelector('table')!);
+      expect(ganttHover()).toEqual([]);
+      over(preview.querySelector('.gantt-row[data-line="6"]')!);
+      expect(gridHover()).toEqual([6]);
+      leave(preview.querySelector('.gantt-body')!);
+      expect(gridHover()).toEqual([]);
+
+      // A view that doesn't follow still shows the hovered line, by line.
+      tab('Tree').click();
+      over(pane().querySelector('tr[data-line="7"] td')!);
+      expect([...preview.querySelectorAll<HTMLTableRowElement>('tbody tr.hover')].map((tr) => tr.cells[1].textContent)).toEqual(['API']);
+      leave(pane().querySelector('table')!);
+      expect(preview.querySelector('tbody tr.hover')).toBeNull();
+    } finally {
+      editorButton('Text').click();
+      view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
+      restore();
+    }
+  });
+});
+
 describe('model versions', () => {
   it('every model the shell built carries the buffer’s version at the time', () => {
     vi.advanceTimersByTime(60);

@@ -144,7 +144,7 @@ describe('cell editing', () => {
   it('does not open an editor on an additive cell', () => {
     open('Auth | +1d\n    Login | 4h\n');
     click(cell(1, EST), 'dblclick');
-    expect(host.querySelector('tbody input.cell-input')).toBeNull();
+    expect(host.querySelector('tbody td[data-column] input.cell-input')).toBeNull();
   });
 
   it('toggles done with the checkbox', () => {
@@ -573,7 +573,7 @@ describe('keys', () => {
     key('8');
     expect(input().value).toBe('8');
     press(input(), 'z', { ctrlKey: true });
-    expect(host.querySelector('tbody input.cell-input')).toBeNull();
+    expect(host.querySelector('tbody td[data-column] input.cell-input')).toBeNull();
     expect(buffer.text()).toBe(plan);
   });
 

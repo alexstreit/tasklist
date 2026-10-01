@@ -276,7 +276,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 **Deliverables**
 
 - `src/grid/`: a grid editor over `PlanBuffer` per spec §4b.1–4b.3, items only in this task (comment/blank rows come in Task 15).
-- Columns: WBS, done checkbox, title, declared columns. Total row. New-task row. _(Task 31: a toggle for each other marker follows the done checkbox.)_
+- Columns: WBS, done checkbox, title, declared columns. Total row. New-task row. _(Task 31: a toggle for each other marker follows the done checkbox.)_ _(Task 32: the new-task row is the last body row, and the total row below it is pinned to the bottom of the pane.)_
 - Cell editing per §4b.2, including the raw-text-on-edit rule for summable cells and the pad-to-column helper.
 - Focus restoration by line and column after each buffer change, using `mapPos`.
 - App toolbar gains a Text / Grid toggle; only one editor is mounted at a time; the preview keeps working with either.
@@ -1283,6 +1283,8 @@ Expected, in work hours, with the displayed dates:
 
 **New tests:** `tests/align/text-editor.test.ts`, `grid.test.ts`, `connect.test.ts` and `idle.test.ts`; "model versions" in `tests/app/shell.test.ts`; `tests/ui/row-layout.test.ts` (`naturalLayout`, `ScrollEcho`); the buffer's version in `tests/buffer/shared.test.ts`. Test support: `tests/support/stub-follower.ts` (the stub, not registered), `layout.ts` (injected measurements and a mock `ResizeObserver`) and `panes.ts` (an editor leading the stub, connected as the shell connects them). No existing test was rewritten in substance: callers of `analyze` across the tests now pass `{ filename }`, and `tests/app/shell.test.ts` mocks the registry to record models.
 
+**Changed by Task 32:** the grid's new-task row is the last body row, so the grid also publishes it as `at: null`, after the last line's row. The first grid test ("has comment, blank and front matter rows…") gained that row. `contentHeight` is unchanged: it already included the total row, which is now pinned.
+
 **Changed by Task 30:** the shell converts between the two hosts' tops. A `bodyTop` or a header height is measured from its own host, `connectPanes` takes each pane's `host`, and it remeasures when either host is resized. Task 29 had assumed both panes start at the same height.
 
 **Spec:** plan-format-spec §3.2 (`Model.version`, `analyze`'s options object), §3.3 (`follows`, the follower part of `RenderContext`, `RowLayout` and the follower rules), §3.4 (the leader part of `PlanEditor`, both leaders, measuring only with a subscriber, the connecting rules) and §3.7 (`version()`). PLUGINS.md §4 and §6 add `Model.version` and `analyze`'s options object, and §8 lists `row-layout.ts` and `app/align.ts`. CLAUDE.md's repo layout names row alignment under `ui/`. VISION is unchanged.
@@ -1413,6 +1415,8 @@ Expected, in work hours, with the displayed dates:
 
 **New tests:** `tests/schedule/gantt-geometry.test.ts` and `gantt.test.ts`; `tests/views/pins.test.ts`; `tests/core/fields.test.ts` (`Model.fields()`, `label` and `kind`); `tests/renderers/scroll-to-cursor.test.ts`, which checks that the tree, table and schedule views still scroll their cursor row into view, `nearest`, now that `#host` scrolls (only the tree's had a test); in `tests/align/connect.test.ts`, "hosts at different heights" (follower host 32px lower, leader host 32px lower, and a host moving after connection); and in `tests/app/shell.test.ts`, "lines the Gantt up with the text editor's lines, and shows the pin review".
 
+**Changed by Task 32:** the cursor band is no longer on the Gantt's `.gantt-row`, but on a separate `.gantt-band`, drawn below the week lines; `.gantt-row` holds an item's marks and takes its clicks. Every layout row with a line has a band, including a row with no item, which still has no marks. `ganttGeometry` returns those as `bands`. The deadline, finish and today lines are drawn over the marks. "bands the cursor row" in `tests/schedule/gantt.test.ts` now reads `.gantt-band.at-cursor`.
+
 **Spec:** plan-format-spec §2.11 (the `deadline` field), §3.2 (`fields()`), §3.3 and §3.4 (hosts at different heights, converted by the shell), §5.3 (the preview as a column), and the new §5.5 Gantt and §5.6 Pin review. PLUGINS.md §4 (`label`, `kind` for single keys only, `fields()`, `definePinnable`'s signature) and §8 (the Gantt in `renderers/`, `views/pins/`, dates in `ui/`). CLAUDE.md's non-negotiable 5 lists `deadline` and `projectFinish` among the schedule fields renderers read. No rows spec is touched, and rows is unchanged.
 
 ---
@@ -1540,3 +1544,83 @@ Expected, in work hours, with the displayed dates:
 **Spec:** plan-format-spec §3.9 (`setAnchor`, `removeReferences`), §4b.1 (marker toggles, IDs on hover), §4b.2 (ref cells, their input and refusals, `mintId`, the editing exception, and diagnostics on named cells), §4b.4 (Space on a toggle, deleting a referenced row) and §4b.6.6's identity note; §7 loses "showing and editing anchors, IDs and `ref` columns in the grid" and "ID minting", and keeps `renameId` and showing the implicit `id` and `parent` columns. rows DESIGN §6: `setAnchor`, `deleteRow`'s option, both refusals and the property. No rows spec is touched, so no version changes, and there are no spec questions.
 
 **Changed in review** (from what was noticed above): DESIGN §1 no longer lists minting IDs under rows' "Later", and says it lives in the plan's core; PLUGINS.md §8 lists `mintId` among core's contents; plan-format-spec §4b.2 has the 24-character cut. Escape on the delete confirm still does nothing; Cancel is the way out.
+
+---
+
+## Task 32 — Demo polish: grid and Gantt reading
+
+**Serves:** the M1 demos (the demo kit). The grid and the Gantt are read together, so these four changes make that easier. There are no new features.
+
+**Deliverables**
+
+- **Pinned total row.** The grid's total row sticks to the bottom of the grid's scroll area, and the new-task row becomes the last row of the body.
+  - The total row's cells are `position: sticky; bottom: 0`, with a background so rows don't show through. The row keeps its own place at the end of the table, and that place is what lets the last task and the new-task row scroll clear of it, so the body gets no extra padding. _(Corrected in the task: it first asked for bottom padding equal to the total row's height. With the row in the flow, that padding would leave a blank, row-high gap above the total row.)_
+  - The grid's published `contentHeight` stays `scrollHeight − bodyTop`, which includes the total row. A follower whose content is shorter (the Gantt) pads to the leader's `contentHeight`, so both scroll to the same end.
+  - The keyboard rules for the new-task row (spec §4b.1, §4b.4) are unchanged, apart from the new order.
+- **Grid row band.** The current row gets the same full-width band the views use, behind the cells, as well as the focused cell's outline. A selected row (WBS cell) keeps its own style. Done rows keep their band, as in the tree.
+- **Gantt layer order.** From bottom to top: the cursor and hover bands, the scale's week lines, the bars and marks, then the deadline, today and project-finish lines. Labels stay readable over the band.
+- **Hover across panes,** a generic mechanism like the cursor line:
+  - `RenderContext` gains `setHoverLine(line | null)` and `onHoverLine(cb)`.
+  - `PlanEditor` gains optional `setHoverLine(line | null)` and `onHoverLine(cb)`.
+  - The shell relays a hover line from either pane to the other, and never names a view.
+  - **Implementers:** the grid (hovering a row reports its line, and a relayed line gets a hover band), the Gantt (both ways, hovering anywhere on a row) and the other views (show the band). The text editor stays out for now, since the interfaces are optional.
+  - Leaving a pane reports `null`. The hover band is lighter than the cursor band, in both themes.
+- **Spec:** §4b.1 (the total row and new-task row), §3.3 and §3.4 (hover), §5.5 (the Gantt's layers).
+
+**Acceptance criteria**
+
+- [x] The total row stays at the bottom while the grid scrolls, and the new-task row is the last body row. ArrowUp from it, Enter on the last item, and Tab wrapping behave as before. — `tests/grid/demo-polish.test.ts`: the new-task row is the body's last row and the total row is alone in the footer. Enter on the last item and Tab off its last cell reach the new-task row; ArrowUp and Shift+Tab come back. The existing new-task tests in `tests/grid/grid.test.ts` pass unchanged. Whether the row stays pinned while scrolling is CSS, so the browser pass checks it.
+- [x] Scrolled to the end, the last row in both the grid and the Gantt is fully visible, and the two panes' rows still line up (Task 29 test with injected measurements). — `tests/align/end-of-scroll.test.ts`: the grid leads the real Gantt, with 30 tasks in a 400px pane. At the end of the scroll, the last task and the new-task row end where the pinned total row begins. The Gantt's canvas is the grid's `contentHeight` (total row included), so its own furthest scroll is the grid's. Its last row's band is level with the grid's row and inside the pane. Task 29's alignment tests pass; one is rewritten (below).
+- [x] The grid's current row has a full-width band. Moving focus moves the band, and a done row still shows it. — `tests/grid/demo-polish.test.ts`: it moves with ArrowDown onto a comment row, stays on a done row and on a selected row (which also keeps `selected`), and survives a rebuild.
+- [x] Gantt geometry and draw order: the band is drawn before the lines (a DOM order test). — `tests/schedule/gantt.test.ts`, "draws, bottom to top…": in document order, bands, week lines, mark rows, then the deadline, finish and today lines, with no `z-index` in the canvas. Geometry returns a band for every layout row with a line ("bands every layout row with a line…").
+- [x] Hovering a Gantt row highlights the matching grid row, and the reverse. Leaving clears both. With a non-following view, hover still relays by line, and nothing breaks when a pane doesn't implement hover. — `tests/app/shell.test.ts`, "hover across panes", on the booted app: Gantt to grid, grid to Gantt, and a grid comment row to the Gantt's empty row on that line. Leaving either pane clears the other. The tree beside the grid bands the hovered item. Hovering the Gantt beside the text editor, which has no hover, breaks nothing. Unit tests: the grid's report and band in `tests/grid/demo-polish.test.ts`, the Gantt's both ways in `tests/schedule/gantt.test.ts`, and the four non-following views (exact line; a comment shows nothing) in `tests/renderers/hover.test.ts`.
+- [x] The colour-token test passes, and every new token has a dark value. — No new token: the hover band is `--hover`, and the grid's band is `--cursor-row-bg` and `--cursor-row-fg`, as in the views.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 1918 tests pass (1894 before, 24 new). Typecheck and lint are clean.
+- [ ] **Browser pass, Chrome and Firefox, both themes, on `examples/demo.plan`:** **Pending review.** There is no browser here. `examples/demo.plan` was added for this pass (below). Also check that the hover band (`--hover`) is visible in dark mode against `--bg`, both on its own and next to the cursor band. If it isn't, raise it then rather than adding a token.
+  - the total row stays pinned;
+  - the bands are visible;
+  - the lines show over the band;
+  - hover follows across the panes;
+  - alignment holds at the end of the scroll.
+
+**Visible changes:** all four.
+
+**Not in this task:** hover in the text editor, and anything about progress or the deps cell, which wait for the demos.
+
+**Decisions taken** (asked and answered before any code was written):
+
+- **The total row is sticky in the flow, with no extra padding.** Its cells are `position: sticky; bottom: 0` with `--bg` behind them. Its own place at the end of the table keeps the last rows clear of it, and `contentHeight` (`scrollHeight − bodyTop`, unchanged) includes it. The deliverable's wording is corrected above.
+- **The new-task row is published as `at: null`,** like the draft row.
+- **The hover band reuses `--hover`,** the colour of today's local hover, for both the relayed band and the Gantt's own. No new token. The browser pass checks it in dark mode.
+- **Hover is by exact line.** The grid reports any body row's line: comment, blank and front matter rows too, and null for the draft and new-task rows. A following Gantt has a row for every line in its layout, so hovering a grid comment bands the Gantt's empty row on that line, and the two panes stay visibly paired. The tree and the tables have no such rows, so they show nothing.
+
+**Decisions taken** (by me, within the task):
+
+- **`setHoverLine` and `onHoverLine` are optional on `RenderContext`,** like its follower part, so a renderer that ignores hover, and a test's context, need nothing. The shell always passes both. On `PlanEditor` they're optional, as the task says. `onHoverLine` replaces any earlier callback and returns nothing, because the shell destroys an editor rather than unsubscribing.
+- **The relay is in `main.ts`, beside the cursor relay.** `ctx.setHoverLine` goes to `editor.setHoverLine`. The editor's `onHoverLine` goes to the view's latest `onHoverLine` callback. The shell keeps the editor's latest line, and `ctx.onHoverLine` replays it at once, as `onRowLayout` replays its layout, so a view rebuilt by a render keeps the band. Mounting an editor relays null, and switching views drops the old view's callback. The shell names no view or editor.
+- **The Gantt keeps its own hover apart from the relayed one** and shows its own first. Each render replays the editor's line, which is null while the pointer is on the Gantt. Without the split, clicking a Gantt row would clear its hover band until the pointer moved.
+- **Gantt structure:** the canvas holds a band layer (`.gantt-band`, one per layout row with a line), the week lines, a mark layer, then the deadline, finish and today lines. Layers are 0px high, so only their rows take the pointer. `.gantt-row` is now a transparent, full-width row of an item's marks: it takes clicks and dims a done row's marks, and the band under it carries the cursor and hover classes. `ganttGeometry` returns `bands`, so the renderer still only places what the geometry gives it.
+- **The grid's current-row band is the class `at-cursor`,** with the views' `--cursor-row-bg` and `--cursor-row-fg`. It is on the row of the place, whatever the column, and goes when the place is cleared (Escape on a selected row). A selected row's cells paint `--accent-bg` over it.
+- **The total row's top rule is now an inset shadow** rather than a collapsed border, which a sticky cell leaves behind when it moves. It looks the same.
+- **The views' item rows carry `data-line`,** which the hover band matches on.
+
+**Visible changes:**
+
+- Grid: the total row stays at the bottom of the pane while the grid scrolls, and the new-task row is now above it, as the last row of the body (it was below the total row).
+- Grid: the current row (focused cell or selected row) has the cursor band across its full width, on done rows too. A selected row still shows its own colour.
+- Gantt: the cursor band is drawn under the week lines and the marks. The deadline, project-finish and today lines are drawn over the bars, which used to cover them.
+- Gantt: hovering any row, including an empty one for a comment or blank line beside a leading editor, bands it with `--hover` (before, only rows with marks highlighted, and the highlight covered the week lines).
+- Hover across panes: hovering a grid row bands the matching row in the Gantt, the tree, the table, the schedule table or the pin review. Hovering a Gantt row bands the matching grid row. Leaving a pane clears the other's band. The text editor doesn't take part.
+- No new theme tokens.
+
+**Rewritten tests:**
+
+- `tests/align/grid.test.ts`, "has comment, blank and front matter rows; front matter is one row on its first line": the published rows end with the new-task row, `[null, null, 154, 22]`, and the comment names the new-task and total rows in their new order. `contentHeight` is unchanged.
+- `tests/grid/grid.test.ts`, "does not open an editor on an additive cell" and "Ctrl+Z and Ctrl+Y undo and redo the buffer, but Ctrl+Z in an editor cancels the edit": the check that no cell editor is open now selects `tbody td[data-column] input.cell-input`, because the new-task row's input is now in the body too.
+- `tests/schedule/gantt.test.ts`, "bands the cursor row": reads `.gantt-band.at-cursor` instead of `.gantt-row.at-cursor`.
+
+**Added for the browser pass:** `examples/demo.plan`, a 23-row schedule (`profile: schedule`, `project-start: 2026-09-21`) with anchors, dependencies, a lag, a start pin, three milestones, a done row and a deadline, written as `examples/schedule.plan` writes them. `tests/schedule/demo.test.ts` checks the values worked out by hand: Data migration runs Mon 19 – Wed 21 Oct and is critical; System test starts Thu 22 Oct; UAT runs Fri 30 Oct – Tue 3 Nov; Go-live shows Wed 4 Nov and is late against 2 Nov; with Data migration's start pin removed, Go-live shows Wed 28 Oct and is not late. The code agreed with every value on the first run. The test also checks that the file reads with no errors and that its only warning is Go-live's `schedule-late`.
+
+**New tests:** `tests/schedule/demo.test.ts` (6, above); `tests/grid/demo-polish.test.ts` (7: the row order, the keys, the current-row band, the grid's hover both ways); `tests/align/end-of-scroll.test.ts` (1); `tests/renderers/hover.test.ts` (one per non-following view: tree, table, schedule, pins); four in `tests/schedule/gantt.test.ts` (draw order, bands on empty rows, reporting hover, showing a relayed hover); and "hover across panes" in `tests/app/shell.test.ts`.
+
+**Spec:** plan-format-spec §3.3 (hover on `RenderContext`; the `RowLayout` comment names the new-task row), §3.4 (hover on `PlanEditor` and the grid's part; the new-task row as `at: null`; `contentHeight` includes the pinned total row), §4b.1 (the new-task row, then the pinned total row; the current-row band) and §5.5 (`bands`, the layers, and hover both ways). PLUGINS.md, VISION and rows are unchanged. There were no spec questions, so no version changes.

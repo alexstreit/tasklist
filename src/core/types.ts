@@ -171,6 +171,11 @@ export interface RenderContext {
    *  renderer itself requested through setCursorLine. */
   scrollToCursor: boolean;
   setCursorLine(line: number): void;
+  // Hover across panes (spec §3.3): the shell relays a hovered line between the editor and the view.
+  /** The pointer is over the row on `line`; null when it left the rows. */
+  setHoverLine?(line: number | null): void;
+  /** The line hovered in the other pane. Replaces any earlier callback, and is called at once with the current line. */
+  onHoverLine?(cb: (line: number | null) => void): void;
   // The follower part, present only for a renderer that `follows` (spec §3.3).
   /** Where the leading pane's rows are. Replaces any earlier callback, and is called at once with the latest layout, if any. */
   onRowLayout?(cb: (layout: RowLayout) => void): void;

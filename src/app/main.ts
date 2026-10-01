@@ -24,6 +24,10 @@ const DEFAULT_NAME = 'untitled.plan';
 interface PlanEditor extends Partial<Leader> {
   update(model: Model): void;
   setCursorLine(line: number): void;
+  /** Band the row on `line`, hovered in the view; null clears it. */
+  setHoverLine?(line: number | null): void;
+  /** The line hovered in the editor, or null when the pointer left its rows. Replaces any earlier callback. */
+  onHoverLine?(cb: (line: number | null) => void): void;
   destroy(): void;
 }
 
@@ -64,6 +68,24 @@ function onCursorLine(line: number, fromApi: boolean): void {
   cursorLine = line;
   if (!fromApi) editorMovedCursor = true;
   schedule();
+}
+
+// Hover is relayed by line, like the cursor, between whichever editor and view are showing.
+let editorHover: number | null = null;
+let showHover: ((line: number | null) => void) | null = null;
+
+function setHoverLine(line: number | null): void {
+  editor?.setHoverLine?.(line);
+}
+
+function onHoverLine(cb: (line: number | null) => void): void {
+  showHover = cb;
+  cb(editorHover);
+}
+
+function onEditorHover(line: number | null): void {
+  editorHover = line;
+  showHover?.(line);
 }
 
 /** Why a renderer or exporter cannot use this model; null when it can. */
@@ -145,12 +167,14 @@ function render(): void {
   const scrollToCursor = editorMovedCursor && cursorItem !== null && cursorItem.line !== highlightedLine;
   editorMovedCursor = false;
   highlightedLine = cursorItem?.line ?? null;
-  active.render(model, host, { cursorLine, cursorItem, scrollToCursor, setCursorLine, ...(active.follows ? channel.context : {}) });
+  active.render(model, host, { cursorLine, cursorItem, scrollToCursor, setCursorLine, setHoverLine, onHoverLine, ...(active.follows ? channel.context : {}) });
 }
 
 function activate(renderer: Renderer): void {
   if (renderer === active) return;
   active = renderer;
+  // The new renderer subscribes when it renders.
+  showHover = null;
   channel = followerChannel();
   connect();
 }
@@ -269,6 +293,8 @@ function mountEditor(kind: (typeof editors)[number]): void {
     // Storage is not available; the app just opens in the default editor next time.
   }
   editor = kind.mount();
+  onEditorHover(null);
+  editor.onHoverLine?.(onEditorHover);
   // When an analysis is already pending the new editor fills on the next render.
   if (!dirty) editor.update(model);
   connect();

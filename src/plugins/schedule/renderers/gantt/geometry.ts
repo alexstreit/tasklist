@@ -30,6 +30,8 @@ export interface Gantt {
   /** The extent's width: through the later of the project finish and the latest deadline, rounded up to a whole working day, plus one. */
   width: number;
   rows: GanttRow[];
+  /** One per layout row with a line, item or not: where the cursor and hover bands go. */
+  bands: { line: number; top: number; height: number }[];
   /** One per distinct deadline date. */
   deadlines: { x: number; label: string }[];
   finish: number;
@@ -64,7 +66,9 @@ export function ganttGeometry(model: Model, layout: RowLayout, dayWidth: number,
   const days = Math.ceil(Math.max(end, ...due) / hpd) + 1;
 
   const rows: GanttRow[] = [];
+  const bands: Gantt['bands'] = [];
   for (const row of layout.rows) {
+    if (row.at) bands.push({ line: row.at.line, top: row.top, height: row.height });
     const node = row.at && items.get(row.at.line);
     if (!node) continue;
     const begins = model.get(node, start)!;
@@ -102,6 +106,7 @@ export function ganttGeometry(model: Model, layout: RowLayout, dayWidth: number,
   return {
     width: days * dayWidth,
     rows,
+    bands,
     deadlines: [...due].sort((a, b) => a - b).map((t) => ({ x: x(t), label: formatDate(calendar.toDate(t, 'end'), calendar) })),
     finish: x(end),
     ...(now >= 0 && now < days * hpd ? { today: x(now) } : {}),

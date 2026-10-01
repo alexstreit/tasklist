@@ -315,6 +315,15 @@ Renderers that read a plugin's fields belong to that plugin: tree and table are 
 
 `RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), and `setCursorLine(line)` for click-to-line. It is renderer-agnostic.
 
+**Hover.** The line under the pointer is relayed between the editor and the view, as the cursor line is, by line and never by which view or editor it is:
+
+```ts
+setHoverLine?(line: number | null): void; // the pointer is over the row on line; null when it left the rows
+onHoverLine?(cb: (line: number | null) => void): void; // the line hovered in the editor; replaces any earlier callback; called at once with the current line
+```
+
+A view bands the row on exactly the hovered line, with `--hover`, lighter than the cursor band; a line it has no row for (a comment, in the tree) shows nothing. The Gantt reports its own hover too: anywhere on a row, its band or its marks, including a following row with no item. The other views only show the band. Both members are optional, so a renderer that ignores hover still works.
+
 **Following.** A renderer that declares `follows: true` lines its rows up with a leading editor's (§3.4), row for row. Its `RenderContext` then also has:
 
 ```ts
@@ -331,7 +340,7 @@ interface RowLayout {
   scrollTop: number;
   rows: { at: { line: number } | null; top: number; height: number }[];
   // the visible rows, in CONTENT coordinates (from the top of the body, not of the viewport);
-  // a leader may add a margin either side. at: null for a grid draft row; { line } can gain a file in M3
+  // a leader may add a margin either side. at: null for the grid's draft and new-task rows; { line } can gain a file in M3
 }
 ```
 
@@ -364,9 +373,18 @@ scrollTo(top: number): void;
 setMinBodyTop(px: number): void; // start the body at least px from the pane's top; 0 removes the space
 ```
 
+**Hover.** An editor may also take part in hover (§3.3), with two optional members; the shell relays the editor's line to the view and the view's to the editor:
+
+```ts
+setHoverLine?(line: number | null): void; // band the row on line, hovered in the view; null clears it
+onHoverLine?(cb: (line: number | null) => void): void; // the line under the pointer, null when it leaves the rows; replaces any earlier callback
+```
+
+The grid takes part: hovering a body row reports its line (a comment, blank or front matter row's too; the draft and new-task rows report null), leaving the table reports null, and a relayed line bands its row, kept across a rebuild. The text editor doesn't, for now.
+
 - Both editors lead, and publish after a scroll, an edit, a fold, a resize and each `update`. A leader measures only while something subscribes: with no subscriber, none of these measures anything, and `setMinBodyTop` waits for one. Resizes come from a `ResizeObserver` on the pane; the grid also observes its toolbar, settings banner and problems list, so either opening or closing counts.
 - The text editor's rows are CodeMirror's line blocks, which cover wrapped lines; a folded line's block covers the lines folded into it, which have no rows. Its version is the buffer's: its view always shows the buffer's text. `setMinBodyTop` adds top padding to the content.
-- The grid's rows are its table's body rows on screen: items, comment, blank and front matter rows (front matter is one row, on its first line), and a draft row as `at: null`. Its version is its model's, since its rows are drawn from it. Its whole pane scrolls, header included, so `bodyTop` is measured in the pane's content. `setMinBodyTop` adds space above the table.
+- The grid's rows are its table's body rows on screen: items, comment, blank and front matter rows (front matter is one row, on its first line), and the draft and new-task rows as `at: null`. Its version is its model's, since its rows are drawn from it. Its whole pane scrolls, header included, so `bodyTop` is measured in the pane's content, and `contentHeight` is the rest of the pane's content, so it includes the pinned total row (§4b.1). A follower's body is as tall, so both scroll to the same end. `setMinBodyTop` adds space above the table.
 
 The shell connects a leader to a follower by declared capability, never by which view it is, with one function, `connectPanes(left, right)` (`src/app/align.ts`):
 
@@ -503,8 +521,9 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 - **IDs on hover.** Hovering the WBS cell of a row with an anchor shows its ID (`#review`), so a grid user can name the task to a text user. IDs are otherwise hidden: a grid user never needs one.
 - Comment and blank lines render as greyed rows: a WBS cell with no number, then one cell spanning the remaining columns and holding the raw line text, indentation included. They are editable as raw text — editing one into an item line is an ordinary text edit and the row changes kind on the next render — and they can be selected, deleted and moved like any row. The reverse is not a grid edit: an item's title cell edits only the title (§4b.2), so a `//` typed there is quoted and reads back as part of the title. An item is commented out in the text editor.
 - Front matter renders as a single collapsed greyed row at the top, read-only.
-- A read-only **total** row at the bottom shows document `effective` and `doneSum` per summable column.
-- Below the total row is one blank **new task** row. Typing into it inserts a new item line at the end of the document at the indent of the last item line (or indent 0 if none).
+- The last body row is one blank **new task** row. Typing into it inserts a new item line at the end of the document at the indent of the last item line (or indent 0 if none).
+- A read-only **total** row below it shows document `effective` and `doneSum` per summable column. It is pinned to the bottom of the grid's scroll area (its cells are sticky). It keeps its own place at the end of the table, which is what lets the last task and the new-task row scroll clear of it, so the body needs no extra padding.
+- The **current row**, the one the focused cell or selected row is on, has the views' cursor band across its full width, behind its cells, as well as the focused cell's outline. A selected row keeps its own style over it, and a done row keeps the band.
 
 ### 4b.2 Cells
 
@@ -713,12 +732,13 @@ The schedule plugin's renderer (§2.11): one row per item, nested like the tree,
 
 The schedule plugin's second renderer (`src/plugins/schedule/renderers/gantt/`), and the first that follows (§3.3). It draws from its `RowLayout`: the editor's when one leads, otherwise its natural layout. A row with no item stays empty, and only rows in the layout are drawn, so a folded parent's children have no marks while its bracket still spans their dates.
 
-- **Geometry** is a pure function, `ganttGeometry(model, layout, dayWidth, today)`, returning plain data: per row, a bar, a summary bracket or a milestone diamond, its flags (critical, late, done, pinned), a pinned start's `pinX`, a late row's `deadlineX`, and its layout row's `top` and `height`; the deadline lines, the project finish, the today line, and the scale. The renderer only places what it returns.
+- **Geometry** is a pure function, `ganttGeometry(model, layout, dayWidth, today)`, returning plain data: per row, a bar, a summary bracket or a milestone diamond, its flags (critical, late, done, pinned), a pinned start's `pinX`, a late row's `deadlineX`, and its layout row's `top` and `height`; a band for every layout row with a line, an empty one too; the deadline lines, the project finish, the today line, and the scale. The renderer only places what it returns.
+- **Layers,** from bottom to top: the cursor and hover bands, the scale's week lines, the marks, then the deadline, today and project-finish lines. Each item's marks sit on a transparent full-width row, which takes its clicks.
 - **The x axis is working days**: a position is `WorkHours / hoursPerDay × dayWidth`, so weekends take no space. `dayWidth` is 24px. The **extent** runs from hour 0 to the later of the project finish and the latest deadline, rounded up to a whole working day, plus one working day.
 - **The scale** shows a separator and a date label (as §5.4 formats dates) at each week's first working day, the day letters below, and each deadline's date. Its height is the Gantt's natural header height, which it reports. The chart scrolls sideways on its own; the scale moves with it.
 - **Marks:** a leaf bar from start to finish; a summary's bracket from its start to its finish; a milestone's diamond at its finish. Critical bars and brackets use the critical colour. A late row's mark is outlined in the warning colour, with a small marker at its deadline on that row. Done rows are dimmed. A pinned start (its mode isn't `derived`) has a pin mark at the pin's own date, so a pin that had no effect sits left of its bar.
 - **Lines:** each distinct deadline is a dashed full-height line; the project finish is a solid one; today, from `today()` in `src/ui/`, is drawn only when it falls inside the extent. Geometry takes today as a parameter, so it stays pure.
-- Hovering a mark shows the title, start and finish dates, duration and slack, as §5.4 formats them. Clicking a row or its mark moves the cursor to its line, and the cursor row is banded, through `RenderContext`. It is greyed out with the skip reason when the schedule's stages are skipped.
+- Hovering a mark shows the title, start and finish dates, duration and slack, as §5.4 formats them. Clicking a row or its mark moves the cursor to its line, and the cursor row is banded, through `RenderContext`. Hover goes both ways (§3.3): hovering anywhere on a row, empty or not, bands it and reports its line, and a line hovered in the editor is banded. A render replays only the editor's line, so it never clears the Gantt's own. It is greyed out with the skip reason when the schedule's stages are skipped.
 
 ### 5.6 Pin review
 
