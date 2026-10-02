@@ -56,9 +56,9 @@ describe('the pin review', () => {
 
   it('moves the cursor to a row’s line on a click, and bands the cursor row', () => {
     const setCursorLine = vi.fn();
-    const { rows } = review(fixture, { setCursorLine, cursorLine: 10, cursorItem: { line: 10, exact: true } });
+    const { rows } = review(fixture, { setCursorLine, cursorLine: { file: 'a.plan', line: 10 }, cursorItem: { file: 'a.plan', line: 10, exact: true } });
     rows[1].click();
-    expect(setCursorLine).toHaveBeenCalledWith(10);
+    expect(setCursorLine).toHaveBeenCalledWith({ file: 'a.plan', line: 10 });
     expect(rows.map((r) => r.classList.contains('at-cursor'))).toEqual([false, true, false, false]);
   });
 });

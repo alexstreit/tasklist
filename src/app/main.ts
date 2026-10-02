@@ -1,11 +1,16 @@
 // App shell: buffer -> analyze -> active renderer, with cursor sync both ways,
 // plus open/save of files through the workspace. The shell holds the open files,
 // each with its own buffer, and hands the active file's buffer to whichever editor
-// is mounted (spec §3.7, §6).
+// is mounted (spec §3.7, §6). In a folder, the editors show each file through its
+// composed view, which holds its one undo history and shows the files it mounts
+// as segments (spec §4.5); the file's own buffer is the record of its text.
 
 import { CodeMirrorBuffer } from '../buffer';
+import type { PlanBuffer } from '../buffer';
+import { ComposedBuffer, fileBuffer } from '../buffer/composed';
+import type { Mount } from '../buffer/pieces';
 import { mountsOf, Notice, unmetReason } from '../core';
-import type { Exporter, Model, Renderer, Workspace } from '../core';
+import type { Exporter, FileLine, ItemNode, Model, Renderer, Workspace } from '../core';
 import { mountTextEditor } from '../editor';
 import { mountGrid } from '../grid';
 import type { Leader } from '../ui/row-layout';
@@ -27,13 +32,17 @@ const DEBOUNCE_MS = 50;
 /** What the shell needs from whichever editor is mounted, and what one that leads also offers. Spec §3.4. */
 interface PlanEditor extends Partial<Leader> {
   update(model: Model): void;
-  setCursorLine(line: number): void;
-  /** Band the row on `line`, hovered in the view; null clears it. */
-  setHoverLine?(line: number | null): void;
+  setCursorLine(at: FileLine): void;
+  /** Band the row on `at`, hovered in the view; null clears it. */
+  setHoverLine?(at: FileLine | null): void;
   /** The line hovered in the editor, or null when the pointer left its rows. Replaces any earlier callback. */
-  onHoverLine?(cb: (line: number | null) => void): void;
+  onHoverLine?(cb: (at: FileLine | null) => void): void;
+  /** The files with unsaved changes: the composed text editor's segment headers mark them. */
+  showUnsaved?(files: ReadonlySet<string>): void;
   destroy(): void;
 }
+
+const sameLine = (a: FileLine | null, b: FileLine | null): boolean => a === b || (!!a && !!b && a.file === b.file && a.line === b.line);
 
 let active = renderers[0];
 // The active renderer's channel, when it follows; a new one for each renderer.
@@ -50,9 +59,9 @@ const filename = document.getElementById('filename')!;
 const status = document.getElementById('status')!;
 
 let model: Model;
-let lines: number[] = [];
-let cursorLine: number | null = null;
-let highlightedLine: number | null = null;
+let lines = new Map<string, number[]>();
+let cursorLine: FileLine | null = null;
+let highlightedLine: FileLine | null = null;
 let dirty = true;
 let timer: ReturnType<typeof setTimeout> | undefined;
 // True when the editor itself moved the cursor, so the preview scrolls to follow it.
@@ -63,32 +72,32 @@ const gathered = (): void => {
   schedule();
 };
 
-function setCursorLine(line: number): void {
-  editor?.setCursorLine(line);
+function setCursorLine(at: FileLine): void {
+  editor?.setCursorLine(at);
 }
 
-function onCursorLine(line: number, fromApi: boolean): void {
-  cursorLine = line;
+function onCursorLine(at: FileLine, fromApi: boolean): void {
+  cursorLine = at;
   if (!fromApi) editorMovedCursor = true;
   schedule();
 }
 
 // Hover is relayed by line, like the cursor, between whichever editor and view are showing.
-let editorHover: number | null = null;
-let showHover: ((line: number | null) => void) | null = null;
+let editorHover: FileLine | null = null;
+let showHover: ((at: FileLine | null) => void) | null = null;
 
-function setHoverLine(line: number | null): void {
-  editor?.setHoverLine?.(line);
+function setHoverLine(at: FileLine | null): void {
+  editor?.setHoverLine?.(at);
 }
 
-function onHoverLine(cb: (line: number | null) => void): void {
+function onHoverLine(cb: (at: FileLine | null) => void): void {
   showHover = cb;
   cb(editorHover);
 }
 
-function onEditorHover(line: number | null): void {
-  editorHover = line;
-  showHover?.(line);
+function onEditorHover(at: FileLine | null): void {
+  editorHover = at;
+  showHover?.(at);
 }
 
 /** Why a renderer or exporter cannot use this model; null when it can. */
@@ -148,23 +157,29 @@ function renderExporters(): void {
 
 // The root's mounts as of its last analysis, as written: the next snapshot follows them.
 let mounted: { path: string; refs: string[] } | null = null;
+// The mounted files' texts the last analysis read, for opening a composed one in the store.
+let snapshot: ReadonlyMap<string, string | null> = new Map();
 
 /**
  * Analyzes the active file with the files it mounts (PLUGINS.md §6). The mounts come from its model,
  * so when they change, or another file becomes active, it is analyzed again with the new snapshot.
  */
 function analyzeActive(): Model {
-  const { buffer, path } = files.active();
+  const file = files.active();
+  const { buffer, path } = file;
   const text = buffer.text();
   const root = path ?? '';
   const { workspace } = files;
-  const run = (refs: readonly string[] | null) =>
-    analyze(text, {
+  const run = (refs: readonly string[] | null) => {
+    snapshot = refs === null ? new Map() : mounts.snapshot(root, refs);
+    return analyze(text, {
       filename: path ?? undefined,
-      version: buffer.version(),
+      // The version of the buffer the editors show: the composed view's, in a folder.
+      version: editorBuffer(file).version(),
       // Only a workspace that can list files can read the ones mounted; otherwise each mount says to open the folder.
-      ...(workspace.can.list ? { files: refs === null ? new Map() : mounts.snapshot(root, refs), resolve: (from: string, ref: string) => workspace.resolve(from, ref) } : {}),
+      ...(workspace.can.list ? { files: snapshot, resolve: (from: string, ref: string) => workspace.resolve(from, ref) } : {}),
     });
+  };
   const known = mounted?.path === root ? mounted.refs : null;
   const next = run(known);
   const refs = mountsOf(next);
@@ -176,9 +191,30 @@ function analyzeActive(): Model {
 /** A file badge's Open, or a problem in a mounted file: that file becomes the active one, at `line`. */
 function openFile(path: string, line?: number): void {
   files.show(path).then(
-    () => line !== undefined && editor?.setCursorLine(line),
+    () => line !== undefined && editor?.setCursorLine({ file: path, line }),
     (e) => report('open', e),
   );
+}
+
+/**
+ * Shows in the active file's composed view the segments its model composes (spec §4.5). A mounted
+ * file not open yet is opened in the store, with the text the analysis read, so its edits have a
+ * buffer to land in.
+ */
+function recompose(next: Model): void {
+  const view = views.get(files.active());
+  if (!view) return;
+  const wanted: Mount[] = [];
+  const visit = (node: ItemNode): void => {
+    if (node.composes !== undefined) wanted.push({ file: node.file, line: node.line, target: node.composes });
+    node.children.forEach(visit);
+  };
+  next.roots.forEach(visit);
+  for (const { target } of wanted) {
+    const text = snapshot.get(target);
+    if (typeof text === 'string') files.adopt(target, text);
+  }
+  view.recompose(wanted, (file) => next.files.get(file)?.doc.schema.comment ?? '//');
 }
 
 function render(): void {
@@ -186,6 +222,8 @@ function render(): void {
     model = analyzeActive();
     lines = itemLines(model);
     dirty = false;
+    // A change of segments re-analyzes, for the new version; the model's files are as they were.
+    recompose(model);
     editor?.update(model);
     renderExporters();
   }
@@ -201,9 +239,9 @@ function render(): void {
   }
   renderTabs();
   const cursorItem = cursorItemFor(lines, cursorLine);
-  const scrollToCursor = editorMovedCursor && cursorItem !== null && cursorItem.line !== highlightedLine;
+  const scrollToCursor = editorMovedCursor && cursorItem !== null && !sameLine(cursorItem, highlightedLine);
   editorMovedCursor = false;
-  highlightedLine = cursorItem?.line ?? null;
+  highlightedLine = cursorItem ? { file: cursorItem.file, line: cursorItem.line } : null;
   active.render(model, host, {
     cursorLine,
     cursorItem,
@@ -250,6 +288,7 @@ function updateTitle(): void {
   const name = file.path ?? 'Untitled';
   filename.textContent = name;
   document.title = `${isDirty(file) ? '● ' : ''}${name} — Plan`;
+  editor?.showUnsaved?.(new Set(files.files().flatMap((f) => (f.path !== null && isDirty(f) ? [f.path] : []))));
   panel.update(
     files.workspace.can.list
       ? [...new Set([...files.listing(), ...files.files().flatMap((f) => (f.path === null ? [] : [f.path]))])].map((path) => {
@@ -286,8 +325,8 @@ function watch(buffer: CodeMirrorBuffer): void {
 /** Called whenever the store changes: follows a new active file, and redraws the markers. */
 function onFilesChange(): void {
   const file = files.active();
-  if (file.buffer !== shownBuffer) {
-    shownBuffer = file.buffer;
+  if (editorBuffer(file) !== shownBuffer) {
+    shownBuffer = editorBuffer(file);
     cursorLine = highlightedLine = null;
     dirty = true;
     mountEditor(editorKind);
@@ -298,12 +337,41 @@ function onFilesChange(): void {
 }
 
 function useFiles(next: OpenFiles<CodeMirrorBuffer>): void {
+  for (const view of views.values()) view.destroy();
+  views = new Map();
   files = next;
   mounts = createMounts({ workspace: next.workspace, openText }, gathered);
   mounted = null;
   files.onChange(onFilesChange);
   renderToolbar();
-  updateTitle();
+  onFilesChange();
+}
+
+// Each file's composed view, in a folder, made when the file is first shown (spec §4.5).
+let views = new Map<OpenFile, ComposedBuffer>();
+
+/** The buffer the editors show for a file: its composed view in a folder, else its own buffer. */
+function editorBuffer(file: OpenFile<CodeMirrorBuffer>): CodeMirrorBuffer {
+  if (!files.workspace.can.list || file.path === null) return file.buffer;
+  let view = views.get(file);
+  if (!view) {
+    const created = new ComposedBuffer(file.path, { buffer: (path) => files.files().find((f) => f.path === path)?.buffer });
+    created.onChange(() => {
+      if (views.get(files.active()) === created) {
+        dirty = true;
+        schedule();
+      }
+    });
+    created.onRefused(() => (status.textContent = "Edits can't cross from one plan file into another."));
+    views.set(file, (view = created));
+  }
+  return view;
+}
+
+/** The grid edits the root file's rows: through the composed view's history, in a folder. */
+function gridBuffer(file: OpenFile<CodeMirrorBuffer>): PlanBuffer {
+  const view = editorBuffer(file);
+  return view instanceof ComposedBuffer ? fileBuffer(view, view.root, file.buffer) : view;
 }
 
 /** Reports what a save did; true when nothing is left unsaved by it. */
@@ -319,10 +387,23 @@ function reportSave(file: OpenFile, result: SaveResult): boolean {
   return result.outcome !== 'kept';
 }
 
-/** Save the active file in place, or Save As when it has none. */
+/**
+ * Save the active file in place, or Save As when it has none. A composed view also saves every file
+ * it shows with unsaved changes, each with the check that its file on disk is unchanged (spec §4.5).
+ */
 async function save(as = false): Promise<void> {
   const file = files.active();
-  reportSave(file, await files.save(file, as));
+  const view = views.get(file);
+  const shown = view && !as ? new Set(view.pieces().files()) : new Set<string>();
+  const others = files.files().filter((f) => f !== file && f.path !== null && shown.has(f.path) && isDirty(f));
+  const saved = [file];
+  let ok = reportSave(file, await files.save(file, as));
+  for (const other of others) {
+    const result = await files.save(other);
+    if (reportSave(other, result) && result.outcome === 'saved') saved.push(other);
+    else ok = false;
+  }
+  if (ok && saved.length > 1) status.textContent = `Saved ${names(saved.map(nameOf))}`;
   updateTitle();
 }
 
@@ -367,7 +448,7 @@ async function open(create: () => Workspace): Promise<void> {
   if (!file) return;
   // The active buffer is reused, so the mounted editor stays; loading clears its history.
   useFiles(createOpenFiles(workspace, files.active().buffer, file, { makeBuffer, ask: { overwrite } }));
-  editor?.setCursorLine(1);
+  editor?.setCursorLine({ file: file.path, line: 1 });
   status.textContent = `Opened ${file.path}`;
   await files.relist();
 }
@@ -385,12 +466,17 @@ async function refresh(): Promise<void> {
 }
 
 const first = new CodeMirrorBuffer(example);
-let shownBuffer = first;
+let shownBuffer: CodeMirrorBuffer = first;
 
 // One editor is mounted at a time, over the active file's buffer (spec §3.4).
 const editors = [
-  { id: 'text', label: 'Text', mount: (): PlanEditor => mountTextEditor(files.active().buffer, editorHost, { onCursorLine, onSave: () => void save() }) },
-  { id: 'grid', label: 'Grid', mount: (): PlanEditor => mountGrid(files.active().buffer, editorHost, { onCursorLine, onOpenFile: openFile }) },
+  {
+    id: 'text',
+    label: 'Text',
+    mount: (): PlanEditor =>
+      mountTextEditor(editorBuffer(files.active()), editorHost, { onCursorLine, onSave: () => void save(), root: files.active().path ?? '', onOpenFile: (path) => openFile(path) }),
+  },
+  { id: 'grid', label: 'Grid', mount: (): PlanEditor => mountGrid(gridBuffer(files.active()), editorHost, { onCursorLine, onOpenFile: openFile }) },
 ];
 // Which editor was last used. A per-viewer convenience: it may be unavailable
 // (private browsing), and nothing depends on it.

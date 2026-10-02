@@ -137,7 +137,7 @@ export const rollup = definePinnableByColumn<Hours>("estimate", "rollup");
 - **The pin review** lists pins that override something: for every node field whose key is pinnable, single or by column, each value with both a `pin` and a `derived`, shown side by side. It knows no plugin, and leaf estimates never appear in it. It finds the keys through `model.fields()`. A single pinnable key carries a `label` and a `kind` for it; a by-column key carries neither, since its entries are named by their column and formatted by the column's type (a duration column as a duration, a number column as the plain number).
 - **Pin diagnostics are the owning plugin's.** Schedule's "pin has no effect" is `pin !== undefined && effective > pin`, and "pin equals derived" applies in `pinned` mode only, since in `additive` mode an equal pin doubles rather than repeats. Estimate keeps exactly today's diagnostics.
 - **What moves and what stays.** Each column's `effective`, `childSum` and `mode` become the `rollup` map's `Pinnable` (`childSum` is its `derived`; `childrenHaveValue` is `derived !== undefined`). `hasValue` and `doneSum` become estimate fields beside it. `done`, own and inherited, stays in core on `ItemNode`, because plan spec §2.8's inheritance is structure, not arithmetic.
-- **Cells are read through `model.field(node, index)`**, never `node.fields[index]`. A row keeps its own file's fields, in its own file's column order and with its own spans; `field` maps a root column to the row's own column (§6), or gives null. For a root row it is the identity. Plugins, their renderers and exporters, `src/views/` and `src/ui/` are held to it by lint; the editors, which show only the root file's rows, read `node.fields` directly.
+- **Cells are read through `model.field(node, index)`**, never `node.fields[index]`. A row keeps its own file's fields, in its own file's column order and with its own spans; `field` maps a root column to the row's own column (§6), or gives null. For a root row it is the identity. Plugins, their renderers and exporters, `src/views/` and `src/ui/` are held to it by lint; the grid, which shows only the root file's rows, reads `node.fields` directly.
 - **Storage** is an array per field, indexed by each node's place in the composed tree, which is fine for a portfolio of ten 500-line files. The interface hides it, so it can change.
 
 ## 5. Compute stages
@@ -329,7 +329,10 @@ src/
   views/                renderers that belong to no plugin: the pin review (pins/)
   app/                  shell, registry wiring, workspaces, open files, gathering mounted files (mounts.ts),
                         connecting a leader to a follower (align.ts)
-  editor/ grid/ buffer/ editing/   unchanged: editors are not plugins
+  buffer/               PlanBuffer, CodeMirrorBuffer, the line diff; the piece map (pieces.ts, pure: which file and
+                        offset range each run of a composed text comes from) and the composed buffer (composed.ts),
+                        which shows a root file with the files it mounts as segments (plan spec §3.7, §4.5)
+  editor/ grid/ editing/   unchanged: editors are not plugins
 ```
 
 Tree, table and TSV go into estimate because each reads estimate's roll-ups; a renderer that read only core fields would go in `views/`. What renderers and editors share goes in `ui/`. A plugin can't import another it doesn't require, so the schedule table uses the same rows and cursor rules as the tree through `ui/`, without depending on estimate; the text editor and the grid take today's date for fixes from it.

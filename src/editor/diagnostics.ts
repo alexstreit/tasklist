@@ -11,7 +11,8 @@ import type { Panel } from '@codemirror/view';
 import type { TextEdit } from '../buffer';
 import { inputEdit, preview, resolveFix } from '../core';
 import { today } from '../ui/today';
-import type { Diagnostic, Fix } from '../core';
+import type { Diagnostic, Fix, Model } from '../core';
+import { toDoc } from './files';
 
 /** Applies a fix's edits; the text editor sends them through the buffer (spec §4.4). */
 export type ApplyFix = (edits: TextEdit[]) => void;
@@ -20,6 +21,8 @@ export type ApplyFix = (edits: TextEdit[]) => void;
 interface Pending {
   fix: Fix;
   doc: Text;
+  /** The text of the file the fix's edits are in. */
+  text: string;
   apply: ApplyFix;
 }
 
@@ -79,7 +82,7 @@ function previewPanel(view: EditorView, pending: Pending): Panel {
     input.addEventListener('input', () => {
       const value = input.value.trim();
       edits = [inputEdit(typed, value)];
-      pre.textContent = preview(doc.toString(), edits);
+      pre.textContent = preview(pending.text, edits);
       ok.disabled = value === '';
     });
     dom.append(input);
@@ -98,6 +101,16 @@ function previewPanel(view: EditorView, pending: Pending): Panel {
   return { dom, mount: () => first.focus() };
 }
 
+/** Where a diagnostic is in the document, and how its fixes are applied and previewed. */
+interface Located {
+  diagnostic: Diagnostic;
+  from: number;
+  to: number;
+  /** The text of the file its edits are in. */
+  text: string;
+  apply?: ApplyFix;
+}
+
 /**
  * Spanned diagnostics underline exactly their span. Spanless ones become an
  * empty range at the start of their line: a gutter marker with no underline.
@@ -108,18 +121,28 @@ function previewPanel(view: EditorView, pending: Pending): Panel {
  * action writes the date its label showed.
  */
 export function toLintDiagnostics(diagnostics: readonly Diagnostic[], doc: Text, apply?: ApplyFix): LintDiagnostic[] {
+  const text = doc.toString();
+  return lint(
+    diagnostics.map((d) => {
+      const lineStart = doc.line(Math.min(d.line, doc.lines)).from;
+      const from = d.span ? Math.min(d.span.from, doc.length) : lineStart;
+      const to = d.span ? Math.min(d.span.to, doc.length) : lineStart;
+      return { diagnostic: d, from, to, text, apply };
+    }),
+    doc,
+  );
+}
+
+function lint(located: readonly Located[], doc: Text): LintDiagnostic[] {
   const day = today();
-  return diagnostics.map((d) => {
-    const lineStart = doc.line(Math.min(d.line, doc.lines)).from;
-    const from = d.span ? Math.min(d.span.from, doc.length) : lineStart;
-    const to = d.span ? Math.min(d.span.to, doc.length) : lineStart;
+  return located.map(({ diagnostic: d, from, to, text, apply }) => {
     const out: LintDiagnostic = { from, to, severity: d.severity, message: d.message };
     if (apply && d.fixes) {
       out.actions = d.fixes.map((suggested) => resolveFix(suggested, day)).map((fix) => ({
         name: fix.label,
         apply: (view: EditorView) => {
           if (!view.state.doc.eq(doc)) return;
-          if (fix.tier === 'confirm') view.dispatch({ effects: setPending.of({ fix, doc, apply }) });
+          if (fix.tier === 'confirm') view.dispatch({ effects: setPending.of({ fix, doc, text, apply }) });
           else apply(fix.edits);
         },
       }));
@@ -130,6 +153,28 @@ export function toLintDiagnostics(diagnostics: readonly Diagnostic[], doc: Text,
 
 export function showDiagnostics(view: EditorView, diagnostics: readonly Diagnostic[], apply?: ApplyFix): void {
   view.dispatch(setDiagnostics(view.state, toLintDiagnostics(diagnostics, view.state.doc, apply)));
+}
+
+/**
+ * Every file's diagnostics at their places in the document (spec §4.4, §4.5): a mounted file's are
+ * in its segment, and their fixes go to that file through `apply`. A diagnostic of a file the
+ * document doesn't show is left out.
+ */
+export function showModelDiagnostics(view: EditorView, model: Model, apply: (file: string, edits: TextEdit[]) => void): void {
+  const { state } = view;
+  const located: Located[] = [];
+  for (const d of model.diagnostics) {
+    const file = d.file ?? model.file;
+    const read = model.files.get(file);
+    if (!read) continue;
+    const line = read.lines[Math.min(d.line, read.lines.length) - 1];
+    const start = line ? toDoc(state, file, line.span.from) : toDoc(state, file, 0);
+    const from = d.span ? toDoc(state, file, Math.min(d.span.from, read.doc.text.length)) : start;
+    const to = d.span ? toDoc(state, file, Math.min(d.span.to, read.doc.text.length)) : start;
+    if (from === null || to === null) continue;
+    located.push({ diagnostic: d, from: Math.min(from, state.doc.length), to: Math.min(to, state.doc.length), text: read.doc.text, apply: (edits) => apply(file, edits) });
+  }
+  view.dispatch(setDiagnostics(state, lint(located, state.doc)));
 }
 
 export const planDiagnostics = [

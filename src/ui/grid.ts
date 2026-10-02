@@ -28,18 +28,17 @@ export function createGrid(className: string, headers: string[]): HTMLTableEleme
 
 /**
  * An item row: done and cursor classes, click-to-line, the outline number, then the caller adds the
- * rest. A mounted row is shaded, and its line is in another file, so the cursor and hover never
- * land on it and clicking it moves nothing.
+ * rest. A mounted row is shaded; its line is in its own file, which the cursor and hover name.
  */
 export function addItemRow(table: HTMLTableElement, node: ItemNode, ctx: RenderContext, model: Model): HTMLTableRowElement {
   const row = table.tBodies[0].insertRow();
   row.classList.toggle('done', node.done);
   if (node.file !== model.file) row.classList.add('mounted');
-  else {
-    row.dataset.line = String(node.line);
-    if (node.line === ctx.cursorItem?.line) row.classList.add(ctx.cursorItem.exact ? 'at-cursor' : 'near-cursor');
-    row.addEventListener('click', () => ctx.setCursorLine(node.line));
-  }
+  row.dataset.file = node.file;
+  row.dataset.line = String(node.line);
+  const cursor = ctx.cursorItem;
+  if (cursor && node.file === cursor.file && node.line === cursor.line) row.classList.add(cursor.exact ? 'at-cursor' : 'near-cursor');
+  row.addEventListener('click', () => ctx.setCursorLine({ file: node.file, line: node.line }));
   const outline = row.insertCell();
   outline.className = 'outline';
   outline.textContent = node.outlineNumber;
@@ -72,8 +71,8 @@ export function addTitleCell(row: HTMLTableRowElement, node: ItemNode, ctx: Rend
 export function mount(host: HTMLElement, table: HTMLTableElement, ctx: RenderContext): void {
   host.replaceChildren(table);
   if (ctx.scrollToCursor) table.querySelector('.at-cursor, .near-cursor')?.scrollIntoView({ block: 'nearest' });
-  // The line hovered in the editor bands the item row on exactly that line, if there is one.
-  ctx.onHoverLine?.((line) => {
-    for (const row of table.tBodies[0].rows) row.classList.toggle('hover', row.dataset.line === String(line));
+  // The line hovered in the editor bands the item row on exactly that line of that file, if there is one.
+  ctx.onHoverLine?.((at) => {
+    for (const row of table.tBodies[0].rows) row.classList.toggle('hover', at !== null && row.dataset.file === at.file && row.dataset.line === String(at.line));
   });
 }

@@ -14,10 +14,10 @@ const noParseRows = {
   message: 'Call analyze() from core instead of parsing with rows.',
 };
 
-// Only the text editor and the CodeMirror buffer may know about CodeMirror (spec §3.7).
+// Only the text editor and the CodeMirror and composed buffers may know about CodeMirror (spec §3.7).
 const noCodeMirror = {
   group: ['@codemirror/*'],
-  message: 'CodeMirror may only be imported from src/editor/ and src/buffer/CodeMirrorBuffer.ts.',
+  message: 'CodeMirror may only be imported from src/editor/, src/buffer/CodeMirrorBuffer.ts and src/buffer/composed.ts.',
 };
 
 // Renderers and exporters read computed fields, never the rows document (spec §3.2).
@@ -116,7 +116,7 @@ export default [
   restrict(['src/views/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows, viewsCoreOnly]),
   uiRule,
   ...noClock,
-  restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
+  restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts', 'src/buffer/composed.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['src/grid/**/*.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['tests/**/*.ts'], [rowsEntryOnly]),
   // packages/rows/src imports nothing outside itself: no app code, no packages, no Node APIs.

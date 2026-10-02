@@ -501,3 +501,22 @@ describe('model versions', () => {
     expect(buffer().version()).toBeGreaterThan(0);
   });
 });
+
+describe('search in the single-file workspace (Task 36)', () => {
+  it('Ctrl+F opens CodeMirror’s search panel; replace-all is one undo', async () => {
+    const { closeSearchPanel, replaceAll, SearchQuery, setSearchQuery } = await import('@codemirror/search');
+    view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', keyCode: 70, ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(document.querySelector('.cm-search')).not.toBeNull();
+    // Past the history's grouping delay, so the replace isn't joined to the edit before it.
+    vi.advanceTimersByTime(1000);
+    const before = view.state.doc.toString();
+    view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: 'API', caseSensitive: true, replace: 'Service' })) });
+    replaceAll(view);
+    expect(before).toContain('API');
+    expect(view.state.doc.toString()).toBe(before.replace('API', 'Service'));
+    view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', keyCode: 90, ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(view.state.doc.toString()).toBe(before);
+    closeSearchPanel(view);
+    expect(document.querySelector('.cm-search')).toBeNull();
+  });
+});

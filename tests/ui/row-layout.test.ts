@@ -7,17 +7,17 @@ import { naturalLayout, ScrollEcho } from '../../src/ui/row-layout';
 describe('naturalLayout', () => {
   const model = analyze('// plan\nA\n    B\n\nC\n    D\n', { filename: 'a.plan', version: 7 });
 
-  it('has one row per item, in document order, at the row height, keyed by line', () => {
+  it('has one row per item, in document order, at the row height, keyed by file and line', () => {
     expect(naturalLayout(model, model.version, { bodyTop: 30, scrollTop: 0, height: 400, rowHeight: 22 })).toEqual({
       version: 7,
       bodyTop: 30,
       contentHeight: 88,
       scrollTop: 0,
       rows: [
-        { at: { line: 2 }, top: 0, height: 22 },
-        { at: { line: 3 }, top: 22, height: 22 },
-        { at: { line: 5 }, top: 44, height: 22 },
-        { at: { line: 6 }, top: 66, height: 22 },
+        { at: { file: 'a.plan', line: 2 }, top: 0, height: 22 },
+        { at: { file: 'a.plan', line: 3 }, top: 22, height: 22 },
+        { at: { file: 'a.plan', line: 5 }, top: 44, height: 22 },
+        { at: { file: 'a.plan', line: 6 }, top: 66, height: 22 },
       ],
     });
   });
@@ -25,8 +25,8 @@ describe('naturalLayout', () => {
   it('has only the visible rows, in content coordinates', () => {
     const layout = naturalLayout(model, model.version, { bodyTop: 0, scrollTop: 30, height: 20, rowHeight: 22 });
     expect(layout.rows).toEqual([
-      { at: { line: 3 }, top: 22, height: 22 },
-      { at: { line: 5 }, top: 44, height: 22 },
+      { at: { file: 'a.plan', line: 3 }, top: 22, height: 22 },
+      { at: { file: 'a.plan', line: 5 }, top: 44, height: 22 },
     ]);
     expect(layout.scrollTop).toBe(30);
   });

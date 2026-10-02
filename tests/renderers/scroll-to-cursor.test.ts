@@ -16,8 +16,8 @@ describe.each(['tree', 'table', 'schedule'])('the %s view', (id) => {
     scroll.mockClear();
     // Line 11 is UI.
     renderer.render(analyze(fixture, { filename: 'schedule.plan' }), host, {
-      cursorLine: 11,
-      cursorItem: { line: 11, exact: true },
+      cursorLine: { file: 'schedule.plan', line: 11 },
+      cursorItem: { file: 'schedule.plan', line: 11, exact: true },
       scrollToCursor: true,
       setCursorLine: () => {},
     });

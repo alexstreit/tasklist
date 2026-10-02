@@ -92,6 +92,7 @@ export function compose(rootPath: string, root: FileRead, mounts: Mounts, readFi
     if (text === undefined) return;
     if (text === null) return say('warning', 'mount-missing', `${path} isn't in the folder, or can't be read`);
     const roots = show(path, readFile(path, text));
+    node.composes = path;
     node.children.push(...roots);
     roots.forEach((r) => visit(r, [...chain, path]));
   };

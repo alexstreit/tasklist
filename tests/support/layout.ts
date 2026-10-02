@@ -22,23 +22,25 @@ function install(inPane: (el: Element) => DOMRect | null): () => void {
 
 /**
  * A CodeMirror editor filling a 600×400 pane at the window's top: each line is as tall as
- * `lineHeight` says for its text, and the content scrolls with the scroller. CodeMirror measures
- * these heights itself, so its line blocks carry them.
+ * `lineHeight` says for its text, a composed text's segment header is `header` px tall (Task 36),
+ * and the content scrolls with the scroller. CodeMirror measures these heights itself, so its line
+ * blocks carry them.
  */
-export function editorLayout(pane: HTMLElement, lineHeight: (text: string) => number): () => void {
+export function editorLayout(pane: HTMLElement, lineHeight: (text: string) => number, header = 24): () => void {
   const PADDING = 4; // CodeMirror's own .cm-content padding
-  const heightOf = (el: Element) => lineHeight(el.textContent ?? '');
+  const isBlock = (el: Element) => el.classList.contains('cm-line') || el.classList.contains('cm-segment-header');
+  const heightOf = (el: Element) => (el.classList.contains('cm-segment-header') ? header : lineHeight(el.textContent ?? ''));
   return install((el) => {
     if (!pane.contains(el)) return null;
-    if (el.classList.contains('cm-line')) {
+    if (isBlock(el)) {
       const content = el.closest('.cm-content')!.getBoundingClientRect();
       let top = content.top + PADDING;
-      for (let s = el.previousElementSibling; s; s = s.previousElementSibling) if (s.classList.contains('cm-line')) top += heightOf(s);
+      for (let s = el.previousElementSibling; s; s = s.previousElementSibling) if (isBlock(s)) top += heightOf(s);
       return new DOMRect(0, top, PANE.width, heightOf(el));
     }
     if (el.classList.contains('cm-content')) {
-      const lines = [...el.querySelectorAll('.cm-line')].reduce((sum, line) => sum + heightOf(line), 0);
-      return new DOMRect(0, -el.closest('.cm-scroller')!.scrollTop, PANE.width, lines + 2 * PADDING);
+      const blocks = [...el.children].filter(isBlock).reduce((sum, block) => sum + heightOf(block), 0);
+      return new DOMRect(0, -el.closest('.cm-scroller')!.scrollTop, PANE.width, blocks + 2 * PADDING);
     }
     return new DOMRect(0, 0, PANE.width, PANE.height);
   });

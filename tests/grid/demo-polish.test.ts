@@ -98,7 +98,8 @@ describe('hover across panes', () => {
   it('reports the line of the row under the pointer, comment rows too, and null off the rows', () => {
     open(plan);
     const lines: (number | null)[] = [];
-    grid.onHoverLine((line) => lines.push(line));
+    // Each line is the root file's: a new document's, '' (Task 36: the hover names its file).
+    grid.onHoverLine((at) => lines.push(at === null ? null : at.file === '' ? at.line : NaN));
     over(cell(1, TITLE));
     over(cell(1, WBS)); // the same row: nothing new
     over(row(3).cells[1]);
@@ -112,13 +113,13 @@ describe('hover across panes', () => {
 
   it('bands the line hovered in the other pane, keeps it across a rebuild, and clears it', () => {
     open(plan);
-    grid.setHoverLine(3);
+    grid.setHoverLine({ file: '', line: 3 });
     expect(banded('hover')).toEqual(['3']);
     grid.update(analyze(buffer.text()));
     expect(banded('hover')).toEqual(['3']);
-    grid.setHoverLine(9);
+    grid.setHoverLine({ file: '', line: 9 });
     expect(banded('hover')).toEqual([]);
-    grid.setHoverLine(1);
+    grid.setHoverLine({ file: '', line: 1 });
     grid.setHoverLine(null);
     expect(banded('hover')).toEqual([]);
   });

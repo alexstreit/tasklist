@@ -35,9 +35,8 @@ export function naturalLayout(model: Model, version: number, viewport: Viewport)
   model.roots.forEach(collect);
   const first = Math.max(0, Math.floor(scrollTop / rowHeight));
   const last = Math.min(items.length, Math.ceil((scrollTop + height) / rowHeight));
-  // A mounted row's line is in its own file, so it says which.
   const rows = items.slice(first, last).map((node, i) => ({
-    at: node.file === model.file ? { line: node.line } : { line: node.line, file: node.file },
+    at: { file: node.file, line: node.line },
     top: (first + i) * rowHeight,
     height: rowHeight,
   }));

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// The shell with a portfolio (Task 35), over in-memory File System Access handles holding
+// The shell with a portfolio (Tasks 35 and 36), over in-memory File System Access handles holding
 // examples/portfolio/: a mount row in the single-file workspace says to open the folder; in the
 // folder the views show the whole portfolio; a file badge opens its file; a team file's unsaved edit
 // shows in the master without being written; and the problems list names each file. Each test builds
@@ -94,12 +94,13 @@ describe('the portfolio', () => {
     ]);
   });
 
-  it('a click on a mounted row moves no cursor', async () => {
-    const before = view.state.selection.main.head;
+  it('a click on a mounted row moves the cursor to it, in its segment (Task 36)', async () => {
+    findView();
     rows()[1].click();
     await settle();
-    expect(view.state.selection.main.head).toBe(before);
-    expect(rows().filter((r) => r.classList.contains('at-cursor'))).toEqual([]);
+    const head = view.state.selection.main.head;
+    expect(view.state.doc.lineAt(head).text).toBe('Design {#design}    | 2d');
+    expect(rows().filter((r) => r.classList.contains('at-cursor')).map((r) => own(r.cells[1]))).toEqual(['Design']);
   });
 
   it('Open on a mount row’s badge makes its file the active file', async () => {

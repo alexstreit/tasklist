@@ -104,6 +104,8 @@ export interface ItemNode extends NodeBase {
   file: string;
   /** A mount row's target, resolved, when it resolves inside the folder; for the file badge. */
   mount?: string;
+  /** The file this mount row shows under it: set only when its file is composed here, so its text appears as a segment (plan spec §2.12, §4.5). */
+  composes?: string;
 }
 
 export type Node = BlankNode | CommentNode | FrontMatterNode | ItemNode;
@@ -171,29 +173,34 @@ export interface Model extends ModelReader {
 
 // Renderer seam. Spec §3.3.
 
-/** The item a renderer should highlight for the editor cursor. */
-export interface CursorItem {
+/** A line of one file, by its path: the root file's or a mounted file's (spec §3.3). */
+export interface FileLine {
+  file: string;
   line: number;
+}
+
+/** The item a renderer should highlight for the editor cursor. */
+export interface CursorItem extends FileLine {
   /** True when the cursor is on the item's own line; false when it is on a
-   *  comment or blank line and this is the nearest item at or before it. */
+   *  comment or blank line and this is the nearest item of the same file at or before it. */
   exact: boolean;
 }
 
 export interface RenderContext {
-  cursorLine: number | null;
+  cursorLine: FileLine | null;
   cursorItem: CursorItem | null;
   /** True when the highlighted item changed because of an editor cursor move.
    *  Renderers scroll the highlighted row into view. Never true for a move the
    *  renderer itself requested through setCursorLine. */
   scrollToCursor: boolean;
-  setCursorLine(line: number): void;
+  setCursorLine(at: FileLine): void;
   /** Make the file at `path` the active file: a mount row's file badge (Open). */
   openFile?(path: string): void;
   // Hover across panes (spec §3.3): the shell relays a hovered line between the editor and the view.
-  /** The pointer is over the row on `line`; null when it left the rows. */
-  setHoverLine?(line: number | null): void;
+  /** The pointer is over the row on `at`; null when it left the rows. */
+  setHoverLine?(at: FileLine | null): void;
   /** The line hovered in the other pane. Replaces any earlier callback, and is called at once with the current line. */
-  onHoverLine?(cb: (line: number | null) => void): void;
+  onHoverLine?(cb: (at: FileLine | null) => void): void;
   // The follower part, present only for a renderer that `follows` (spec §3.3).
   /** Where the leading pane's rows are. Replaces any earlier callback, and is called at once with the latest layout, if any. */
   onRowLayout?(cb: (layout: RowLayout) => void): void;
@@ -218,10 +225,10 @@ export interface RowLayout {
   /**
    * The visible rows (a leader may add a margin either side), in content coordinates: from the
    * top of the body, not of the viewport. `at` is null for a row with no line, such as the
-   * grid's draft row. `file` is a mounted row's file, in a follower's own natural layout; a
-   * leader's rows are the root file's, so they have none.
+   * grid's draft row; otherwise it is the line and the file it is in (the root's, or a mounted
+   * file's in a composed text editor or a natural layout).
    */
-  rows: { at: { line: number; file?: string } | null; top: number; height: number }[];
+  rows: { at: FileLine | null; top: number; height: number }[];
 }
 
 export interface Renderer {

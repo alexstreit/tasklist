@@ -4,7 +4,7 @@
 import { readFlag } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, EditResult } from 'rows';
 import { formatDuration, preview } from '../core';
-import type { Column, Diagnostic, Fix, ItemNode, Model, Node, Pinnable, Span } from '../core';
+import type { Column, Diagnostic, FileLine, Fix, ItemNode, Model, Node, Pinnable, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
@@ -35,7 +35,7 @@ type Row =
 
 export interface GridHooks {
   /** `fromApi` is true when the move came from setCursorLine rather than the user. */
-  onCursorLine(line: number, fromApi: boolean): void;
+  onCursorLine(at: FileLine, fromApi: boolean): void;
   /** Make a mounted file the active file, at `line`: a problem in it was clicked. */
   onOpenFile?(path: string, line: number): void;
 }
@@ -44,11 +44,11 @@ export interface GridHooks {
 export interface GridEditor extends Leader {
   /** Also republishes the row layout. */
   update(model: Model): void;
-  setCursorLine(line: number): void;
+  setCursorLine(at: FileLine): void;
   /** Band the row on `line`, hovered in the other pane; null clears it. */
-  setHoverLine(line: number | null): void;
+  setHoverLine(at: FileLine | null): void;
   /** The line of the row under the pointer; null off the rows, or on one with no line. Replaces any earlier callback. */
-  onHoverLine(cb: (line: number | null) => void): void;
+  onHoverLine(cb: (at: FileLine | null) => void): void;
   destroy(): void;
 }
 
@@ -134,7 +134,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   let currentRow: HTMLTableRowElement | null = null;
   // Hover across panes: the line under the pointer here, and the one hovered in the other pane.
   let hovered: number | null = null;
-  let onHover: ((line: number | null) => void) | null = null;
+  let onHover: ((at: FileLine | null) => void) | null = null;
   let relayed: number | null = null;
   // A row being typed into that is not in the buffer yet: the insert-above
   // row and the new-task row. Nothing is written until a title is committed.
@@ -480,6 +480,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     markHover();
   }
 
+  /** The root file's path: the grid shows only its rows. */
+  function root(): string {
+    return model?.file ?? '';
+  }
+
   /** The line a body row is on: the front matter's first line, or its own; null for the draft and new-task rows. */
   function lineOf(tr: HTMLTableRowElement): number | null {
     if (tr.classList.contains('front-matter')) return frontMatter!.line;
@@ -494,7 +499,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   function hover(line: number | null): void {
     if (line === hovered) return;
     hovered = line;
-    onHover?.(line);
+    onHover?.(line === null ? null : { file: root(), line });
   }
 
   // Row alignment (spec §3.4). The whole pane scrolls, header included, so the body's top is
@@ -514,7 +519,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       // Off screen: above the pane's top, or below its bottom.
       if (rect.bottom <= paneTop || rect.top >= paneTop + parent.clientHeight) continue;
       const line = lineOf(tr);
-      rows.push({ at: line === null ? null : { line }, top: rect.top - paneTop + scrollTop - bodyTop, height: rect.height });
+      rows.push({ at: line === null ? null : { file: root(), line }, top: rect.top - paneTop + scrollTop - bodyTop, height: rect.height });
     }
     return { version: model?.version ?? 0, bodyTop, contentHeight: parent.scrollHeight - bodyTop, scrollTop, rows };
   }
@@ -582,7 +587,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     markPlace();
     focusCell(line, column);
     updateToolbar();
-    hooks.onCursorLine(line, fromApi);
+    hooks.onCursorLine({ file: root(), line }, fromApi);
   }
 
   function clearPlace(): void {
@@ -1186,12 +1191,14 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       // The problems list may have changed height too.
       fitBodyTop();
     },
-    setCursorLine(line) {
+    setCursorLine({ file, line }) {
+      // Only the root file's rows are in the grid; mounted rows are edited in it in Task 37.
+      if (file !== root()) return;
       const row = byLine.get(line);
       if (row) place(row.line, nearest(row, at?.column ?? TITLE), true);
     },
-    setHoverLine(line) {
-      relayed = line;
+    setHoverLine(at) {
+      relayed = at !== null && at.file === root() ? at.line : null;
       markHover();
     },
     onHoverLine(cb) {

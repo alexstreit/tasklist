@@ -13,7 +13,7 @@ export interface Frame {
   contentHeight: number;
   scrollTop: number;
   /** `title` is null for a row whose line has no item: drawn empty. */
-  rows: { line: number | null; title: string | null; top: number; height: number }[];
+  rows: { line: number | null; file: string | null; title: string | null; top: number; height: number }[];
 }
 
 export interface StubFollower {
@@ -42,8 +42,9 @@ export function stubFollower({ header = 40, height = 400, rowHeight = 22 } = {})
     const current = layout ?? naturalLayout(model, model.version, { bodyTop: header, scrollTop, height, rowHeight });
     // A layout of another version is of other text: keep the last frame.
     if (current.version !== model.version) return;
-    const items = new Map<number, ItemNode>();
-    const collect = (node: ItemNode): void => void (items.set(node.line, node), node.children.forEach(collect));
+    // Keyed by file and line: a composed editor's rows come from several files (Task 36).
+    const items = new Map<string, ItemNode>();
+    const collect = (node: ItemNode): void => void (items.set(`${node.file}\n${node.line}`, node), node.children.forEach(collect));
     model.roots.forEach(collect);
     scrollTop = current.scrollTop;
     frames.push({
@@ -54,7 +55,8 @@ export function stubFollower({ header = 40, height = 400, rowHeight = 22 } = {})
       scrollTop,
       rows: current.rows.map((row) => ({
         line: row.at?.line ?? null,
-        title: (row.at && items.get(row.at.line)?.title) ?? null,
+        file: row.at?.file ?? null,
+        title: (row.at && items.get(`${row.at.file}\n${row.at.line}`)?.title) ?? null,
         top: row.top,
         height: row.height,
       })),

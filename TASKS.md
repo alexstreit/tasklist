@@ -1221,8 +1221,7 @@ Expected, in work hours, with the displayed dates:
   }
   ```
 
-  (Changed by Task 35: a follower's natural layout gives a mounted row's file as `at.file`; a leader's rows are the root file's and have none.)
-
+  (Changed by Task 35: a follower's natural layout gives a mounted row's file as `at.file`; a leader's rows are the root file's and have none.) (Changed by Task 36: every row carries its file, `at: { file, line }`, the root file's rows too; the composed text editor's rows come from every file it shows.)
   - Helpers: `naturalLayout(model, version, viewport)` builds a follower's own layout, with one row per item at `--row-height`. `ScrollEcho` drops a reported scroll within 1px of the value the shell last set, comparing values rather than using a boolean guard.
   - `--row-height` is one theme token, which the grid and followers share.
 
@@ -1566,6 +1565,7 @@ Expected, in work hours, with the displayed dates:
 - **Hover across panes,** a generic mechanism like the cursor line:
   - `RenderContext` gains `setHoverLine(line | null)` and `onHoverLine(cb)`.
   - `PlanEditor` gains optional `setHoverLine(line | null)` and `onHoverLine(cb)`.
+  - (Changed by Task 36: the hover relays, like the cursor's, take `{ file, line } | null`.)
   - The shell relays a hover line from either pane to the other, and never names a view.
   - **Implementers:** the grid (hovering a row reports its line, and a relayed line gets a hover band), the Gantt (both ways, hovering anywhere on a row) and the other views (show the band). The text editor stays out for now, since the interfaces are optional.
   - Leaving a pane reports `null`. The hover band is lighter than the cursor band, in both themes.
@@ -1792,7 +1792,7 @@ Expected, in work hours, with the displayed dates:
 
 - **An empty folder is a `Notice`, not `null`.** Decision 2 said `open()` returns null. But null already means the picker was dismissed, and the shell couldn't tell the two apart to show the status without asking which kind of workspace it holds. So `open()` throws a `Notice` (`src/core/workspace.ts`), whose message the shell shows as is. A refused permission and a forgotten folder are notices too. The behaviour is as decided.
 - **Asked before the picker, not after.** The unsaved-changes question comes before the picker or permission prompt, so Cancel shows no picker, and the remembered folder changes only when an open goes ahead. If the user then dismisses the picker, or the folder is empty, nothing is replaced: Discard and continue has discarded nothing.
-- **The active buffer carries over.** The first file of the new open files is loaded into the outgoing active buffer (origin `load`, which clears its history), so the mounted editor stays mounted. That is today's Open, and it's why Task 4's tests pass unchanged. Every other file gets its own buffer.
+- **The active buffer carries over.** The first file of the new open files is loaded into the outgoing active buffer (origin `load`, which clears its history), so the mounted editor stays mounted. That is today's Open, and it's why Task 4's tests pass unchanged. Every other file gets its own buffer. (Changed by Task 36: in a folder, the editors show each file through its composed view, which holds the file's one undo history; the file's own buffer is the store's record of its text and gets every change as `remote`, so own buffers no longer hold history there. Opening a folder mounts the editor on the new file's composed view. The single-file workspace is unchanged.)
 - **The changed-on-disk prompt** uses the same in-page dialog as decision 3, with **Overwrite** and **Keep**. In every dialog the last button is the one that changes nothing; it has the focus, and Escape picks it, so Enter never overwrites by accident.
 - **Save all and continue** counts a download as a success, since nothing is lost. A **Save all** where one file is kept still saves the others.
 - **Normalisation:** tabs and CRLF are normalised whenever a file is read (opening, the read before a write, a re-read), so normalising alone never counts as a change on disk. A save doesn't ask when the disk already holds the text being saved. A stale marker clears when the disk is back to the text last read.
@@ -1864,13 +1864,13 @@ Expected, in work hours, with the displayed dates:
   - `mount-part-unsupported` (info): `#part` mounts come later. This mount shows nothing for now.
   - `mount-needs-folder` (info): in the single-file workspace, "Open the folder to see mounted plans."
 
-  A mounted file's own diagnostics are in the model with their `file`. Editors show only the active file's diagnostics, and the problems list shows all of them, each naming its file.
+  A mounted file's own diagnostics are in the model with their `file`. Editors show only the active file's diagnostics, and the problems list shows all of them, each naming its file. (Changed by Task 36: the composed text editor shows every file's, each in its segment.)
 
 - **Views:**
   - Mounted rows have a shaded background. A mount row shows a file badge naming the file, which is a button that makes that file the active file ("Open").
-  - Clicking a mounted row doesn't move the cursor, because the active file's editor has no line for it.
+  - Clicking a mounted row doesn't move the cursor, because the active file's editor has no line for it. (Changed by Task 36: it moves the composed text editor's cursor to the row in its segment.)
   - Tree, table and schedule show the whole portfolio. Totals include mounted plans.
-  - **The Gantt, until Task 36:** following an editor, it shows only the root file's rows. A mount row's summary bar still spans its whole plan. Standalone, it shows everything. Note this in the task notes as temporary.
+  - **The Gantt, until Task 36:** following an editor, it shows only the root file's rows. A mount row's summary bar still spans its whole plan. Standalone, it shows everything. Note this in the task notes as temporary. (Changed by Task 36: following the composed text editor, it draws every row.)
 - **Speed:** with ten files of 500 lines each, typing in the root stays below 20 ms per analysis (median, measured once and noted). Only changed files are parsed again.
 - **Spec:** plan-format-spec, a new section on mounts and composition, plus §2.1 (the profiles), §2.9 (the codes) and §3.1–3.2. PLUGINS.md §5 and §6 (`ctx.targets`, mapping columns across files).
 
@@ -1926,12 +1926,12 @@ Where the numbers come from:
 **Visible changes:**
 
 - Mount rows and their badges. A mount row's title in the tree, table, schedule table and pin review has a file badge naming its file (`alpha.plan`), a button titled "Open teams/alpha.plan" that makes the file active. A mount whose path doesn't resolve (single-file workspace, outside the folder, `#part`) has none; Open on a missing file says "Could not open: …".
-- Shaded mounted rows in the views (new theme tokens `--mounted-row-bg`, `--badge-bg` and `--badge-fg`, light and dark). A mounted row has no cursor band, hover band or click-to-line.
+- Shaded mounted rows in the views (new theme tokens `--mounted-row-bg`, `--badge-bg` and `--badge-fg`, light and dark). A mounted row has no cursor band, hover band or click-to-line. (Changed by Task 36: it has all three, by its own file and line.)
 - The mount diagnostics.
 - Portfolio totals and schedule: the tree, table, schedule table, pin review and TSV export show the whole composed tree, and the totals, including the grid's total row and a mount row's roll-up in the grid, include mounted plans.
 - A dependency on a parent row is scheduled (it waits for the whole subtree) instead of being ignored with a warning. A row that depends on its own ancestor now gets `schedule-dep-cycle`.
 - The grid's problems list groups by file, each group headed by its path when more than one file has problems; a mounted file's entry has no fix buttons and opens its file.
-- **Temporary, until Task 36:** following an editor, the Gantt shows only the root file's rows; a mount row's bracket spans its whole plan. Standalone (no leader), it shows every row.
+- **Temporary, until Task 36:** following an editor, the Gantt shows only the root file's rows; a mount row's bracket spans its whole plan. Standalone (no leader), it shows every row. (Ended by Task 36.)
 - Mounted files are read again on window focus and Refresh.
 - Every plan and schedule file has an implicit `mount` column, from the profiles. A file that declares its own column named `mount` with another type now gets rows' `invalid-mount-column` (A13).
 
@@ -1958,8 +1958,8 @@ Where the numbers come from:
 - **What `analyze` is told.** `files` (text by resolved path, null when unreadable) and the workspace's `resolve`. The shell passes them only when the workspace can list files; without `files`, every mount gets `mount-needs-folder`. A path not gathered yet shows nothing and has no diagnostic, so `mount-missing` doesn't flash while files are read.
 - **Order.** "Document order" is composed order: within each file, and a mount row's own children before what it mounts. The mount that closes a loop is the first, in that walk, whose target is already on its own path. A `#part` mount gets only `mount-part-unsupported`; in the single-file workspace any other gets only `mount-needs-folder`.
 - **Gathering also runs on focus and Refresh** (VISION §6). A file is read once while it stays mounted, even when other mounts come and go, which is stronger than "while its path set is unchanged".
-- **Editors index only the root file's rows** (the grid, its levels and ref cells, the text editor's done lines, the cursor), since a mounted row's line is in another file. So `2.1` typed in a ref cell for a mounted row is "There's no task 2.1."; and the text editor and the grid's inline marks and settings banner show only the root's diagnostics.
-- **The Gantt's natural layout** gives a mounted row's file as `at.file`, which the `RowLayout` comment anticipated ("can gain a file"); a leader's rows have none and mean the root file.
+- **Editors index only the root file's rows** (the grid, its levels and ref cells, the text editor's done lines, the cursor), since a mounted row's line is in another file. So `2.1` typed in a ref cell for a mounted row is "There's no task 2.1."; and the text editor and the grid's inline marks and settings banner show only the root's diagnostics. (Changed by Task 36: the text editor shows every file's rows and diagnostics, and its cursor names its file; the grid is as it was.)
+- **The Gantt's natural layout** gives a mounted row's file as `at.file`, which the `RowLayout` comment anticipated ("can gain a file"); a leader's rows have none and mean the root file. (Changed by Task 36: `file` is always present.)
 - **Severities follow the task.** VISION §6 said "a missing file or a mount loop is an error"; it now says what the task does: a missing file is a warning (`mount-missing`), and a loop or a path outside the folder is an error.
 
 Also within the task, not asked:
@@ -1987,15 +1987,178 @@ Also within the task, not asked:
 
 ---
 
-## Task 36 — Composed text editor _(placeholder; written in full when Task 35 is done)_
+## Task 36 — Composed text editor
 
-**Serves:** M3b. The text editor shows the composed document. The master's own text comes first, and each mounted file's text sits in a **segment** after its mount row, shaded and bordered, with a header naming its file and showing whether it's saved, and with that file's own line numbers. It's one buffer and one undo history, and edits are routed to each file.
+**Serves:** M3b (VISION §6). When the active file mounts other plans, the text editor shows one composed document. The master's own text is interleaved with each mounted file's text. Each mounted file appears as a shaded **segment**, editable in place, and every edit lands in the file it belongs to. It has one undo history, and one search across every file. The Gantt follows every row, which ends Task 35's interim case.
 
-- An edit that would cross from one file into another is refused.
-- Search covers every segment.
-- Mounted rows are indented visually, with no change to their files.
-- Files changed on disk reload by line diff.
-- The Gantt follows composed rows, keyed `{ file, line }`.
+**The model:** the composed text is for editing only, and is never saved or analysed. Analysis still reads each file's own text, as in Task 35. A **piece map** says which file and which offset range each run of composed text comes from. The editor translates positions through it in both directions, from file to composed text and back.
+
+**Deliverables**
+
+- **Piece map** (`src/buffer/pieces.ts`, pure, with its own tests):
+  - **Building it.** From the root file, the gathered files and the model's mounts, build the composed text and its pieces. A mounted file's text is placed after its mount row's whole subtree in its own file, so that the mount row's own children come first, as in the model. Mounts nest, so the root file appears as several pieces around its segments.
+  - **Positions.** `toComposed(file, offset)` and `toFile(composedPos)` translate positions. `toFile` returns the file and its offset, or `joint` for a character that belongs to no file.
+  - **Joints.** Pieces always break at line starts. If a file doesn't end with a newline, the composed text adds one, as a **joint**: it isn't in any file, and an edit can't touch it.
+  - Property tests: composing and then cutting out each file's pieces gives back every file's text exactly. `toFile(toComposed(p))` is `p` for every position.
+- **Composed buffer** (`src/buffer/composed.ts`): a `PlanBuffer` over one CodeMirror `EditorState` holding the composed text, with one undo history.
+  - **Routing.** A transaction filter splits each change by pieces and applies it to the file it falls in, through the open-files store, which holds each file's text. A transaction that has any change crossing a piece boundary, or touching a joint, is refused **whole**. The status line says "Edits can't cross from one plan file into another." The text editor's line operations (Alt+Up/Down, Tab over a selection, Ctrl+/) are refused the same way when they would cross a boundary.
+  - **`applyFile(file, edits, origin)`** writes edits given in one file's own offsets, mapped into the composed text. The grid uses it for the master's rows now, and for mounted rows in Task 37.
+  - **Keeping every view of a file in step:** the store is the one record of each file's text. When the composed view edits a file, that file's own buffer (from Task 34) gets the same change as `remote`, outside its own undo history. When a file's own buffer is edited while the master isn't showing, the composed view gets the change as `remote` the next time it's built or shown. Changes are mapped exactly, not diffed, since their offsets are known.
+  - **Recomposing.** When analysis finds the mounts have changed (a mount cell typed or deleted, a file appearing or disappearing), segments are inserted or removed as one change with origin `compose`, outside the undo history. Undoing the mount edit recomposes back.
+  - **Reloads from disk** (Task 34's focus and Refresh) apply their line diff to the store, and then reach the composed view as `remote`.
+- **The text editor over the composed buffer:**
+  - **Highlighting.** Each line is tokenised with the syntax of the file it belongs to, from that file's own document.
+  - **Shading.** Each segment line gets a class for its mount depth, shaded and bordered. Mounted rows are indented visually by their mount depth, as line padding. Their text is unchanged, and the cursor still moves through the real characters.
+  - **Gutter.** It shows each file's own line numbers.
+  - **Segment header.** A block widget above each segment shows the file's path, its unsaved marker, and an Open button that makes that file active. The header can't be selected or edited.
+  - **Folding.** A mount row folds its own children and its segment together.
+  - **Diagnostics.** Every file's diagnostics show at their composed positions, so mounted files' diagnostics now appear in the text editor too. Fixes apply through `applyFile`.
+  - **Search and replace** are CodeMirror's own, over the whole composed text, and open folded segments to show a match. Replace works inside each file. A replace-all touching several files is one transaction and one undo.
+- **Cursor and hover across files.** `RenderContext.setCursorLine` and the cursor and hover relays take `{ file, line }`, and the root file's lines are `{ file: root, line }`.
+  - Clicking a mounted row in a view now moves the editor's cursor to that row in its segment, replacing Task 35's no-op. The badge's Open still switches the active file.
+  - The text editor publishes its row layout keyed `{ file, line }`, so a following Gantt draws every row of every plan. Remove Task 35's interim case, and its note.
+- **Saving:** Ctrl+S in a composed view saves the root and every mounted file changed in it, each through Task 34's check that the file on disk is unchanged. Save all is unchanged.
+- **Spec and docs:**
+  - plan-format-spec §3.7 (`applyFile`, the `compose` and `remote` origins, the piece map) and §4 (the composed text editor).
+  - PLUGINS.md §8 for where the piece map lives.
+  - VISION §6 if anything here departs from it.
+
+**Acceptance criteria** (jsdom with CodeMirror, on `examples/portfolio/`)
+
+- [x] The composed text is the master's text, with alpha's text after Product A's line and beta's after Product B's line. The piece map's properties hold, including for a file with no final newline. — `tests/buffer/pieces.test.ts` (the fixture by hand; 400 seeded random compositions, with empty files and files without a final newline: cutting each file back out, both translations, accepted edits followed by the map, refusals, recomposing, settling) and `tests/app/shell-composed.test.ts`, the first case.
+- [x] Editing Build's estimate to 4d inside alpha's segment changes the store's alpha text only. Product B moves to 64–96 as in Task 35. Nothing is written to disk, and the master's text is unchanged. One Ctrl+Z restores it. — `tests/app/shell-composed.test.ts`: Build reads Fri 9 – Wed 14 Oct and Product B Thu 15 – Tue 20 Oct, alpha alone is marked unsaved, nothing is written; routing on its own in `tests/buffer/composed.test.ts`.
+- [x] Refusals:
+  - deleting a selection from beta's last line into the master's next line is refused, and nothing changes;
+  - Alt+Down on a segment's last row is refused, while Alt+Down inside a segment works;
+  - an edit on a joint is refused.
+
+  — `tests/app/shell-composed.test.ts` (the first two, with the status line, and Alt+Down on a mount row); the joint in `tests/buffer/composed.test.ts` and `tests/buffer/pieces.test.ts`.
+- [x] Search finds `Code` in beta. Replace-all `Code` with `Coding` changes only beta, and one undo restores it. — `tests/app/shell-composed.test.ts`, through `@codemirror/search`'s commands; also a match opening a folded segment.
+- [x] An unsaved edit made in alpha's own buffer shows in the composed view. An edit made in the composed view reaches alpha's own buffer without entering its undo history. — `tests/app/shell-composed.test.ts`: made in alpha's own view (its history), and Ctrl+Z in alpha's view leaving the master's edit; on the buffers alone in `tests/buffer/composed.test.ts`.
+- [x] Typing `mount=teams/beta.plan` on a new master row composes beta in. Undo removes the segment and the cell together. — `tests/app/shell-composed.test.ts`. Beta is already mounted by Product B, where it would be an overlap, so the test first deletes Product B's mount (its segment goes), then types the new row.
+- [x] Beta changed on disk while clean: focusing the window updates its segment. An earlier edit in alpha can still be undone. — `tests/app/shell-composed.test.ts`.
+- [x] Highlighting uses each file's own syntax: beta's `work` column is coloured as a duration. The gutter shows each file's own line numbers, and the header shows the path and the unsaved marker. — `tests/app/shell-composed.test.ts` (alpha's front matter is coloured as front matter too; the marker in the Build case).
+- [x] Folding Product A hides alpha's segment. — `tests/app/shell-composed.test.ts`: the fold runs from the end of Product A's line to the end of alpha's last line.
+- [x] A mounted file's diagnostic shows at its composed position, and its fix applies to that file. — `tests/app/shell-composed.test.ts`: `project-start: 2026-02-30` typed in alpha's segment gets `key-type` there, and its fix writes today's date into alpha.
+- [x] The Gantt, following the text editor, draws all seven rows aligned with their lines, using injected measurements as in Task 29. The interim case is gone. — `tests/align/composed.test.ts` (20px lines, 24px headers; tops worked out by hand) and `tests/composition/gantt.test.ts`. The `?? model.file` in the geometry and its comment are gone, and spec §5.5 no longer describes it.
+- [x] Clicking Code in the schedule table moves the cursor to Code in beta's segment. — `tests/app/shell-composed.test.ts`; Design in the tree in `tests/app/shell-portfolio.test.ts`.
+- [x] Ctrl+S saves the master and beta after an edit in each, each with the on-disk check, and leaves alpha alone if alpha wasn't changed. — `tests/app/shell-composed.test.ts`: with beta changed on disk, saving asks for beta, and Keep writes only the master; then both are written.
+- [x] Every existing test passes. In particular, a file without mounts behaves exactly as before. Rewritten tests are listed in the notes. — 3865 tests (2133 before; 1305 of the new ones are seeded property cases); typecheck, lint and `vite build` clean.
+- [ ] **Browser pass in Edge on `examples/portfolio/`** and a real folder: pending review (there is no browser here). Also check there: the header's Open button, the search panel's look in both themes and in a single file, and that segment padding lines up under the mount row in the editor's font.
+  - typing in segments;
+  - a refused edit across a boundary;
+  - search and replace across files;
+  - folding;
+  - the Gantt beside the text editor;
+  - saving.
+
+**Visible changes:** segments in the text editor (shading, headers, their own line numbers), editing in place, search across files, the Gantt showing mounted rows when following the text editor, and clicking a mounted row moving the cursor.
+
+**Not in this task:**
+
+- Editing mounted rows in the grid (Task 37).
+- Moving a task from one file to another.
+- `#part` mounts.
+- Adjusting the indentation of pasted lines to where they're pasted.
+- Gantt zoom (Task 38).
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **Every file shown in a folder goes through its own composed view.** It has no segments when the file mounts nothing, and it holds the file's one undo history. The file's own buffer is the store's record of its text, and gets every change as `remote`. The single-file workspace is unchanged. Task 34's notes say so.
+2. **A segment goes after the mount row's subtree extent as §4.2 defines it** (`subtreeEndLine`, now in `src/editing/lines.ts`, which folding uses too), so a comment indented under the last child stays with it.
+3. **Line operations act on composed lines.** Alt+Down on a mount row is refused, since its next line is its segment's. Reordering projects is done in the grid (Task 37) or by cut and paste.
+4. **Segment lines are padded to the mount row's own indent plus one level** (4 characters); a nested segment adds its mount row's padding.
+5. **Ctrl+S saves the root and every file in the composed text with unsaved changes**, wherever the change was made.
+6. **Core records the segment on the row:** `ItemNode.composes`, set only when the file is composed under it. The shell never repeats core's rules.
+7. **Boundary positions** follow the rules now in `src/buffer/pieces.ts`'s comment and spec §3.7. `toFile(toComposed(p)) = p` holds except at the end of a file that ends with a newline and is followed by another piece. Deleting the newline that ends a piece, when another file's piece follows, is refused. A joint stays while its segment stays.
+8. **`RowLayout` rows are `at: { file, line }`**, with `file` always present.
+9. **The known limitation** (an edit in a segment, then its mount removed and restored by undo) is accepted, and written up in spec §3.7 with the case that triggers it.
+
+Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption for `src/buffer/composed.ts`, recorded in spec §3.7; routing in the buffer's dispatch, so undo and redo are routed too; following the files' own buffers live, which gives what "the next time it's built or shown" asks; bands and click-to-line on mounted rows; the "near" highlight within the same file.
+
+**Decisions taken** (by me, within the task; please check):
+
+- **Settling changes off the boundaries** (`PieceMap.settle`). This was found by the shell test, not foreseen. Alt+Down on a segment's second-last line deletes the last line up to the master's next line start; its undo then re-inserts that line exactly on the boundary, where position alone gives it to the master. Undo and redo skip transaction filters, so the fix comes earlier: a change that ends where another file's piece starts, taking or adding whole lines at its piece's end, is moved back one character before it enters the history. That's in a transaction filter for typed edits, and in `place` for `applyFile`. The text is the same, but the undo then lands inside the piece. Seeded tests check that the text and the file stay the same. Selecting a segment's last line and deleting it, then undoing, is covered by the same rule. An undo of an edit that emptied a segment's file entirely can still go astray; that is written up with the known limitation.
+- **The refusal is a change filter**, which drops a transaction's changes and maps its selection back, so nothing at all happens.
+- **Line operations run on the piece's own text** (`onPiece` in the keymap), after the crossing check. Their edits never reach past the piece, so moving the last line of a file without a final newline works, instead of touching the joint.
+- **A file a composed view shows is opened in the store** (`OpenFiles.adopt`) with the text the analysis read, so its edits have a buffer. It stays open after it's unmounted, like any file opened this session; the panel marks it unsaved when it is.
+- **Search is in every text editor**, composed or not, so it behaves the same everywhere (asked for after review). The single-file workspace's Ctrl+F now opens CodeMirror's panel instead of the browser's find: a visible change there, the one exception to "a file without mounts behaves exactly as before".
+- **The grid edits through the composed view** (`fileBuffer`): its text and changes are the root file's own buffer's, its edits go through `applyFile`, and its undo is the composed history. So in a folder both editors share one history, as the task's `applyFile` line implies. The grid ignores a cursor or hover line of another file until Task 37.
+- **A file's own change that would join two files' lines** (possible only from another view with different segments) rebuilds the composition line by line instead of being placed.
+- **Each recompose installs the freshly built map**, even when the text doesn't change, so a mount row's padding follows its indentation.
+- **Small API additions:** `FileLine` in `src/core/types.ts`; `PlanEditor.showUnsaved?(files)` for the headers, called whenever the title updates; `TextEditorHooks.root` (a plain buffer's file until a model names it) and `onOpenFile`. The `CodeMirrorBuffer` constructor takes extensions, and its `state`, `as` and `dispatch` are protected, for the composed buffer, which extends it.
+- **Analysis in a folder records the composed view's version**, the buffer the editors show, so a following Gantt draws when the layout and model agree.
+- **New theme token** `--segment-border`, light and dark.
+- **Timing** (measured once; no timing test): a recompose of a ten-file, 5,001-line composition after a keystroke in the root takes 1.6 ms median (p99 2.5 ms) in Vitest.
+- The plan spec has no draft version, so none was bumped.
+
+**Visible changes:**
+
+- In a folder, the text editor shows the active file with every file it mounts as a **segment**:
+  - shaded, with a border on the left;
+  - padded under its mount row;
+  - each file's own line numbers in the gutter;
+  - a header with the file's path, ● when it has unsaved changes, and **Open**.
+- **Editing in place.** Typing in a segment changes that file, and the panel and header mark it unsaved.
+- **Refusals.** An edit across files is refused with the status line "Edits can't cross from one plan file into another.", and so are Alt+Up/Down, Tab and Ctrl+/ over lines of two files. Alt+Down on a mount row or a segment's last row is refused.
+- **Search and replace** (Ctrl+F, CodeMirror's panel) across every file, in a folder. Replace-all is one undo.
+- **Search in the single-file workspace too.** Ctrl+F opens the same panel over the one file, in place of the browser's find.
+- **Diagnostics.** Mounted files' diagnostics show in the text editor, in their segments, with working fixes.
+- **Folding** a mount row folds its children and its segment.
+- **Cursor and hover.**
+  - Clicking a mounted row in the tree, table, schedule table, pin review or Gantt moves the text editor's cursor to it.
+  - Mounted rows get cursor and hover bands.
+  - Following the text editor, the Gantt draws every row of every plan.
+- **Saving.** Ctrl+S in a folder also saves every shown file with unsaved changes, each checked on disk. The status line reads "Saved portfolio.plan and beta.plan".
+- **Undo after opening a folder.** Opening a folder mounts the editor on the new file's view; its undo history starts empty, as before.
+
+**Rewritten tests:**
+
+- `tests/app/cursor.test.ts`: the four cases take `{ file, line }` and `itemLines` gives lines per file; no expectation changed. New case: a portfolio's lines per file, and the nearest item within the same file.
+- `tests/app/shell-folder.test.ts`: "Save all and continue stops when a save is kept" finds the editor view again first. Opening the other folder now mounts the editor on its file's composed view, so the old view is stale. No expectation changed.
+- `tests/app/shell-portfolio.test.ts`: "a click on a mounted row moves no cursor" became "a click on a mounted row moves the cursor to it, in its segment (Task 36)".
+- `tests/buffer/boundary.test.ts`: `src/buffer/composed.ts` joins the files allowed to import CodeMirror.
+- `tests/composition/gantt.test.ts`: "following an editor: the root file's rows only, by line; Product A's bracket spans alpha's plan" became "following the composed text editor: every row of every plan, keyed by file and line (Task 36)". The standalone case expects `file` on every row.
+- The cursor, hover and layout API, `{ file, line }` in place of a line number, with no behaviour expectation changed:
+  - `tests/grid/grid.test.ts`, "focuses a row when the preview asks for a line…" and "reports the line of the cell that was clicked": the cursor hook gets `{ file: '', line }`.
+  - `tests/grid/demo-polish.test.ts`: both hover cases.
+  - `tests/renderers/hover.test.ts`, `tests/renderers/scroll-to-cursor.test.ts`, `tests/renderers/table.test.ts`, `tests/renderers/tree.test.ts`, `tests/schedule/table.test.ts`, `tests/views/pins.test.ts`.
+  - `tests/schedule/gantt.test.ts`: the leader layouts, "moves the cursor…", "bands the cursor row" and both hover cases.
+  - `tests/schedule/gantt-geometry.test.ts`, `tests/ui/row-layout.test.ts` and `tests/align/connect.test.ts`: the layouts' `at` carry a file.
+- Support:
+  - `tests/support/stub-follower.ts` keys items by file and line, and records the file.
+  - `tests/support/layout.ts`'s `editorLayout` counts segment headers as blocks (24px by default). Nothing measured before had one.
+
+**New tests:**
+
+- `tests/buffer/pieces.test.ts`: the piece map.
+- `tests/buffer/composed.test.ts`: the composed buffer on its own buffers, including undo at a boundary.
+- `tests/app/shell-composed.test.ts`: the acceptance criteria through the shell.
+- `tests/align/composed.test.ts`: the Gantt following the composed text editor.
+- In `tests/app/shell.test.ts`, the case "search in the single-file workspace (Task 36)": Ctrl+F opens the panel, and replace-all is one undo.
+
+**Spec:**
+
+- plan-format-spec:
+  - §2.12: what the editors show, `composes`, the composed text editor's diagnostics.
+  - §3.3: `FileLine`; the cursor and hover relays; mounted rows' bands and clicks; `RowLayout`'s `at`.
+  - §3.4: `PlanEditor`, the composed buffer for both editors, rows keyed by file.
+  - §3.7: the composed buffer, the piece map and its rules, joints, routing, settling, `applyFile`, keeping files in step, recomposing, the `remote` and `compose` origins, the lint exemption and the known limitation.
+  - §4.1–§4.4: per-file syntax, folding, line operations and diagnostics in a composed text.
+  - The new §4.5, the composed text editor.
+  - §5.5: the Gantt, interim case removed.
+  - §6: saving, open files, changes on disk reaching segments.
+- PLUGINS.md:
+  - §8: `buffer/`, the piece map and the composed buffer.
+  - §4: the grid, not "the editors", reads `node.fields`.
+  - The working draft of PLUGINS.md in claude.ai needs the same changes.
+- VISION §6: no change; nothing here departs from it.
+- No rows change.
+- Tasks 29, 32, 34 and 35's notes say what this task changed.
+
+**Human review:** the piece map and its property tests first, then the transaction filter. Every edit in a portfolio passes through those two.
+
+---
 
 ## Task 37 — Composed grid _(placeholder)_
 

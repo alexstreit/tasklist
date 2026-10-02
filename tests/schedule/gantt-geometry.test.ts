@@ -94,10 +94,10 @@ describe('Gantt geometry against a leader’s layout', () => {
     contentHeight: 300,
     scrollTop: 0,
     rows: [
-      ...[1, 2, 3, 4, 5].map((line, i) => ({ at: { line }, top: i * 20, height: 20 })),
-      { at: { line: 6 }, top: 100, height: 20 },
+      ...[1, 2, 3, 4, 5].map((line, i) => ({ at: { file: 'schedule.plan', line }, top: i * 20, height: 20 })),
+      { at: { file: 'schedule.plan', line: 6 }, top: 100, height: 20 },
       { at: null, top: 120, height: 20 },
-      { at: { line: 9 }, top: 140, height: 40 },
+      { at: { file: 'schedule.plan', line: 9 }, top: 140, height: 40 },
     ],
   };
   const g = ganttGeometry(model, layout, 1, '2026-10-07');

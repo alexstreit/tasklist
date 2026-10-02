@@ -42,6 +42,11 @@ export interface OpenFiles<B extends PlanBuffer = PlanBuffer> {
   listing(): readonly string[];
   /** Makes the file at `path` active, reading it the first time. */
   show(path: string): Promise<OpenFile<B>>;
+  /**
+   * Opens a file already read from disk, as `text`, without making it active: a mounted file a
+   * composed view shows (plan spec §4.5). A file already open is returned as it is.
+   */
+  adopt(path: string, text: string): OpenFile<B>;
   /** Writes the file in place, or picks where with `as` or when it has no path. */
   save(file: OpenFile<B>, as?: boolean): Promise<SaveResult>;
   /** Saves every file with unsaved changes, one at a time. */
@@ -121,6 +126,15 @@ export function createOpenFiles<B extends PlanBuffer>(
       }
       active = file;
       changed();
+      return file;
+    },
+
+    adopt(path, text) {
+      let file = files.find((f) => f.path === path);
+      if (!file) {
+        files.push((file = make(options.makeBuffer(text), path, text)));
+        changed();
+      }
       return file;
     },
 

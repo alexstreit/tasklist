@@ -11,7 +11,7 @@ export type GanttMark = { kind: 'bar' | 'summary'; x: number; width: number } | 
 
 export interface GanttRow {
   line: number;
-  /** The row's file: the root file's path, or a mounted file's in a standalone chart. */
+  /** The row's file: the root file's path, or a mounted file's. */
   file: string;
   /** From the layout, in its content coordinates. */
   top: number;
@@ -74,9 +74,8 @@ export function ganttGeometry(model: Model, layout: RowLayout, dayWidth: number,
   const bands: Gantt['bands'] = [];
   for (const row of layout.rows) {
     if (!row.at) continue;
-    // A leader's rows are the root file's: until the editors show mounted rows, so is what follows them.
-    const at = { line: row.at.line, file: row.at.file ?? model.file };
-    bands.push({ ...at, top: row.top, height: row.height });
+    const at = row.at;
+    bands.push({ line: at.line, file: at.file, top: row.top, height: row.height });
     const node = items.get(rowKey(at));
     if (!node) continue;
     const begins = model.get(node, start)!;

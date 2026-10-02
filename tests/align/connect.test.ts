@@ -28,7 +28,7 @@ function fakeLeader() {
       bodyTop: Math.max(40, leader.minBodyTop),
       contentHeight: 66,
       scrollTop: leader.scrollTop,
-      rows: [1, 2, 3].map((line, i) => ({ at: { line }, top: i * 22, height: 22 })),
+      rows: [1, 2, 3].map((line, i) => ({ at: { file: 'a.plan', line }, top: i * 22, height: 22 })),
     }),
     publish: () => listeners.forEach((cb) => cb(leader.layout())),
     onRowLayout: vi.fn((cb: (layout: RowLayout) => void) => {

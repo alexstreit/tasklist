@@ -5,7 +5,7 @@
 // holds the cursor and hover bands, the week lines, the marks, then the deadline, finish and
 // today lines.
 
-import type { ItemNode, Model, RenderContext, Renderer, RowLayout, WorkHours } from '../../../../core';
+import type { FileLine, ItemNode, Model, RenderContext, Renderer, RowLayout, WorkHours } from '../../../../core';
 import { formatDate } from '../../../../ui/dates';
 import { naturalLayout } from '../../../../ui/row-layout';
 import { today } from '../../../../ui/today';
@@ -31,13 +31,13 @@ interface State {
   /** The layers the rows go in: their bands, and their marks above the week lines. */
   bandLayer: HTMLDivElement;
   markLayer: HTMLDivElement;
-  /** The current bands, by rowKey: every layout row with a line. Only the root file's carry `data-line`. */
+  /** The current bands, by rowKey: every layout row with a line, each with its `data-file` and `data-line`. */
   bands: Map<string, HTMLDivElement>;
   /** The current mark rows, by rowKey: the items among them. */
   rows: Map<string, HTMLDivElement>;
   /** The line hovered here, and the one hovered in the other pane; a render replays only the second. */
-  hover: number | null;
-  relayed: number | null;
+  hover: FileLine | null;
+  relayed: FileLine | null;
   model: Model | null;
   ctx: RenderContext | null;
   /** The leader's latest layout; null while nothing leads. */
@@ -85,15 +85,15 @@ function mount(host: HTMLElement): State {
     state.ctx?.reportScroll?.(body.scrollTop);
   });
   // Anywhere on a row, its band or its marks, is hovering its line; anywhere else is none.
-  const hovered = (line: number | null) => {
-    if (line === state.hover) return;
-    state.hover = line;
+  const hovered = (at: FileLine | null) => {
+    if (same(at, state.hover)) return;
+    state.hover = at;
     markHover(state);
-    state.ctx?.setHoverLine?.(line);
+    state.ctx?.setHoverLine?.(at);
   };
   canvas.addEventListener('mouseover', (event) => {
     const row = (event.target as HTMLElement).closest<HTMLElement>('[data-line]');
-    hovered(row ? Number(row.dataset.line) : null);
+    hovered(row ? lineOf(row) : null);
   });
   body.addEventListener('mouseleave', () => hovered(null));
   return state;
@@ -156,11 +156,10 @@ function drawChart(state: State, chart: Gantt): void {
 function drawRow(model: Model, node: ItemNode, row: GanttRow, ctx: RenderContext): HTMLDivElement {
   const marks = div('gantt-row');
   marks.classList.toggle('done', row.done);
-  // A mounted row's line is in another file: no cursor, hover or click-to-line for it.
-  if (row.file === model.file) {
-    marks.dataset.line = String(row.line);
-    marks.addEventListener('click', () => ctx.setCursorLine(row.line));
-  } else marks.classList.add('mounted');
+  if (row.file !== model.file) marks.classList.add('mounted');
+  marks.dataset.file = row.file;
+  marks.dataset.line = String(row.line);
+  marks.addEventListener('click', () => ctx.setCursorLine({ file: row.file, line: row.line }));
   const mark = div(`gantt-${row.mark.kind}`, marks);
   mark.style.left = `${row.mark.x}px`;
   if ('width' in row.mark) mark.style.width = `${row.mark.width}px`;
@@ -172,24 +171,22 @@ function drawRow(model: Model, node: ItemNode, row: GanttRow, ctx: RenderContext
   return marks;
 }
 
-/** A band's line, when it is the root file's; a mounted row's band is never the cursor's or hovered. */
-const bandLine = (band: HTMLDivElement): number | null => (band.dataset.line === undefined ? null : Number(band.dataset.line));
+/** The file and line a band or mark row is on. */
+const lineOf = (el: HTMLElement): FileLine => ({ file: el.dataset.file!, line: Number(el.dataset.line) });
+const same = (a: FileLine | null | undefined, b: FileLine | null | undefined): boolean => (a ?? null) === (b ?? null) || (!!a && !!b && a.file === b.file && a.line === b.line);
 
 function markCursor(state: State): void {
   const cursor = state.ctx?.cursorItem;
   for (const band of state.bands.values()) {
-    const line = bandLine(band);
-    band.classList.toggle('at-cursor', line !== null && cursor?.line === line && cursor.exact);
-    band.classList.toggle('near-cursor', line !== null && cursor?.line === line && !cursor.exact);
+    const on = same(lineOf(band), cursor);
+    band.classList.toggle('at-cursor', on && cursor!.exact);
+    band.classList.toggle('near-cursor', on && !cursor!.exact);
   }
 }
 
 function markHover(state: State): void {
   const hovered = state.hover ?? state.relayed;
-  for (const band of state.bands.values()) {
-    const line = bandLine(band);
-    band.classList.toggle('hover', line !== null && line === hovered);
-  }
+  for (const band of state.bands.values()) band.classList.toggle('hover', hovered !== null && same(lineOf(band), hovered));
 }
 
 /** Place an element per entry of `wanted` in `layer`, by rowKey: keep and move those already there, make the new ones, remove the rest. */
@@ -238,8 +235,9 @@ function draw(state: State): void {
   model.roots.forEach(collect);
   place(chart.bands, state.bands, state.bandLayer, (band) => {
     const el = div('gantt-band');
-    if (band.file === model.file) el.dataset.line = String(band.line);
-    else el.classList.add('mounted');
+    if (band.file !== model.file) el.classList.add('mounted');
+    el.dataset.file = band.file;
+    el.dataset.line = String(band.line);
     return el;
   });
   place(chart.rows, state.rows, state.markLayer, (row) => drawRow(model, items.get(rowKey(row))!, row, ctx));
@@ -270,8 +268,8 @@ export const ganttRenderer: Renderer = {
       current.layout = layout;
       draw(current);
     });
-    ctx.onHoverLine?.((line) => {
-      current.relayed = line;
+    ctx.onHoverLine?.((at) => {
+      current.relayed = at;
       markHover(current);
     });
     if (current.drawn !== model) draw(current);

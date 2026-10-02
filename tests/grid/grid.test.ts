@@ -27,7 +27,13 @@ function open(text: string): void {
   document.body.append(host);
   cursorLines = [];
   buffer = new InMemoryBuffer(text);
-  grid = mountGrid(buffer, host, { onCursorLine: (line) => cursorLines.push(line) });
+  grid = mountGrid(buffer, host, {
+    onCursorLine: (at) => {
+      // A new document's rows are in the file '' (Task 36: the cursor names its file).
+      expect(at.file).toBe('');
+      cursorLines.push(at.line);
+    },
+  });
   buffer.onChange(() => grid.update(analyze(buffer.text())));
   grid.update(analyze(buffer.text()));
 }
@@ -162,7 +168,7 @@ describe('cell editing', () => {
   it('focuses a row when the preview asks for a line, without reporting it as a user move', () => {
     open('Auth\n    Login | 4h\n');
     click(cell(1, TITLE));
-    grid.setCursorLine(2);
+    grid.setCursorLine({ file: '', line: 2 });
     expect(document.activeElement).toBe(cell(2, TITLE));
   });
 

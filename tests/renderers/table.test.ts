@@ -3,16 +3,17 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { analyze } from '../../src/app/registry';
-import type { RenderContext, Renderer } from '../../src/core';
+import type { FileLine, RenderContext, Renderer } from '../../src/core';
 import { cursorItemFor, itemLines } from '../../src/app/cursor';
 import { tableRenderer } from '../../src/plugins/estimate/renderers/table';
 import { treeRenderer } from '../../src/plugins/estimate/renderers/tree';
 import { hasValue, rollup, totals } from '../../src/plugins/estimate/fields';
 import example from '../../examples/example.plan?raw';
 
-function render(renderer: Renderer, text: string, cursorLine: number | null = null, setCursorLine = (_line: number) => {}) {
+function render(renderer: Renderer, text: string, line: number | null = null, setCursorLine = (_at: FileLine) => {}) {
   const host = document.createElement('div');
   const model = analyze(text);
+  const cursorLine = line === null ? null : { file: model.file, line };
   const ctx: RenderContext = { cursorLine, cursorItem: cursorItemFor(itemLines(model), cursorLine), scrollToCursor: false, setCursorLine };
   renderer.render(model, host, ctx);
   return { host, rows: [...host.querySelectorAll<HTMLTableRowElement>('tbody tr')], total: host.querySelector<HTMLTableRowElement>('tfoot tr')! };
@@ -48,6 +49,6 @@ describe('table renderer', () => {
     expect(rows[1].classList.contains('done')).toBe(true);
     expect(rows[7].classList.contains('near-cursor')).toBe(true);
     rows[4].click();
-    expect(setCursorLine).toHaveBeenCalledWith(9);
+    expect(setCursorLine).toHaveBeenCalledWith({ file: '', line: 9 });
   });
 });

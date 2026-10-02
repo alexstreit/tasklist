@@ -252,7 +252,8 @@ A master plan mounts other plans into its tree (VISION §6). A row with a valid 
 - **Columns across files.** The model's columns are the root's. Each maps to a mounted file's column in two passes: first by role (a root column bound to a role takes the mounted column bound to the same role), then by name among the mounted columns not already taken. A mounted column maps to at most one root column, so no total counts a value twice. A root column that maps to nothing is blank on that file's rows, with no diagnostic. Summable cells are read as hours by their own file's column, so its own `hpd` and `dpw` apply. Views and stages read every cell through this mapping (`PLUGINS.md` §4).
 - **Roles, markers and references** are each file's own: a row's `deps` cell is read through its own file's bindings, its milestone marker is its own file's, and a reference resolves within its own file, so two files can both have `#api`. Dependencies from one file into another file's rows come later.
 - **Scheduling** has one time axis: the root's calendar, from its `project-start`. A mounted file's own valid `project-start` is a floor on its roots (§2.11); a mounted file without one starts where the master puts it.
-- **Diagnostics.** A mounted file's own diagnostics are in the model with `file` (§2.9). The editors show only the root's; the grid's problems list shows all of them, grouped by file (§4b.6.3).
+- **Diagnostics.** A mounted file's own diagnostics are in the model with `file` (§2.9). The composed text editor shows every file's, each in its segment (§4.5); the grid shows only the root's inline, and its problems list shows all of them, grouped by file (§4b.6.3).
+- **What the editors show.** A mount row whose file is composed under it carries `composes`, the file's resolved path; a mount that shows nothing (missing, outside, a loop, an overlap, a `#part`, not gathered yet) has none. The composed text editor puts a segment under exactly these rows (§4.5), so the shell never repeats these rules.
 
 | Case                                                                                       | Severity | Code                     |
 | ------------------------------------------------------------------------------------------ | -------- | ------------------------ |
@@ -344,15 +345,15 @@ interface Renderer {
 
 Renderers that read a plugin's fields belong to that plugin: tree and table are in `src/plugins/estimate/renderers/`, and the schedule table in `src/plugins/schedule/renderers/`. A renderer that reads only core fields goes in `src/views/`. The row-per-item table, its cursor highlight and click-to-line, and their CSS are in `src/ui/`, shared UI code for renderers and editors, which imports only core's types (`PLUGINS.md` §8).
 
-`RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), `setCursorLine(line)` for click-to-line, and `openFile(path)`, which makes a file the active one (a mount row's file badge). It is renderer-agnostic.
+`RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), `setCursorLine(at)` for click-to-line, and `openFile(path)`, which makes a file the active one (a mount row's file badge). It is renderer-agnostic. A line is always named with its file, `{ file, line }` (`FileLine`, in `src/core/types.ts`): the cursor line, the cursor item, `setCursorLine` and the hover relays all take one, and the root file's lines are `{ file: root, line }`. So a mounted row's line is never mistaken for the root's line of the same number.
 
-**Mounted rows** (§2.12). The tree, table, schedule table and pin review show the whole composed tree, and their totals include mounted plans. A row from a mounted file has a shaded background; its line is in another file, so the cursor and hover never land on it, and clicking it moves nothing. A mount row's title has a **file badge** naming its file (`alpha.plan`), a button titled "Open _teams/alpha.plan_" that makes that file the active one; a mount row whose path doesn't resolve has none. The shared row and title helpers in `src/ui/grid.ts` do this for every view.
+**Mounted rows** (§2.12). The tree, table, schedule table and pin review show the whole composed tree, and their totals include mounted plans. A row from a mounted file has a shaded background. It has the cursor and hover bands and click-to-line like any row, by its own file and line: clicking it moves the composed text editor's cursor to that row in its segment (§4.5). The grid shows only the root file's rows (§4b), so with the grid as the editor a click on a mounted row moves nothing. A mount row's title has a **file badge** naming its file (`alpha.plan`), a button titled "Open _teams/alpha.plan_" that makes that file the active one; a mount row whose path doesn't resolve has none. The shared row and title helpers in `src/ui/grid.ts` do this for every view.
 
-**Hover.** The line under the pointer is relayed between the editor and the view, as the cursor line is, by line and never by which view or editor it is:
+**Hover.** The line under the pointer is relayed between the editor and the view, as the cursor line is, by file and line and never by which view or editor it is:
 
 ```ts
-setHoverLine?(line: number | null): void; // the pointer is over the row on line; null when it left the rows
-onHoverLine?(cb: (line: number | null) => void): void; // the line hovered in the editor; replaces any earlier callback; called at once with the current line
+setHoverLine?(at: FileLine | null): void; // the pointer is over the row on at; null when it left the rows
+onHoverLine?(cb: (at: FileLine | null) => void): void; // the line hovered in the editor; replaces any earlier callback; called at once with the current line
 ```
 
 A view bands the row on exactly the hovered line, with `--hover`, lighter than the cursor band; a line it has no row for (a comment, in the tree) shows nothing. The Gantt reports its own hover too: anywhere on a row, its band or its marks, including a following row with no item. The other views only show the band. Both members are optional, so a renderer that ignores hover still works.
@@ -371,10 +372,10 @@ interface RowLayout {
   bodyTop: number; // px from the pane's top to where its scrolling body starts, at scrollTop 0
   contentHeight: number; // the scrolling body's full height
   scrollTop: number;
-  rows: { at: { line: number } | null; top: number; height: number }[];
+  rows: { at: FileLine | null; top: number; height: number }[];
   // the visible rows, in CONTENT coordinates (from the top of the body, not of the viewport);
-  // a leader may add a margin either side. at: null for the grid's draft and new-task rows. A leader's rows are
-  // the root file's; a follower's natural layout gives a mounted row's file as at.file (§5.5)
+  // a leader may add a margin either side. at: null for the grid's draft and new-task rows; otherwise the
+  // row's file and its line in it: the composed text editor's rows come from every file it shows (§4.5)
 }
 ```
 
@@ -387,12 +388,12 @@ A row on screen is at `bodyTop + top - scrollTop` from the top of its pane's hos
 
 ### 3.4 Editors
 
-Exactly one editor is active at a time. Every editor writes to the shared `PlanBuffer` (§3.7); switching editors unmounts one and mounts the other over the same buffer. There is no editor-owned model that serialises back to text.
+Exactly one editor is active at a time. Every editor writes to the shared `PlanBuffer` (§3.7); switching editors unmounts one and mounts the other over the same buffer. In a folder that buffer is the active file's composed buffer: the text editor shows all of it (§4.5), and the grid edits the root file's rows through it, with `applyFile`. There is no editor-owned model that serialises back to text.
 
 ```ts
 interface PlanEditor {
   update(model: Model): void; // a fresh model for the buffer's current text
-  setCursorLine(line: number): void;
+  setCursorLine(at: FileLine): void; // the grid ignores a line of a file it doesn't show
   destroy(): void;
 }
 ```
@@ -410,14 +411,14 @@ setMinBodyTop(px: number): void; // start the body at least px from the pane's t
 **Hover.** An editor may also take part in hover (§3.3), with two optional members; the shell relays the editor's line to the view and the view's to the editor:
 
 ```ts
-setHoverLine?(line: number | null): void; // band the row on line, hovered in the view; null clears it
-onHoverLine?(cb: (line: number | null) => void): void; // the line under the pointer, null when it leaves the rows; replaces any earlier callback
+setHoverLine?(at: FileLine | null): void; // band the row on at, hovered in the view; null clears it
+onHoverLine?(cb: (at: FileLine | null) => void): void; // the line under the pointer, null when it leaves the rows; replaces any earlier callback
 ```
 
 The grid takes part: hovering a body row reports its line (a comment, blank or front matter row's too; the draft and new-task rows report null), leaving the table reports null, and a relayed line bands its row, kept across a rebuild. The text editor doesn't, for now.
 
 - Both editors lead, and publish after a scroll, an edit, a fold, a resize and each `update`. A leader measures only while something subscribes: with no subscriber, none of these measures anything, and `setMinBodyTop` waits for one. Resizes come from a `ResizeObserver` on the pane; the grid also observes its toolbar, settings banner and problems list, so either opening or closing counts.
-- The text editor's rows are CodeMirror's line blocks, which cover wrapped lines; a folded line's block covers the lines folded into it, which have no rows. Its version is the buffer's: its view always shows the buffer's text. `setMinBodyTop` adds top padding to the content.
+- The text editor's rows are CodeMirror's line blocks, which cover wrapped lines; a folded line's block covers the lines folded into it, which have no rows. Each row is keyed by its file and its line in that file; a segment header (§4.5) is part of no row, so the row below it starts under it. Its version is the buffer's: its view always shows the buffer's text. `setMinBodyTop` adds top padding to the content.
 - The grid's rows are its table's body rows on screen: items, comment, blank and front matter rows (front matter is one row, on its first line), and the draft and new-task rows as `at: null`. Its version is its model's, since its rows are drawn from it. Its whole pane scrolls, header included, so `bodyTop` is measured in the pane's content, and `contentHeight` is the rest of the pane's content, so it includes the pinned total row (§4b.1). A follower's body is as tall, so both scroll to the same end. `setMinBodyTop` adds space above the table.
 
 The shell connects a leader to a follower by declared capability, never by which view it is, with one function, `connectPanes(left, right)` (`src/app/align.ts`):
@@ -457,7 +458,7 @@ No totals row: it breaks sorting and filtering, and `=SUM()` is one keystroke.
 
 ### 3.7 PlanBuffer
 
-The app owns one buffer per open file (§6) and hands the active file's to whichever editor is mounted. Editors never hold their own copy of the text.
+The app owns one buffer per open file (§6), which holds that file's text. In the single-file workspace it hands that buffer to whichever editor is mounted. In a folder it hands over the active file's **composed buffer** (below), which holds that file's undo history and shows the files it mounts. Editors never hold their own copy of the text.
 
 ```ts
 interface TextEdit {
@@ -470,7 +471,7 @@ interface BufferChange {
   text: string; // document after the change
   edits: TextEdit[]; // what changed, in original coordinates
   mapPos(pos: number): number; // position before → position after
-  origin: string; // "text-editor" | "grid" | "undo" | "redo" | "load" | "remote"
+  origin: string; // "text-editor" | "grid" | "undo" | "redo" | "load" | "remote" | "compose"
 }
 
 interface PlanBuffer {
@@ -483,14 +484,27 @@ interface PlanBuffer {
 }
 ```
 
-- `CodeMirrorBuffer` is the production implementation. It wraps a CodeMirror `EditorState` and is the **only** module outside `src/editor/` that imports from CodeMirror. `EditorState`, `Transaction` and `ChangeSet` never appear in its public types.
+- `CodeMirrorBuffer` is the production implementation. It wraps a CodeMirror `EditorState`. It and the composed buffer (`src/buffer/composed.ts`), which extends it, are the **only** modules outside `src/editor/` that import from CodeMirror (lint-enforced). `EditorState`, `Transaction` and `ChangeSet` never appear in their public types.
 - `InMemoryBuffer` is a test implementation with a simple undo stack. Both pass one shared test suite.
 - An edit with origin `load` replaces the whole document and clears the undo history: the recorded edits no longer describe the new text.
-- An edit with origin `remote` is a change made on disk, applied as a line diff (§6). It stays out of the undo history: the entries before it are mapped through it, so undo never reverts it.
+- An edit with origin `remote` is a change made elsewhere, never undone here. It is a change on disk, applied as a line diff (§6), or a change made to a file through a composed buffer, or one arriving in a composed buffer from a file's own buffer. It stays out of the undo history: the entries before it are mapped through it, so undo never reverts it.
+- An edit with origin `compose` is a composed buffer inserting or removing segments when the mounts change. It stays out of the undo history too.
 - The text editor mounts its `EditorView` on the state owned by `CodeMirrorBuffer`; its edits arrive at the buffer like any other, with origin `text-editor`.
 - Undo and redo are buffer operations. No editor calls CodeMirror's history commands directly.
 - The buffer knows characters only. Lines, nodes and columns are `analyze()`'s business.
-- The buffer counts its changes: every edit, undo, redo and load. A listener already sees the new count. `analyze` records the version it read on the model, and a leading editor's row layout carries the version its rows show (§3.3, §3.4).
+- The buffer counts its changes: every edit, undo, redo, load, remote and compose change. A listener already sees the new count. `analyze` records the version it read on the model, and a leading editor's row layout carries the version its rows show (§3.3, §3.4).
+
+**The composed buffer** (`src/buffer/composed.ts`) is a `PlanBuffer` over one CodeMirror state holding a **composed text**: the root file's text with each file it mounts in a segment (§2.12, §4.5). It has one undo history for all of them. The composed text is for editing only: it is never saved or analysed, and analysis reads each file's own text from its own buffer.
+
+- **The piece map** (`src/buffer/pieces.ts`, pure) says which file, and which offset range of it, each run of the composed text comes from. It is built from the root file, each file's text and the model's rows that `compose` a file (§2.12). A segment goes at the start of the line after its mount row's subtree extent (§4.2), so the row's own children, and the comments indented under its last child, come first. Several segments at one place go innermost first. Mounts nest, so a file appears as several pieces around the segments inside it.
+- **Joints.** Pieces always break at line starts. A file that doesn't end with a newline, and is followed by another piece, is followed by a **joint**: a newline that belongs to no file. A joint stays while its segment stays, even if the file gains a final newline, so the line the cursor is on never vanishes under it.
+- **Positions.** `toComposed(file, offset)` and `toFile(pos)` translate positions. A position on a boundary belongs to the piece that starts there; the position just before a joint belongs to the file that ends there; a joint is one character that belongs to no file (`charAt` gives `joint`). So `toComposed(toFile(c)) = c` for every composed position. `toFile(toComposed(p)) = p` for every file position except one: the end of a file that ends with a newline and is followed by another piece, which is the next piece's start. An insertion there goes to the next piece.
+- **Routing.** A change is split by the piece map and applied to the file it falls in: that file's own buffer gets it as `remote`, outside its own history. Undo and redo are routed the same way. A transaction is refused **whole** when any of its changes crosses a piece boundary, touches a joint, or would leave a piece ending inside a line where another file's piece follows (deleting the newline that ends it). The refusal is reported, and the status line says "Edits can't cross from one plan file into another." A change several files' pieces each contain whole, such as a replace-all, is one transaction and one undo.
+- **Settling.** An accepted change that ends exactly where another file's piece starts, taking or adding whole lines at its piece's end, is moved back one character, to before that piece's final newline. The text it makes is the same, but its undo then inserts inside the piece; on the boundary, the undo's insertion would go to the next file.
+- **`applyFile(file, edits, origin)`** writes edits given in one file's own offsets, placed through the piece map. An edit that spans pieces of the file is split around the segments between them. It is in the history like any edit. The grid writes the root file's rows through it, and the text editor writes a diagnostic's fixes through it.
+- **Keeping every view of a file in step.** A file's own buffer is the one record of its text. A composed buffer follows the own buffer of every file it shows: a change made there elsewhere (in that file's own composed view, or a reload from disk) arrives as `remote`, placed exactly by the piece map, not diffed. If placing it would join two files' lines, the composition is rebuilt line by line instead.
+- **Recomposing.** After each analysis the shell hands the composed buffer the rows that compose a file. Segments that are no longer mounted go and new ones come, as one `compose` change, outside the history. It is made line by line: a line kept stays untouched. Undoing a mount edit recomposes back.
+- **Known limitation.** An undo entry for an edit inside a segment is mapped through a `compose` change like any change. If the segment is removed (its mount cell deleted) and comes back (the deletion undone), the entry has collapsed to a point. For example: edit beta's text in its segment, delete beta's `mount=` cell, then press Ctrl+Z twice. The first undo brings the cell and the segment back; the second doesn't restore the beta edit, and can insert its text beside the segment. An undo of an edit that emptied a segment's file entirely can land in the next file the same way.
 
 ### 3.8 Line operations
 
@@ -521,11 +535,11 @@ The line operations in `src/editing/` stay in the app. They work on whole lines 
 
 ### 4.1 Language mode
 
-Tokens come from the rows library's `tokenizeLine`, the same tokenizer the parser uses. Its context (separator, comment marker, markers), the column types and the frontmatter extent come from the latest model's rows document, mapped through edits until the next model arrives. Before the first model the tokenizer's own frontmatter state is carried from line 1. Cells are resolved to columns by the parser's rules, so a value is coloured by the type of the column the parser gives it. Highlighting covers: done lines (dimmed, including implicitly done descendants), comment lines, markers, anchors (`{#id}`), delimiters, cell names (`owner=`), quoted values and their escapes, duration values, the `+` sign, and the frontmatter block.
+Tokens come from the rows library's `tokenizeLine`, the same tokenizer the parser uses. Its context (separator, comment marker, markers), the column types and the frontmatter extent come from the latest model's rows document, mapped through edits until the next model arrives. Before the first model the tokenizer's own frontmatter state is carried from line 1. Cells are resolved to columns by the parser's rules, so a value is coloured by the type of the column the parser gives it. Highlighting covers: done lines (dimmed, including implicitly done descendants), comment lines, markers, anchors (`{#id}`), delimiters, cell names (`owner=`), quoted values and their escapes, duration values, the `+` sign, and the frontmatter block. In a composed text (§4.5) each line is tokenised with its own file's context, from that file's document in the model.
 
 ### 4.2 Folding
 
-Indent-based folding on items that have child items. Indented comment lines following a parent fold with it.
+Indent-based folding on items that have child items. Indented comment lines following a parent fold with it. In a composed text (§4.5) an item's subtree is its own file's, by that file's indentation, with the segments inside it; a mount row folds its own children and its segment together, even with no children of its own.
 
 ### 4.3 Keymap
 
@@ -541,9 +555,24 @@ Indent-based folding on items that have child items. Indented comment lines foll
 
 `Alt+Left/Right` is **not** bound on Windows or Linux (browser back/forward). macOS keeps its native Alt word-jump.
 
+In a composed text (§4.5) the line operations act on composed lines, within one piece: Alt+Up/Down, Tab and Shift+Tab over a selection, and Ctrl+/ are refused, with the status line's message, when the lines they touch, or the line moved over, are in more than one piece. So Alt+Down on a segment's last row, or on a mount row (whose next line is its segment's), is refused; reordering projects is done in the grid or by cut and paste. Ctrl+/ uses the comment marker of the file at the selection.
+
 ### 4.4 Diagnostics
 
-Via `@codemirror/lint`, fed from the model produced by the shell's single `analyze()` call (no second analysis). Severities `error`, `warning` and `info` map to the lint severities of the same names. Diagnostics with a span underline only that span; span-less diagnostics get a gutter marker only. Hover shows the model's message verbatim. A diagnostic's fixes appear as lint actions, and applying one dispatches its edits through the buffer with origin `text-editor`. A `confirm` fix first opens a panel below the editor with its preview, its warning and, for a fix that takes a typed value, an input; Apply writes it, and Cancel, Escape or any edit to the text drops it.
+Via `@codemirror/lint`, fed from the model produced by the shell's single `analyze()` call (no second analysis). Severities `error`, `warning` and `info` map to the lint severities of the same names. Diagnostics with a span underline only that span; span-less diagnostics get a gutter marker only. Hover shows the model's message verbatim. A diagnostic's fixes appear as lint actions, and applying one dispatches its edits through the buffer with origin `text-editor`. A `confirm` fix first opens a panel below the editor with its preview, its warning and, for a fix that takes a typed value, an input; Apply writes it, and Cancel, Escape or any edit to the text drops it. In a composed text (§4.5) every file's diagnostics show, each at its place in its segment, and a fix's edits go to its own file through `applyFile`.
+
+### 4.5 The composed text editor
+
+In a folder, the text editor shows the active file through its composed buffer (§3.7). When the file mounts other plans, that is one document: the file's own text with each mounted file's text in a **segment** after its mount row. Every edit lands in the file it belongs to, and there is one undo history and one search across every file. A file that mounts nothing has a composed buffer with no segments, and looks and behaves as it did before, apart from the search panel, which every text editor now has. The single-file workspace shows its file's own buffer, as before.
+
+- **Segments.** Each segment line has the classes `cm-segment` and `cm-segment-depth-N`, for its mount depth, and is shaded (`--mounted-row-bg`) with a border on its left (`--segment-border`). It is indented visually, by line padding, to the mount row's own indentation plus one level (4 characters), so the mounted file's roots read as the mount row's children; a nested segment adds its mount row's padding. The text is unchanged, and the cursor moves through the real characters.
+- **The gutter** shows each file's own line numbers.
+- **The segment header** is a block widget above each segment: the file's path, ● when the file has unsaved changes, and an **Open** button that makes that file the active one. It can't be selected or edited, and it is part of no row of the row layout (§3.4).
+- **Folding** and **line operations**: §4.2 and §4.3. **Diagnostics**: §4.4.
+- **Search and replace** are CodeMirror's own (`@codemirror/search`), over the whole composed text; Ctrl+F opens the panel. A match in a folded segment opens the fold to show it. A replace changes the file the match is in; a replace-all touching several files is one transaction and one undo. The single-file workspace has the same search panel, over its one file, so search behaves the same everywhere.
+- **Cursor and rows.** The cursor is reported as `{ file, line }`, and the editor's row layout is keyed by file and line (§3.3, §3.4), so a following Gantt draws every row of every plan, each at its line. A view's click on a mounted row moves the cursor to that row in its segment.
+- **Saving.** Ctrl+S saves the root file and every file in the composed text with unsaved changes, wherever the change was made, each through the check that its file on disk is unchanged (§6). Save all is unchanged.
+- **Known limitation**: §3.7, recomposing.
 
 ## 4b. Grid editor
 
@@ -769,7 +798,7 @@ The schedule plugin's renderer (§2.11): one row per item, nested like the tree,
 
 The schedule plugin's second renderer (`src/plugins/schedule/renderers/gantt/`), and the first that follows (§3.3). It draws from its `RowLayout`: the editor's when one leads, otherwise its natural layout. A row with no item stays empty, and only rows in the layout are drawn, so a folded parent's children have no marks while its bracket still spans their dates.
 
-With mounted files (§2.12), and until the editors show them (Task 36): following an editor, the Gantt shows only the root file's rows, since the editor's rows are; a mount row's bracket still spans its whole plan. Standalone, its natural layout has every row of the composed tree, and keys a mounted row by its file and line. A mounted row is shaded, and has no cursor, hover or click-to-line.
+With mounted files (§2.12), every row is keyed by its file and line. Following the composed text editor (§4.5), the Gantt draws every row of every plan, each at its line; following the grid, which shows only the root file's rows, it draws those. Standalone, its natural layout has every row of the composed tree. A mounted row is shaded, and has the cursor and hover bands and click-to-line like any row.
 
 - **Geometry** is a pure function, `ganttGeometry(model, layout, dayWidth, today)`, returning plain data: per row, a bar, a summary bracket or a milestone diamond, its flags (critical, late, done, pinned), a pinned start's `pinX`, a late row's `deadlineX`, and its layout row's `top` and `height`; a band for every layout row with a line, an empty one too; the deadline lines, the project finish, the today line, and the scale. The renderer only places what it returns.
 - **Layers,** from bottom to top: the cursor and hover bands, the scale's week lines, the marks, then the deadline, today and project-finish lines. Each item's marks sit on a transparent full-width row, which takes its clicks.
@@ -803,12 +832,12 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
   - Paths resolve relative to the file they appear in. A path outside the folder is refused with a plain reason, and a mount to it gets `mount-outside` (§2.12).
   - **Mounted files** are gathered before each analysis (`PLUGINS.md` §6). A mounted file open in the store gives its current text, unsaved edits included; any other is read from disk once, and kept while it stays mounted. They are read again on focus and Refresh, with the open files.
   - **Remembering the folder.** The last folder opened is kept in IndexedDB, with the file last active in it, as a per-viewer convenience. While one is remembered, **Reopen _name_** asks the browser for permission again with one click. A refusal says "Permission to open _name_ was refused" and keeps Reopen. A folder that no longer resolves is forgotten, with a status line saying so; opening another folder replaces it.
-- **Open files.** The files opened in this session form a store, and the single-file workspace uses it too, holding one file. Each file holds its path, its own buffer (so its undo history survives switching files), the text as last read from or written to disk, whether it is unsaved, and whether it changed on disk since (_stale_) or can no longer be read (_missing_). Exactly one is active: the editors, analysis and views follow it, and `analyze` gets its path as the filename.
+- **Open files.** The files opened in this session form a store, and the single-file workspace uses it too, holding one file. Each file holds its path, its own buffer (in the single-file workspace it also holds the undo history; in a folder the file's composed view does, §4.5, so either way the history survives switching files), the text as last read from or written to disk, whether it is unsaved, and whether it changed on disk since (_stale_) or can no longer be read (_missing_). Exactly one is active: the editors, analysis and views follow it, and `analyze` gets its path as the filename.
 - **File panel.** For a workspace that can list files, a collapsible panel left of the editor lists them grouped by folder, with markers for unsaved (●), changed on disk (↻) and missing on disk (✕). Clicking a file, or Enter on it, makes it active, reading it the first time; the arrow keys move between files.
 - **Replacing the open files.** Open file, Open folder and Reopen replace the open files. If any is unsaved, they first ask "_alpha.plan and beta.plan_ have unsaved changes." with **Save all and continue** (continues only if every save succeeds), **Discard and continue** and **Cancel** (changes nothing).
-- **Saving.** Ctrl+S and Save write the active file. **Save all** (shown when the workspace can list) writes every unsaved file. Save As is shown only when the workspace can pick a location (`can.saveAs`); in a folder, creating files comes in a later task, and a file with no path is not saved. Save writes the buffer as-is; nothing re-serialises from the tree. A saved file is byte-identical to the opened one except for tab-to-space and CRLF-to-LF normalisation.
+- **Saving.** Ctrl+S and Save write the active file; in the composed text editor, Ctrl+S also writes every file it shows with unsaved changes (§4.5). **Save all** (shown when the workspace can list) writes every unsaved file. Save As is shown only when the workspace can pick a location (`can.saveAs`); in a folder, creating files comes in a later task, and a file with no path is not saved. Save writes the buffer as-is; nothing re-serialises from the tree. A saved file is byte-identical to the opened one except for tab-to-space and CRLF-to-LF normalisation.
 - **Before each write in place**, the file is read again. If it no longer matches the text last read or written, the app asks "_alpha.plan_ changed on disk since you opened it. Overwrite it, or keep your changes unsaved?" (**Overwrite**, **Keep**) and writes nothing unless told to overwrite. A file missing on disk asks "_alpha.plan_ is no longer on disk. Save it again at _teams/alpha.plan_?"; **Yes** writes it at its path, creating it. A download overwrites nothing, so it is not checked.
-- **Changes on disk.** When the window regains focus, and on **Refresh** (shown when the workspace saves in place), the workspace is listed again and every open file is read again. A file that changed on disk and has no unsaved changes gets the change as a line diff (only the lines that differ), with origin `remote`, outside the undo history (§3.7). A file with unsaved changes is left as it is and marked stale, and saving it asks, as above. A file that can't be read keeps its buffer, is marked missing, and the status line names it; if it reappears it is handled like any other.
+- **Changes on disk.** When the window regains focus, and on **Refresh** (shown when the workspace saves in place), the workspace is listed again and every open file is read again. A file that changed on disk and has no unsaved changes gets the change as a line diff (only the lines that differ), with origin `remote`, outside the undo history (§3.7). From its own buffer the change reaches every composed view showing the file, as `remote` too, so a segment follows its file on disk. A file with unsaved changes is left as it is and marked stale, and saving it asks, as above. A file that can't be read keeps its buffer, is marked missing, and the status line names it; if it reappears it is handled like any other.
 - The unsaved-changes indicator goes off only when the file on disk matches the buffer: after opening, after a save in place, or after a change on disk is applied. A download leaves it on. Leaving the page prompts while any open file's buffer differs from the text last opened, saved or downloaded.
 - Open accepts `.plan` and `.rows`. Save As defaults to `.plan`. A new document starts as `---\nprofile: plan\n---\n`.
 - In contexts where the API is unavailable or blocked (e.g. a cross-origin iframe such as the VS Code Simple Browser), failures are reported visibly, never swallowed.

@@ -317,6 +317,8 @@ describe('replacing the open files', () => {
   });
 
   it('Save all and continue stops when a save is kept', async () => {
+    // The open folder's file is shown through its own composed view, in a new editor view (Task 36).
+    findView();
     type('x\n');
     other.tree['o.plan'] = 'changed outside\n';
     picked = portfolio;

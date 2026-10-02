@@ -13,7 +13,7 @@ function splitLines(text: string): string[] {
  * The longest common subsequence of `a` and `b`, as pairs of indices in ascending order (Myers'
  * O((N+M)D) algorithm, so a small change to a long file stays cheap).
  */
-function matches(a: readonly string[], b: readonly string[]): [number, number][] {
+export function matches(a: readonly string[], b: readonly string[]): [number, number][] {
   const n = a.length;
   const m = b.length;
   const offset = n + m + 1;
