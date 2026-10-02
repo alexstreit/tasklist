@@ -4,6 +4,7 @@
 export const PLAN_PROFILE = `---
 lead: title:text
 nest: parent
+mount: mount
 markers: done=~
 columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text
 roles: effort=est
@@ -14,6 +15,7 @@ roles: effort=est
 export const SCHEDULE_PROFILE = `---
 lead: title:text
 nest: parent
+mount: mount
 markers: done=~ milestone=^
 columns: est:duration unit=h hpd=8 dpw=5 | dur:duration unit=h hpd=8 dpw=5 | start:date | deps:ref many qualifier=lag:duration | due:date | owner:text | notes:text
 roles: effort=est duration=dur start=start deps=deps deadline=due

@@ -61,7 +61,7 @@ export interface OpenFiles<B extends PlanBuffer = PlanBuffer> {
 const DEFAULT_NAME = 'untitled.plan';
 
 /** Tabs become 4 spaces and line ends LF on load (spec §2.1, §6); a buffer never holds either. */
-const normalise = (text: string): string => text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ');
+export const normalise = (text: string): string => text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ');
 
 /**
  * `buffer` becomes the first file's: the file `opened` is loaded into it, replacing its text and

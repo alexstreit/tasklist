@@ -982,7 +982,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 
 - **`project-start` is read by rows (an API change, not a spec change).** rows exports `readValue`, the function cells use, so frontmatter values of a declared type go through the same code: `project-start` now, plugin keys of date, number and text type later. There is no spec text, no conformance case and no version bump, since no rule changes. Date arithmetic (weekdays, adding days) stays in core's calendar. It is calendar logic, not grammar. `readValue` takes a type as `{ kind, enumValues?, unit? }`, because an enum needs its values and a duration its unit, so a `Column` passes as is.
 - **`role-type` only for a binding written in the file.** A profile's binding on the file's column of the wrong type is left unbound with no diagnostic, following rows' Q43. `Bindings.mistyped` records the reason, and a stage requiring the role is skipped with it: "the effort role's column est is text, not a duration or number". "needs a column with the effort role" is only for a role that isn't bound at all. PLUGINS.md §6 says so.
-- **Includes: a cached snapshot, and render stays synchronous.** The shell gathers only when the set of include paths differs from the last set gathered, and failures are cached with it. Each gather has a generation number, and a gather overtaken by a newer one is dropped. A finished gather re-analyzes the current buffer text. The loop follows includes of included files, never reads a path twice (so a cycle stops), and never reads the open file. With the single-file workspace every read fails, so it does nothing until M3. PLUGINS.md §6 says so.
+- **Includes: a cached snapshot, and render stays synchronous.** The shell gathers only when the set of include paths differs from the last set gathered, and failures are cached with it. Each gather has a generation number, and a gather overtaken by a newer one is dropped. A finished gather re-analyzes the current buffer text. The loop follows includes of included files, never reads a path twice (so a cycle stops), and never reads the open file. With the single-file workspace every read fails, so it does nothing until M3. PLUGINS.md §6 says so. (Changed by Task 35: `includesOf` and `src/app/includes.ts` are gone. The shell gathers mounted files instead (`src/app/mounts.ts`), from the model's mounts and a parse of each gathered file; nothing gathers `include:` until table imports arrive.)
 - **Leave-page prompt after a download:** the indicator stays on, but leaving prompts only when the buffer differs from the text last saved or downloaded. The shell keeps that text beside the last text saved in place.
 
 **Decisions taken** (by me, within the task):
@@ -1044,7 +1044,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
     - `schedule-pin-equals-derived` when a start or duration pin equals its derived value, in `pinned` mode.
   - **Lag.** A lag is calendar time, so the schedule plugin converts it with the calendar's `hoursPerDay` and 5 days a week. It is a reading only this plugin needs, so it is a pure function in the plugin. A negative lag is treated as zero, with a warning, as in plan spec §2.6.
   - **Dependency targets.**
-    - A dependency on a parent (summary) row gets the warning `schedule-dep-on-summary`, and is ignored.
+    - A dependency on a parent (summary) row gets the warning `schedule-dep-on-summary`, and is ignored. (Changed by Task 35: a dependency may point at a parent row, and waits for its latest descendant's finish; `schedule-dep-on-summary` is gone.)
     - A dependency that can't be resolved is already a rows validation error; the schedule ignores it.
     - The dependencies in a cycle are ignored, and each row in the cycle gets the error `schedule-dep-cycle`. This must be deterministic.
   - **Finish.** Every finish is `calendar.add(start, duration)`. No stage adds hours itself.
@@ -1148,7 +1148,7 @@ Expected, in work hours, with the displayed dates:
 - `src/core/bindings.ts`: `Bindings.mistypedKeys`; `key-type`'s new message and fix; `no-project-start` for each core key that isn't written while a role in its `expectedWith` is bound. A key written with the wrong type never gets `no-…`.
 - `src/core/fixes.ts`: `todayFix(doc, key, label)` replaces the key's value when it is written, else inserts `KEY: ` + date + newline before the closing `---`; the date is left empty. `resolveFix(fix, date)` fills it in, in the edits, the value and the label, and drops `suggest`, so resolving twice changes nothing; it is pure, since the date is passed in. `inputEdit(input, value)` is the `before + value + after` edit both of them, and the confirm panels, use.
 - `src/core/types.ts`: `Fix.input` gains `suggest`, `before` and `after`; `Diagnostic.source`. `src/core/analyze.ts`: the runner sets `source` on stage diagnostics, a mistyped required key gives its reason, and `parsePlan` knows both profiles. `src/core/profile.ts`: `SCHEDULE_PROFILE`, published as `profiles/schedule.rows`.
-- `src/plugins/schedule/`: `fields.ts`; `lag.ts` (`lagHours`, a pure reading); `network.ts` (`readNetwork`: the links, the ignored ones with their diagnostics, Tarjan's strongly connected components over the links plus parent → child, and a topological order, a reverse post-order walk in document order); `forward.ts` and `backward.ts`, the two stages; `renderers/table.ts` and `table.css`; `index.ts`, the manifest. Both stages read the network: `schedule.backward` reads it again without reporting, rather than passing it through a field.
+- `src/plugins/schedule/`: `fields.ts`; `lag.ts` (`lagHours`, a pure reading); `network.ts` (`readNetwork`: the links, the ignored ones with their diagnostics, Tarjan's strongly connected components over the links plus parent → child, and a topological order, a reverse post-order walk in document order); `forward.ts` and `backward.ts`, the two stages; `renderers/table.ts` and `table.css`; `index.ts`, the manifest. Both stages read the network: `schedule.backward` reads it again without reporting, rather than passing it through a field. (Changed by Task 35: `schedule.forward` writes it as the document-scope field `network`, which `schedule.backward` reads.)
 - `src/ui/`, shared UI code for renderers and editors: `grid.ts` (`createGrid(className, headers)`, `addItemRow`, `mount`, `muted`) and `grid.css`, moved from estimate's `renderers/shared.*` unchanged. Estimate's `shared.css` keeps only the total row and level column rules. `today.ts` is the one UI function that reads the clock.
 - Editors: `src/editor/diagnostics.ts` and `src/grid/problems.ts` pass every fix through `resolveFix` with `today()` when they show it: the text editor when it builds lint actions, the grid on each model update. Their confirm panels call it too, and write a typed value with `inputEdit`, so they honour `before` and `after`.
 - Estimate: `rollup.ts` declares `roles: { optional: ['duration'] }` and leaves that column out of the roll-ups and totals, so its cells show as written, like a text column.
@@ -1195,6 +1195,8 @@ Expected, in work hours, with the displayed dates:
 
 **Spec:** plan-format-spec §2.1 (the schedule profile, `project-start` expected), §2.9 (`no-project-start`, the scheduling codes, `key-type`'s message, `source`), the new §2.11 Scheduling, §3.2 (estimate and the duration role, the schedule stages), §3.3 (`src/ui/`), §4b.6.2 (`Fix.input`, `resolveFix`, `inputEdit`), §5.2 and the new §5.4 Schedule table, and §7. PLUGINS.md §5 (`source`, fixes that need today), §6 (estimate's role, the missing start) and §8 (`src/ui/`, its lint rule). CLAUDE.md's repo layout and non-negotiable 5 name `src/ui/` and the schedule fields. VISION is unchanged. No rows spec is touched, and rows is unchanged.
 
+**Changed by Task 35:** a dependency may point at a parent row, so one project can follow another. Forward, it waits for the parent's finish, its latest descendant's, plus the lag; backward, the successor's late start less the lag limits the late finish of every descendant. `schedule-dep-on-summary` is deleted, with its code, its test and its spec rows. The network's points are now each row's start and finish, so a row that depends on its own ancestor is a cycle too. Rewritten tests: `tests/schedule/schedule.test.ts` "schedule-dep-on-summary: the dependency is ignored" became "a dependency on a parent waits for its latest descendant, plus the lag"; `tests/grid/refs.test.ts` "writes a dependency on a parent or on the row itself, and the schedule reports it" now expects only `schedule-dep-cycle`.
+
 ---
 
 ## Task 29 — Row alignment between panes
@@ -1218,6 +1220,8 @@ Expected, in work hours, with the displayed dates:
     // at: null for a grid draft row; { line } can gain a file in M3
   }
   ```
+
+  (Changed by Task 35: a follower's natural layout gives a mounted row's file as `at.file`; a leader's rows are the root file's and have none.)
 
   - Helpers: `naturalLayout(model, version, viewport)` builds a follower's own layout, with one row per item at `--row-height`. `ScrollEcho` drops a reported scroll within 1px of the value the shell last set, comparing values rather than using a boolean guard.
   - `--row-height` is one theme token, which the grid and followers share.
@@ -1795,7 +1799,7 @@ Expected, in work hours, with the displayed dates:
 - **Dot-files are listed.** The task says to skip dot-folders, so `.x.plan` at any level is listed.
 - **Open folder in a cross-origin frame** is disabled, with the tooltip "Opening a folder does not work in an embedded browser frame", since "needs Edge or Chrome" would be wrong in a framed Edge.
 - **A leading `/` in a path** is treated as an empty segment, as the single-file `resolve` already does, so `/x.plan` resolves next to the file. Neither the task nor the spec defines it.
-- **Includes:** a path `resolve` refuses is left out of the include snapshot, like a failed read (`src/app/includes.ts`), until M3b makes it a diagnostic. Before this change, a throw there would have broken analysis.
+- **Includes:** a path `resolve` refuses is left out of the include snapshot, like a failed read (`src/app/includes.ts`), until M3b makes it a diagnostic. Before this change, a throw there would have broken analysis. (Changed by Task 35: the include loop is replaced by gathering mounted files; a mount outside the folder is never read and gets `mount-outside`.)
 - **`InMemoryBuffer`** maps its undo and redo entries through a `remote` change, as CodeMirror's history does.
 - `src/app/workspace.ts` moved to `src/app/workspace/single.ts` with `git mv`, so the rename is staged. Nothing else is staged.
 
@@ -1820,3 +1824,186 @@ Expected, in work hours, with the displayed dates:
 **Spec:** plan-format-spec §3.7 (one buffer per open file; `remote`) and §6 (workspaces, remembering the folder, open files, the file panel, replacing the open files, saving, changes on disk). PLUGINS.md §7.1 (`can.saveAs`, `Notice`, `resolve` refusing, the folder implementation). The working draft of PLUGINS.md in claude.ai needs the same §7.1 change. No rows change.
 
 **Human review:** read the open-files store and the save path first (`src/app/files.ts`, `save` and `confirmWrite`). Every later M3 task writes through them.
+
+---
+
+## Task 35 — Composed model: the portfolio view
+
+**Serves:** M3b (VISION §6). A master plan mounts team plans, and every view (tree, table, schedule) shows the whole portfolio: one tree, one roll-up, one schedule. In this task the editors still show and edit only the active file's own text; editing mounted plans in place comes in Tasks 36 and 37. This is the first task that gives the PMO the big picture.
+
+**Deliverables**
+
+- **Profiles:** `plan` and `schedule` gain `mount: mount`, in both copies, which a test keeps identical.
+- **Gathering files** (the shell):
+  - The paths the active file mounts come from its **model**, so it isn't parsed a second time. This is the Task 27 follow-up, done. Paths mounted by mounted files come from parsing those files once each, cached by their text.
+  - Gathering repeats until no new path appears, as in the Task 27 loop. A file **open in the store** contributes its current text, including unsaved edits. Any other file is read from disk.
+  - Paths resolve through `workspace.resolve`. A path that resolves outside the folder isn't read. In the single-file workspace nothing can be read, and mount rows say so (below).
+  - `analyze` receives the gathered texts as `files`, keyed by resolved path. `includesOf` goes, replaced by mounts from the model plus a parse of each gathered file.
+- **Composition** (`src/core/`):
+  - Each file is parsed and read once, by its own profile, and cached by text. The active file is the **root**.
+  - A mount row's children are its own children in its file, followed by the mounted file's roots. Mounts nest.
+  - `ItemNode` gains `file` (its resolved path) and keeps `line` within that file. Outline numbers run across the composed tree.
+  - `Model.files` maps each path to its rows document and lines. `Model.roots`, `lines` and `doc` stay the root file's.
+- **Columns across files** (core, so plugins stay unaware): the model's `columns` are the root file's. Each column maps to a mounted file's column by **role, then by name**, or to nothing.
+  - `ctx.hours(node, column)` takes a root column name and looks up the matching column in the node's own file.
+  - `ctx.cell(node, role)` uses the node's own file's bindings.
+  - **References resolve within the node's own file.** Core gains `ctx.targets(node, role): ItemNode[]`, and the schedule's dependencies use it, so two files can both have `#api`.
+  - Text cells shown in views are mapped the same way.
+- **Scheduling on the master's axis:** one calendar, from the root's `project-start`.
+  - A mounted file's own valid `project-start` becomes a floor on its roots, converted with `fromDate(d, 'start')`.
+  - The mount row is an ordinary parent, so a pin, deadline or dependency on it applies to every task under it, as Task 28 already does.
+  - **A dependency may now point at a parent row**, so one project can follow another. This lifts Task 28's `schedule-dep-on-summary`:
+    - **Forward:** the dependency waits for the parent's finish, which is its latest descendant's finish, plus the lag.
+    - **Backward:** the successor's late start, minus the lag, limits the late finish of every descendant of the parent.
+    - The fixture below relies on this. Delete the code, its tests and its spec rows, list each rewritten test, and add a "changed by Task 35" line to Task 28's notes.
+- **Mount diagnostics**, on the mount row in the file that holds it, from core. Each has a test.
+  - `mount-missing` (warning): the file isn't found or can't be read.
+  - `mount-outside` (error): the path resolves outside the folder.
+  - `mount-loop` (error): the file mounts itself, directly or through other files. The loop is reported once, on the mount that closes it.
+  - `mount-overlap` (warning): the same file is already mounted elsewhere in the tree, so this mount shows nothing. The first mount in document order wins.
+  - `mount-part-unsupported` (info): `#part` mounts come later. This mount shows nothing for now.
+  - `mount-needs-folder` (info): in the single-file workspace, "Open the folder to see mounted plans."
+
+  A mounted file's own diagnostics are in the model with their `file`. Editors show only the active file's diagnostics, and the problems list shows all of them, each naming its file.
+
+- **Views:**
+  - Mounted rows have a shaded background. A mount row shows a file badge naming the file, which is a button that makes that file the active file ("Open").
+  - Clicking a mounted row doesn't move the cursor, because the active file's editor has no line for it.
+  - Tree, table and schedule show the whole portfolio. Totals include mounted plans.
+  - **The Gantt, until Task 36:** following an editor, it shows only the root file's rows. A mount row's summary bar still spans its whole plan. Standalone, it shows everything. Note this in the task notes as temporary.
+- **Speed:** with ten files of 500 lines each, typing in the root stays below 20 ms per analysis (median, measured once and noted). Only changed files are parsed again.
+- **Spec:** plan-format-spec, a new section on mounts and composition, plus §2.1 (the profiles), §2.9 (the codes) and §3.1–3.2. PLUGINS.md §5 and §6 (`ctx.targets`, mapping columns across files).
+
+**The reference fixture: `examples/portfolio/`**
+
+It is written by hand. Its expected values below were worked out by hand, so never generate them from output.
+
+- **`portfolio.plan`** (`profile: schedule`, `project-start: 2026-10-05`, a Monday):
+
+  | #   | Row              | Cells                                    |
+  | --- | ---------------- | ---------------------------------------- |
+  | 1   | Product A `{#a}` | `mount=teams/alpha.plan`, due 2026-10-16 |
+  | 2   | Product B `{#b}` | `mount=teams/beta.plan`, deps `#a`       |
+  | 3   | `^`Tradeshow     | deps `#b`, due 2026-10-23                |
+
+- **`teams/alpha.plan`** (`profile: schedule`, `project-start: 2026-10-07`, a Wednesday): Design `{#design}` est 2d; Build est 3d, deps `#design`.
+- **`teams/beta.plan`** (`profile: plan`, its own `columns: work:duration unit=h hpd=8 dpw=5 | owner:text`, `roles: effort=work`, no `project-start`): Spec, work 1d; Code, work 4d. No dependencies.
+
+Hours run from Mon 5 Oct, 8 a day, weekends skipped. Day 0 is Mon 5, 2 is Wed 7, 4 is Fri 9, 6 is Tue 13, 7 is Wed 14, 9 is Fri 16, 10 is Mon 19 and 14 is Fri 23.
+
+| #   | Row       | est (roll-up)             | start | finish | late finish | slack | shown               | critical |
+| --- | --------- | ------------------------- | ----- | ------ | ----------- | ----- | ------------------- | -------- |
+| 1   | Product A | 5d                        | 16    | 56     |             | 0     | Wed 7 – Tue 13 Oct  | yes      |
+| 1.1 | Design    | 2d                        | 16    | 32     | 32          | 0     | Wed 7 – Thu 8 Oct   | yes      |
+| 1.2 | Build     | 3d                        | 32    | 56     | 56          | 0     | Fri 9 – Tue 13 Oct  | yes      |
+| 2   | Product B | 5d (by role, from `work`) | 56    | 88     |             | 0     | Wed 14 – Mon 19 Oct | yes      |
+| 2.1 | Spec      | 1d                        | 56    | 64     | 88          | 24    | Wed 14 Oct          | no       |
+| 2.2 | Code      | 4d                        | 56    | 88     | 88          | 0     | Wed 14 – Mon 19 Oct | yes      |
+| 3   | Tradeshow |                           | 88    | 88     | 88          | 0     | Mon 19 Oct          | yes      |
+
+Where the numbers come from:
+
+- **The totals:** the document total is 10d (80h), and `projectFinish` is 88.
+- **No late flags:** Product A's deadline is hour 80, and its finish of 56 is earlier. The Tradeshow's deadline is hour 120, against a finish of 88.
+- **Alpha's start:** it starts at its own `project-start`, hour 16, not the master's 0.
+- **Beta's start:** it has no start of its own and no dependencies inside it, so its rows start at the floor Product B's dependency on `#a` passes down, 56.
+- **The late finishes inside A:** they come from B's earliest late start (Code, 56), as Task 28 defines a parent as successor.
+
+**Acceptance criteria**
+
+- [x] The fixture test asserts every cell of the table above. It also checks the outline numbers, each node's `file`, and that `ctx.targets` resolves `#design` in alpha and nothing in beta. — `tests/composition/portfolio.test.ts`, written from the table. The est column is asserted in hours (5d is 40), and the tree's text separately: the tree shows 40h as `1w`, as `formatDuration` shows every whole week, so Product A and Product B read `1w` and the total `2w`. `ctx.targets` is read through a probe plugin's stage; it also gives `Product A` for Product B's `#a`.
+- [x] A second test opens `teams/alpha.plan` with an unsaved edit in the store: Build becomes est 4d. The master's view shows Build finishing at 64, and Product B moves to 64–96. Nothing is written to disk. — `tests/app/shell-portfolio.test.ts`, "shows a team file's unsaved edit in the master, and writes nothing", through the shell on in-memory folder handles: Build reads Fri 9 – Wed 14 Oct and Product B Thu 15 – Tue 20 Oct in the schedule table.
+- [x] Each mount diagnostic has a test asserting its row, severity and code: a missing file, a loop of three files, a path outside the folder, two mounts of one file, `#part`, and the single-file workspace. — `tests/composition/mounts.test.ts`, plus a file mounting itself and an overlap in composed order. The single-file case also goes through the shell (`tests/app/shell-portfolio.test.ts`).
+- [x] Columns: a mounted column matched by name only (no role) maps. One matched by neither shows blank, with no diagnostic. — `tests/composition/mounts.test.ts`, "columns across files", with the two-pass example (decision 2 below) and a mounted column's own `hpd`.
+- [x] Gathering: adding a mount gathers the new file, and removing it drops it. A file is read once while its path set is unchanged. Typing in the root parses no other file (counted). — `tests/app/mounts.test.ts`; the count wraps rows' `parseRows` and records each text parsed while typing eight keys into the root.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 2133 tests (2083 before); typecheck, lint and `vite build` clean.
+- [ ] **Browser pass in Edge, on a real folder** with a master and two or three team plans: pending review (there is no browser here). `examples/portfolio/` is such a folder.
+  - the views show the portfolio;
+  - Open on a badge switches files;
+  - unsaved team edits show in the master;
+  - the problems list names each file.
+
+**Visible changes:**
+
+- Mount rows and their badges. A mount row's title in the tree, table, schedule table and pin review has a file badge naming its file (`alpha.plan`), a button titled "Open teams/alpha.plan" that makes the file active. A mount whose path doesn't resolve (single-file workspace, outside the folder, `#part`) has none; Open on a missing file says "Could not open: …".
+- Shaded mounted rows in the views (new theme tokens `--mounted-row-bg`, `--badge-bg` and `--badge-fg`, light and dark). A mounted row has no cursor band, hover band or click-to-line.
+- The mount diagnostics.
+- Portfolio totals and schedule: the tree, table, schedule table, pin review and TSV export show the whole composed tree, and the totals, including the grid's total row and a mount row's roll-up in the grid, include mounted plans.
+- A dependency on a parent row is scheduled (it waits for the whole subtree) instead of being ignored with a warning. A row that depends on its own ancestor now gets `schedule-dep-cycle`.
+- The grid's problems list groups by file, each group headed by its path when more than one file has problems; a mounted file's entry has no fix buttons and opens its file.
+- **Temporary, until Task 36:** following an editor, the Gantt shows only the root file's rows; a mount row's bracket spans its whole plan. Standalone (no leader), it shows every row.
+- Mounted files are read again on window focus and Refresh.
+- Every plan and schedule file has an implicit `mount` column, from the profiles. A file that declares its own column named `mount` with another type now gets rows' `invalid-mount-column` (A13).
+
+**Not in this task:**
+
+- Editing mounted rows (Tasks 36 and 37).
+- Gantt zoom (Task 38).
+- `#part` mounts.
+- Dependencies from one file into another file's rows.
+- Creating files.
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **Cells through an accessor.** `ItemNode.fields` stays in its own file's column order, with its own spans. Core adds `model.field(node, i)`: the node's field for root column `i` through the mapping, or null; for a root row it is the identity. Estimate, schedule's `spanOf` and every view use it. A lint rule (`no-restricted-syntax` on `.fields`, not a call) holds plugins, their renderers and exporters, `src/views/` and `src/ui/` to it, with probes in `tests/plugins/lint.test.ts`. PLUGINS.md §4.
+2. **Two passes, one owner per column.** By role first: each root column with a role takes the mounted column bound to that role. Then by name, among the mounted columns not taken. A mounted column maps to at most one root column, so no total counts a value twice; a blank root column has no diagnostic. Tested with the example (root `est` effort and `work` without a role; the team's `work` is its effort: root `work` is blank). PLUGINS.md §6.
+3. **`ctx.diagnose(node, d)`.** Core sets `d.file` from the node; null is a document-level diagnostic on the root file. A diagnostic's line and spans are in its node's own file. Every call site in estimate and schedule changed. Tested: a milestone with an estimate in a mounted file is reported on its line in that file, with its file, and nothing lands on the root's line of the same number. PLUGINS.md §5.
+4. **Mounted problems open their file.** An entry from a mounted file names its file, shows no fix buttons, and clicking it makes that file active with the cursor on the row, where its fixes work as usual. The root's problems come first, then each mounted file's in composed order. **Task 37** will offer these fixes in place, once mounted rows can be edited in the grid.
+
+**Decisions taken** (by me; settled by the nearest existing rule, and stated before coding with no objection):
+
+- **Done inherits through a mount row**, an ordinary parent: a done mount row makes its mounted rows done.
+- **A mounted file's `project-start`** joins the start's `derived` floor, not its `pin`, so the pin review doesn't list it. It applies to a row whose parent is in another file.
+- **`ctx.marked`** reads the node's own file's markers, as `ctx.cell` reads its bindings: `^` in an estimate-only team file is part of the title.
+- **What `analyze` is told.** `files` (text by resolved path, null when unreadable) and the workspace's `resolve`. The shell passes them only when the workspace can list files; without `files`, every mount gets `mount-needs-folder`. A path not gathered yet shows nothing and has no diagnostic, so `mount-missing` doesn't flash while files are read.
+- **Order.** "Document order" is composed order: within each file, and a mount row's own children before what it mounts. The mount that closes a loop is the first, in that walk, whose target is already on its own path. A `#part` mount gets only `mount-part-unsupported`; in the single-file workspace any other gets only `mount-needs-folder`.
+- **Gathering also runs on focus and Refresh** (VISION §6). A file is read once while it stays mounted, even when other mounts come and go, which is stronger than "while its path set is unchanged".
+- **Editors index only the root file's rows** (the grid, its levels and ref cells, the text editor's done lines, the cursor), since a mounted row's line is in another file. So `2.1` typed in a ref cell for a mounted row is "There's no task 2.1."; and the text editor and the grid's inline marks and settings banner show only the root's diagnostics.
+- **The Gantt's natural layout** gives a mounted row's file as `at.file`, which the `RowLayout` comment anticipated ("can gain a file"); a leader's rows have none and mean the root file.
+- **Severities follow the task.** VISION §6 said "a missing file or a mount loop is an error"; it now says what the task does: a missing file is a warning (`mount-missing`), and a loop or a path outside the folder is an error.
+
+Also within the task, not asked:
+
+- **The model.** `Model.file` (the root's path, `''` for a new document); `Model.files` includes the root, first. `ItemNode.file` is `''` for a new document's rows, and `ItemNode.mount` is a mount row's resolved target, for the badge. `Diagnostic.file` is unset for the root file's, so no existing diagnostic changed. `StageContext.bindingsOf(node)` gives a file's own bindings, which the schedule uses for the `project-start` floor.
+- **Composition** (`src/core/compose.ts`) copies every item for each analysis, so a cached read never changes and an old model never changes under its holder. Each file is parsed, read and bound once per text, in a cache the analyzer keeps for the files of its last analysis.
+- **`mountsOf(model)` and `readMounts(text, path)`** replace `includesOf`. The shell analyzes the active file with the snapshot of its last mounts; when the model shows that its mounts changed, or another file became active, it analyzes once more with the new snapshot.
+- **The badge** shows the target's last path segment; it is disabled without `openFile`. Group headings in the problems list appear only when more than one file has problems, so a file without mounts looks as before.
+- **Speed.** The first composed version took 36.7 ms. To get under 20 ms: the schedule's network uses numbered points with an iterative Tarjan and walk, and is read once per analysis: `schedule.forward` reads it, reports its diagnostics and writes it as a document-scope field, `network`, owned by the schedule plugin, which `schedule.backward` declares in `reads`; node fields are stored in an array per key by each node's place in the composed tree, not a `Map` per key; role and marker columns are looked up once per file per analysis; the backward pass reads each deadline once. Outside the task's code, `identityFixes` in `src/core/fixes.ts` compared each ID with every earlier one (quadratic, 1.5 ms on a 500-ID root at every keystroke); it now keeps the first of each ID in a `Map`, with the same results.
+
+**Timing** (measured once; there is no timing test): ten files of 500 lines, a `profile: schedule` root with nine mount rows and nine team files, 4,960 items in all, phases of nine chained tasks with lags, pins and deadlines, 948 diagnostics. One character of the root changed per run, 300 runs, the first 50 dropped: **18.4 ms median** (p99 28 ms) in Vitest, 17.9 ms (p99 34 ms) in Node, measured after the network became a field. The root alone: 3.8 ms. Only the root is parsed again while typing (`tests/app/mounts.test.ts` counts it).
+
+**Rewritten tests:**
+
+- `tests/app/includes.test.ts` is deleted with the include loop, and replaced by `tests/app/mounts.test.ts`. Its cases carry over: gathering when a path is added and emptying when it is removed; a failed read not retried (now: kept as null while the file stays mounted); a read overtaken by a newer one dropped (now: by a reread); following nested mounts and stopping on a loop; never reading the open file; never reading a path outside the folder.
+- `tests/schedule/schedule.test.ts`: "schedule-dep-on-summary: the dependency is ignored" became "a dependency on a parent waits for its latest descendant, plus the lag (Task 35)".
+- `tests/grid/refs.test.ts`: "writes a dependency on a parent or on the row itself, and the schedule reports it" expects only `schedule-dep-cycle` (it expected `schedule-dep-on-summary` too).
+- `tests/core/fields.test.ts`: "lists the keys written in this analysis, in stage order" gains `schedule.network` after `schedule.project-finish`.
+
+**New tests:** `tests/composition/portfolio.test.ts` (the fixture), `tests/composition/mounts.test.ts` (mount diagnostics, composition, columns, a mounted file's diagnostics and markers), `tests/composition/gantt.test.ts` (following and standalone), `tests/app/mounts.test.ts` (gathering, the parse count), `tests/app/shell-portfolio.test.ts` (the shell on a folder holding `examples/portfolio/`), and `tests/support/portfolio.ts`. Added cases: in `tests/schedule/schedule.test.ts`, a descendant depending on its own parent, a parent depending on itself, and a parent as predecessor; in `tests/plugins/lint.test.ts`, the cell rule on five paths and the clock rule beside it.
+
+**Spec:** plan-format-spec §2.1 (`mount: mount` in both profiles), §2.9 (`file`, the mount codes), §2.11 (dependencies on parents, the points, a mounted file's floor, the late finish, the `network` field; `schedule-dep-on-summary` deleted), the new §2.12 Mounts and composition, §3.1–§3.3 (reading per file, the model's `file`, `files` and `field`, `analyze`'s `files` and `resolve`, `mountsOf` and `readMounts`, mounted rows and badges, `openFile`, `RowLayout`'s `at.file`), §3.6 (TSV), §4b.1 (the total row), §4b.6.3 (the problems list), §5.5 (the Gantt, temporary) and §6 (gathering). PLUGINS.md §1, §2, §4 (`file`, `files`, `field`; cells through `field`; storage), §5 (`bindingsOf`, `targets`, `diagnose(node, d)`, own-file reading), §6 (`analyze`'s options, gathering mounted files, columns across files) and §8 (`compose`, `mounts.ts`, the lint rule). VISION §6 (the mount severities). The working draft of PLUGINS.md in claude.ai needs the same changes. No rows change: rows and its specs are untouched. Task 27's, 28's, 29's and 34's notes say what this task changed.
+
+**Human review:** the fixture table first, then the column mapping in core. That mapping is the rule every portfolio total depends on.
+
+---
+
+## Task 36 — Composed text editor _(placeholder; written in full when Task 35 is done)_
+
+**Serves:** M3b. The text editor shows the composed document. The master's own text comes first, and each mounted file's text sits in a **segment** after its mount row, shaded and bordered, with a header naming its file and showing whether it's saved, and with that file's own line numbers. It's one buffer and one undo history, and edits are routed to each file.
+
+- An edit that would cross from one file into another is refused.
+- Search covers every segment.
+- Mounted rows are indented visually, with no change to their files.
+- Files changed on disk reload by line diff.
+- The Gantt follows composed rows, keyed `{ file, line }`.
+
+## Task 37 — Composed grid _(placeholder)_
+
+**Serves:** M3b. Mounted rows can be edited in the grid, through the rows edit API against each file's own parse.
+
+- The mount row has a file badge and an Unmount action, which clears the `mount=` cell.
+- Delete confirms name the file: deleting a mount row says the file stays as it is, and deleting a mounted task says which file it's removed from.
+
+## Task 38 — Gantt zoom _(placeholder)_
+
+**Serves:** M3b, for the 18-month view. Day, week and month scales, with the scale labels and `dayWidth` changing to match. Alignment and geometry keep the same rules.

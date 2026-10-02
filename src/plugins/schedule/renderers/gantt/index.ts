@@ -11,7 +11,7 @@ import { naturalLayout } from '../../../../ui/row-layout';
 import { today } from '../../../../ui/today';
 import { critical, deadline, duration, finish, late, milestone, projectFinish, slack, start } from '../../fields';
 import { formatDays } from '../table';
-import { ganttGeometry } from './geometry';
+import { ganttGeometry, rowKey } from './geometry';
 import type { Gantt, GanttRow } from './geometry';
 import './gantt.css';
 
@@ -31,10 +31,10 @@ interface State {
   /** The layers the rows go in: their bands, and their marks above the week lines. */
   bandLayer: HTMLDivElement;
   markLayer: HTMLDivElement;
-  /** The current bands, by line: every layout row with a line. */
-  bands: Map<number, HTMLDivElement>;
-  /** The current mark rows, by line: the items among them. */
-  rows: Map<number, HTMLDivElement>;
+  /** The current bands, by rowKey: every layout row with a line. Only the root file's carry `data-line`. */
+  bands: Map<string, HTMLDivElement>;
+  /** The current mark rows, by rowKey: the items among them. */
+  rows: Map<string, HTMLDivElement>;
   /** The line hovered here, and the one hovered in the other pane; a render replays only the second. */
   hover: number | null;
   relayed: number | null;
@@ -155,9 +155,12 @@ function drawChart(state: State, chart: Gantt): void {
 /** One item's marks, on a full-width row that takes its clicks. Its band is drawn apart, below the week lines. */
 function drawRow(model: Model, node: ItemNode, row: GanttRow, ctx: RenderContext): HTMLDivElement {
   const marks = div('gantt-row');
-  marks.dataset.line = String(row.line);
   marks.classList.toggle('done', row.done);
-  marks.addEventListener('click', () => ctx.setCursorLine(row.line));
+  // A mounted row's line is in another file: no cursor, hover or click-to-line for it.
+  if (row.file === model.file) {
+    marks.dataset.line = String(row.line);
+    marks.addEventListener('click', () => ctx.setCursorLine(row.line));
+  } else marks.classList.add('mounted');
   const mark = div(`gantt-${row.mark.kind}`, marks);
   mark.style.left = `${row.mark.x}px`;
   if ('width' in row.mark) mark.style.width = `${row.mark.width}px`;
@@ -169,42 +172,50 @@ function drawRow(model: Model, node: ItemNode, row: GanttRow, ctx: RenderContext
   return marks;
 }
 
+/** A band's line, when it is the root file's; a mounted row's band is never the cursor's or hovered. */
+const bandLine = (band: HTMLDivElement): number | null => (band.dataset.line === undefined ? null : Number(band.dataset.line));
+
 function markCursor(state: State): void {
   const cursor = state.ctx?.cursorItem;
-  for (const [line, band] of state.bands) {
-    band.classList.toggle('at-cursor', cursor?.line === line && cursor.exact);
-    band.classList.toggle('near-cursor', cursor?.line === line && !cursor.exact);
+  for (const band of state.bands.values()) {
+    const line = bandLine(band);
+    band.classList.toggle('at-cursor', line !== null && cursor?.line === line && cursor.exact);
+    band.classList.toggle('near-cursor', line !== null && cursor?.line === line && !cursor.exact);
   }
 }
 
 function markHover(state: State): void {
   const hovered = state.hover ?? state.relayed;
-  for (const [line, band] of state.bands) band.classList.toggle('hover', line === hovered);
+  for (const band of state.bands.values()) {
+    const line = bandLine(band);
+    band.classList.toggle('hover', line !== null && line === hovered);
+  }
 }
 
-/** Place an element per entry of `wanted` in `layer`, by line: keep and move those already there, make the new ones, remove the rest. */
-function place<T extends { line: number; top: number; height: number }>(
+/** Place an element per entry of `wanted` in `layer`, by rowKey: keep and move those already there, make the new ones, remove the rest. */
+function place<T extends { line: number; file: string; top: number; height: number }>(
   wanted: T[],
-  current: Map<number, HTMLDivElement>,
+  current: Map<string, HTMLDivElement>,
   layer: HTMLDivElement,
   make: (row: T) => HTMLDivElement,
 ): void {
-  const shown = new Set<number>();
+  const shown = new Set<string>();
   for (const row of wanted) {
-    shown.add(row.line);
-    let el = current.get(row.line);
+    const key = rowKey(row);
+    shown.add(key);
+    let el = current.get(key);
     if (!el) {
       el = make(row);
-      current.set(row.line, el);
+      current.set(key, el);
       layer.append(el);
     }
     el.style.top = `${row.top}px`;
     el.style.height = `${row.height}px`;
   }
-  for (const [line, el] of current) {
-    if (shown.has(line)) continue;
+  for (const [key, el] of current) {
+    if (shown.has(key)) continue;
     el.remove();
-    current.delete(line);
+    current.delete(key);
   }
 }
 
@@ -222,15 +233,16 @@ function draw(state: State): void {
   scale.style.height = `${layout.bodyTop}px`;
   body.style.top = `${layout.bodyTop}px`;
   canvas.style.height = `${layout.contentHeight}px`;
-  const items = new Map<number, ItemNode>();
-  const collect = (node: ItemNode): void => void (items.set(node.line, node), node.children.forEach(collect));
+  const items = new Map<string, ItemNode>();
+  const collect = (node: ItemNode): void => void (items.set(rowKey(node), node), node.children.forEach(collect));
   model.roots.forEach(collect);
   place(chart.bands, state.bands, state.bandLayer, (band) => {
     const el = div('gantt-band');
-    el.dataset.line = String(band.line);
+    if (band.file === model.file) el.dataset.line = String(band.line);
+    else el.classList.add('mounted');
     return el;
   });
-  place(chart.rows, state.rows, state.markLayer, (row) => drawRow(model, items.get(row.line)!, row, ctx));
+  place(chart.rows, state.rows, state.markLayer, (row) => drawRow(model, items.get(rowKey(row))!, row, ctx));
   state.drawn = model;
   markCursor(state);
   markHover(state);

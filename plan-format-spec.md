@@ -25,6 +25,7 @@ A plan file is a **rows** file (base 0.12 and extensions 0.10, in `packages/rows
 ---
 lead: title:text
 nest: parent
+mount: mount
 markers: done=~
 columns: est:duration unit=h hpd=8 dpw=5 | owner:text | notes:text
 roles: effort=est
@@ -35,6 +36,7 @@ roles: effort=est
 - The tool writes `profile: plan` into the frontmatter of every file it creates, so the file says what it is even if it is renamed.
 - Exports, and later canonical form, write the resolved keys out in full.
 - A file may override any key the profile sets. A file's own `columns:` replaces the whole column list, including options, so a duration column declared there needs its own `unit=h hpd=8 dpw=5` (§2.6).
+- `mount: mount` names the mount column (rows extensions §12), an implicit column written by name: `Product A {#a} | mount=teams/alpha.plan` mounts another plan beneath the row (§2.12).
 - `roles: effort=est` marks `est` as the effort column, which scheduling reads. The plan profile binds no other role and has no milestone marker, so an estimate-only file is never scheduled, and `^` in its titles means what it always did. A file's own `roles:` merges with it per role (rows ext §11). A file whose own `columns:` has no `est` loses the binding, with no error; one whose `est` is not a duration or number column keeps it unbound, also with no error, and whatever needs the effort role says why.
 
 **The schedule profile.** `profile: schedule` names the profile published as `profiles/schedule.rows`, the plan profile plus the scheduling columns, their roles and the milestone marker. A PM writes it to schedule a file (§2.11):
@@ -43,6 +45,7 @@ roles: effort=est
 ---
 lead: title:text
 nest: parent
+mount: mount
 markers: done=~ milestone=^
 columns: est:duration unit=h hpd=8 dpw=5 | dur:duration unit=h hpd=8 dpw=5 | start:date | deps:ref many qualifier=lag:duration | due:date | owner:text | notes:text
 roles: effort=est duration=dur start=start deps=deps deadline=due
@@ -156,8 +159,9 @@ Every diagnostic carries a line, a severity, a code, a message, a span where one
 | Tabs converted on load                                                                                | info     | `tabs-converted`                           |
 | Override differs from child sum (only when `childrenHaveValue`)                                       | info     | `override-differs`                         |
 | Scheduling (§2.11)                                                                                    | see §2.11 | `schedule-…`                              |
+| Mounts (§2.12)                                                                                        | see §2.12 | `mount-…`                                 |
 
-`key-type` on `project-start` reads "project-start must be a date like 2026-10-05; 'soon' is ignored, so the schedule isn't computed." A diagnostic from a plugin's stage carries `source`, the plugin's id; core's leave it unset.
+`key-type` on `project-start` reads "project-start must be a date like 2026-10-05; 'soon' is ignored, so the schedule isn't computed." A diagnostic from a plugin's stage carries `source`, the plugin's id; core's leave it unset. A diagnostic in a mounted file carries `file`, the file's resolved path, and its line and spans are in that file; the root file's leave it unset (§2.12).
 
 Rows ignores unknown keys silently. The plan tool reports them as info, because in a hand-edited file an unknown key is usually a typo, such as `colums:`. A name that belongs to a plugin the reader doesn't have is only an info, since files move between people with different plugins. The vocabulary diagnostics are reported on the line that binds the name; a binding that comes from the profile gets none.
 
@@ -203,23 +207,24 @@ The **schedule** plugin (`src/plugins/schedule/`) computes dates, slack and late
 
 **Milestones.** A leaf with the milestone marker has a duration of 0; a filled `est` or `dur` on it is ignored, with `schedule-milestone-effort`. A milestone marker on a parent row gets `schedule-milestone-parent`, and the row is a summary.
 
-**Dependencies.** `deps` holds finish-to-start links, each with an optional lag (`#review 1d`). A lag is calendar time: a day is the calendar's `hoursPerDay` and a week 5 days, whatever the effort column's `dpw`; a negative lag counts as 0, with `schedule-negative-lag`. A link to a summary is ignored, with `schedule-dep-on-summary`. A link that doesn't resolve is already a rows validation error, and is ignored. The links, together with each parent's hold on its descendants, are a graph; the links inside each strongly connected component of it are ignored, and each row in one gets `schedule-dep-cycle`, so the result doesn't depend on row order. A parent that depends on its own descendant is such a cycle.
+**Dependencies.** `deps` holds finish-to-start links, each with an optional lag (`#review 1d`). A lag is calendar time: a day is the calendar's `hoursPerDay` and a week 5 days, whatever the effort column's `dpw`; a negative lag counts as 0, with `schedule-negative-lag`. A link may point at a parent row, so one project can follow another: it waits for the parent's finish, its latest descendant's. A link that doesn't resolve is already a rows validation error, and is ignored. References resolve within the row's own file (§2.12). The graph's points are each row's start and its finish: a parent's start comes before its children's, a leaf's finish after its start, a parent's finish after its children's, and a link runs from one row's finish to another's start. The links inside each strongly connected component of it are ignored, and each row with a point in one gets `schedule-dep-cycle`, so the result doesn't depend on row order. A parent that depends on its own descendant, and a row that depends on its own ancestor, are such cycles.
 
 **Forward pass.**
 
 - A row's derived start is its **floor**: the latest of hour 0, each link's `add(finish, lag)`, and its parent's floor passed down. The start pin is a floor too: a row passes `max(derived, pin)` to its descendants, so pins and links on a parent push every descendant.
+- A mounted file's roots also take its own valid `project-start` as a floor, converted with `fromDate(d, 'start')` on the root's calendar, as part of their derived start (§2.12).
 - A leaf's effective start is `max(derived, pin)`, and its finish `add(start, duration)`.
 - A summary's effective start is its earliest descendant start, and its finish its latest descendant finish. A `dur` pin on a summary is ignored, with `schedule-summary-duration`.
 - `projectFinish` is the latest finish of all.
 
 **Backward pass.**
 
-- A leaf's late finish is the earliest of: `projectFinish`; each successor's late start minus its lag, where a summary successor's late start is the earliest among its descendants; its own deadline; and each ancestor's deadline.
+- A row's late finish is the earliest of: `projectFinish`; each successor's late start minus its lag, where a summary successor's late start is the earliest among its descendants; its own deadline; and its parent's late finish. So a parent's deadlines and successors limit every descendant: a link out of a parent holds back the whole subtree.
 - A leaf's late start is `add(lateFinish, -duration)`, and its slack `lateStart - start`. A summary's slack is the smallest among its descendants.
 - Every row is **critical** when its slack is at most 0, so a phase on the critical path shows as one.
 - A row is **late** when its finish passes its own deadline, and gets `schedule-late`: "finishes 2026-10-13, after its deadline 2026-10-12". Negative slack upstream shows in the fields, with no diagnostic of its own.
 
-**Fields.** `start` (a `Pinnable`: `derived` is the floor, `pin` the start cell, `effective` as above), `duration` (a `Pinnable`, leaves only), `finish`, `lateStart` and `lateFinish` (leaves only), `slack`, `critical`, `late`, `milestone` (a leaf with the marker, for the schedule table), `deadline` (the deadline date's `'end'` edge, on each row whose deadline cell is set; `schedule.backward` writes it, since it already converts the date for the late finish) and the document's `projectFinish`. A summary has no `duration`, `lateStart` or `lateFinish`.
+**Fields.** `start` (a `Pinnable`: `derived` is the floor, `pin` the start cell, `effective` as above), `duration` (a `Pinnable`, leaves only), `finish`, `lateStart` and `lateFinish` (leaves only), `slack`, `critical`, `late`, `milestone` (a leaf with the marker, for the schedule table), `deadline` (the deadline date's `'end'` edge, on each row whose deadline cell is set; `schedule.backward` writes it, since it already converts the date for the late finish) and the document's `projectFinish`. A summary has no `duration`, `lateStart` or `lateFinish`. `schedule.forward` also writes the dependency network it read as a document-scope field, `network`, which `schedule.backward` reads, so it is read once per analysis; no view reads it.
 
 **Pin diagnostics.** On a start pin: `schedule-pin-no-effect` when the effective start is later than the pin (on a summary, when no descendant starts at it); else `schedule-pin-equals-derived` when the pin equals the derived start. On a duration pin: `schedule-pin-equals-derived` when it equals the effort.
 
@@ -232,11 +237,35 @@ The **schedule** plugin (`src/plugins/schedule/`) computes dates, slack and late
 | A start pin later than nothing it pushes                    | info     | `schedule-pin-no-effect`      |
 | A start or duration pin equal to its derived value          | info     | `schedule-pin-equals-derived` |
 | A negative lag; counts as 0                                 | warning  | `schedule-negative-lag`       |
-| A dependency on a parent row; ignored                       | warning  | `schedule-dep-on-summary`     |
 | Each row in a dependency cycle; the cycle's links ignored   | error    | `schedule-dep-cycle`          |
 | A row that finishes after its own deadline                  | warning  | `schedule-late`               |
 
 The reference fixture is `examples/schedule.plan`, whose values were worked out by hand (`TASKS.md`, Task 28). It is the scheduling counterpart of §2.10.
+
+### 2.12 Mounts and composition
+
+A master plan mounts other plans into its tree (VISION §6). A row with a valid mount cell (rows extensions §12) is a **mount row**: `Product A {#a} | mount=teams/alpha.plan`. The file it is in is read as itself, and the files it mounts are read as themselves, each by its own profile, IDs, columns and diagnostics; composition joins the results into one model. The file the editors show is the **root**.
+
+- **Paths** resolve relative to the file holding the mount row, through the workspace (`PLUGINS.md` §7.1), and must stay inside the folder. Only a workspace that can list files can read mounted ones; in the single-file workspace every mount says so.
+- **The tree.** A mount row's children are its own children in its file, followed by the mounted file's roots. Mounts nest: a mounted file's mount rows mount files too. Each item keeps its `line` and spans within its own file and gains `file`, its resolved path (the root's own path, or `''` for a new document). Outline numbers run across the composed tree. A mount row is an ordinary parent: done inherits through it, an estimate on it is the master's top-down figure (compared with the team's by `override-differs`), and a pin, deadline or dependency on it applies to everything under it.
+- **Composed order** is document order within each file, a mount row's own children before the file it mounts. A file is shown once: the first mount of it in composed order wins.
+- **Columns across files.** The model's columns are the root's. Each maps to a mounted file's column in two passes: first by role (a root column bound to a role takes the mounted column bound to the same role), then by name among the mounted columns not already taken. A mounted column maps to at most one root column, so no total counts a value twice. A root column that maps to nothing is blank on that file's rows, with no diagnostic. Summable cells are read as hours by their own file's column, so its own `hpd` and `dpw` apply. Views and stages read every cell through this mapping (`PLUGINS.md` §4).
+- **Roles, markers and references** are each file's own: a row's `deps` cell is read through its own file's bindings, its milestone marker is its own file's, and a reference resolves within its own file, so two files can both have `#api`. Dependencies from one file into another file's rows come later.
+- **Scheduling** has one time axis: the root's calendar, from its `project-start`. A mounted file's own valid `project-start` is a floor on its roots (§2.11); a mounted file without one starts where the master puts it.
+- **Diagnostics.** A mounted file's own diagnostics are in the model with `file` (§2.9). The editors show only the root's; the grid's problems list shows all of them, grouped by file (§4b.6.3).
+
+| Case                                                                                       | Severity | Code                     |
+| ------------------------------------------------------------------------------------------ | -------- | ------------------------ |
+| The file isn't found, or can't be read                                                     | warning  | `mount-missing`          |
+| The path resolves outside the folder                                                       | error    | `mount-outside`          |
+| The file mounts itself, directly or through other files; reported once, on the mount that closes the loop (the first, in composed order, whose file is already above it) | error    | `mount-loop`             |
+| The file is already mounted earlier in composed order; this mount shows nothing            | warning  | `mount-overlap`          |
+| A `#part` mount; it shows nothing for now                                                  | info     | `mount-part-unsupported` |
+| Any mount in the single-file workspace: "Open the folder to see mounted plans."            | info     | `mount-needs-folder`     |
+
+Each is on the mount row, in the file that holds it, spanning the mount target. A `#part` mount gets only `mount-part-unsupported`, and in the single-file workspace any other mount gets only `mount-needs-folder`. A file the shell hasn't gathered yet (it is still being read) shows nothing, with nothing to report.
+
+The reference fixture is `examples/portfolio/`: `portfolio.plan` mounts `teams/alpha.plan` and `teams/beta.plan`, and its values were worked out by hand (`TASKS.md`, Task 35).
 
 ## 3. Architecture
 
@@ -263,7 +292,9 @@ The reference fixture is `examples/schedule.plan`, whose values were worked out 
 
 The tree's columns are the declared columns in order. Implicit columns (`parent`, `done`, and `id` when identity is on) are not columns of the tree; `done` is read into each item's own done flag (`ownDone`, §2.5), and `done` is set when the item or an ancestor is done (§2.8). Inheritance is structure, not arithmetic, so it is read here, not computed by a plugin.
 
-Each item carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`), computed from the rows parent relation. Only rows are counted. Outline numbers are structural references and shift when lines are inserted above them. They are not stable IDs; anchors are.
+Each item carries `outlineNumber: string` (`1`, `1.2`, `2.1.5`), computed from the rows parent relation, and across the composed tree once files are mounted (§2.12). Only rows are counted. Outline numbers are structural references and shift when lines are inserted above them. They are not stable IDs; anchors are.
+
+Each file is read this way once, by its own profile, and `analyze` keeps the read while the file's text is unchanged. Composition then joins the reads: each item of the analysis is a fresh copy carrying `file` (§2.12), so a cached read never changes and a model never changes under its holder.
 
 ### 3.2 Compute
 
@@ -281,7 +312,7 @@ The **schedule** plugin's stages, `schedule.forward` and `schedule.backward`, co
 
 No renderer or exporter performs arithmetic: they read these fields.
 
-The model carries a fixed core: the rows document it was read from (`doc`), `lines`, `roots` (the tree's items), `columns`, `bindings`, `calendar`, `diagnostics`, `inactive`, the stages that were skipped with the reason for each, and `version`, the buffer version it was read at (§3.7). The model carries `doc` so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
+The model carries a fixed core: the root file's path (`file`), its rows document (`doc`) and `lines`, `files` (every file in the composed tree, the root first, each with its rows document and lines), `roots` (the composed tree's items), `columns` (the root's), `bindings` (the root's), `calendar`, `diagnostics`, `inactive`, the stages that were skipped with the reason for each, and `version`, the buffer version it was read at (§3.7). `field(node, index)` gives a row's cell for root column `index`, through the column mapping (§2.12). The model carries `doc` so that editors can ask the rows tokenizer and edit API for tokens and edits against the same text and spans. `Model.doc` is for editors only; renderers and exporters read computed fields, never `doc` (lint-enforced: they may not import `rows`).
 
 `bindVocabulary` runs after `readTree`. It reads rows' merged roles, the frontmatter keys and the marker names, checks them against the vocabulary (§2.1) and the registered plugins, and reports §2.9's vocabulary diagnostics. `bindings` holds each bound role's column, each core or registered plugin's key with its value, and the marker names; a core role left unbound for its column's type is kept with the reason. Values are read with rows' `readValue`, as cells are.
 
@@ -293,7 +324,7 @@ A stage declares the roles, keys and markers it reads. It is skipped when a requ
 
 `lines` is every line of the file in order, exactly as rows classified it — frontmatter, blank, comment or item. As in rows, the empty text after a final newline is not a line. The model is lossless for the same reason the tree is — an editor that shows the file has to show its comment, blank and front matter lines, and must not classify them a second time for itself. Renderers read `roots` and ignore it.
 
-`createAnalyzer(registry)` returns `analyze(text, { filename?, files?, version? }?) → Model`, which composes `parseRows`, `readTree`, `bindVocabulary`, the calendar and the stages, and is the single entry point the app shell and any tooling call. It is synchronous and pure, and never reads the clock (lint-enforced in `src/core/` and in plugins outside their renderers and exporters). The shell passes the current file name, or none for a new document (§2.1), the buffer's version, which the model records (0 when none is passed), and a snapshot of included files, which it gathers first through the workspace with `includesOf(text)` (`PLUGINS.md` §6). The snapshot is unused until M3. A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `parsePlan` or `readTree` directly (lint-enforced). With no plugins registered, `analyze` still returns the tree, the lines and `readTree`'s diagnostics.
+`createAnalyzer(registry)` returns `analyze(text, { filename?, files?, resolve?, version? }?) → Model`, which composes `parseRows`, `readTree` and `bindVocabulary` for each file, the composition (§2.12), the calendar and the stages, and is the single entry point the app shell and any tooling call. It is synchronous and pure, and never reads the clock (lint-enforced in `src/core/` and in plugins outside their renderers and exporters). The shell passes the current file name, or none for a new document (§2.1), the buffer's version, which the model records (0 when none is passed), and, when the workspace can list files, a snapshot of the mounted files (`files`, the text by resolved path, or null for a file that can't be read) and the workspace's `resolve`. It gathers the snapshot first, through the workspace (`PLUGINS.md` §6): the root's mounts come from its model (`mountsOf`), and a mounted file's from `readMounts`. Without `files`, every mount gets `mount-needs-folder`. A tab that reaches `analyze` despite §2.2 is converted to 4 spaces there too, with the info in §2.9, so the spans then index the converted text. Nothing outside `src/core/` imports the rows parser, `parsePlan` or `readTree` directly (lint-enforced). With no plugins registered, `analyze` still returns the tree, the lines and `readTree`'s diagnostics.
 
 `src/core/` imports nothing outside itself, the standard library and the `rows` package (lint-enforced).
 
@@ -313,7 +344,9 @@ interface Renderer {
 
 Renderers that read a plugin's fields belong to that plugin: tree and table are in `src/plugins/estimate/renderers/`, and the schedule table in `src/plugins/schedule/renderers/`. A renderer that reads only core fields goes in `src/views/`. The row-per-item table, its cursor highlight and click-to-line, and their CSS are in `src/ui/`, shared UI code for renderers and editors, which imports only core's types (`PLUGINS.md` §8).
 
-`RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), and `setCursorLine(line)` for click-to-line. It is renderer-agnostic.
+`RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), `setCursorLine(line)` for click-to-line, and `openFile(path)`, which makes a file the active one (a mount row's file badge). It is renderer-agnostic.
+
+**Mounted rows** (§2.12). The tree, table, schedule table and pin review show the whole composed tree, and their totals include mounted plans. A row from a mounted file has a shaded background; its line is in another file, so the cursor and hover never land on it, and clicking it moves nothing. A mount row's title has a **file badge** naming its file (`alpha.plan`), a button titled "Open _teams/alpha.plan_" that makes that file the active one; a mount row whose path doesn't resolve has none. The shared row and title helpers in `src/ui/grid.ts` do this for every view.
 
 **Hover.** The line under the pointer is relayed between the editor and the view, as the cursor line is, by line and never by which view or editor it is:
 
@@ -340,7 +373,8 @@ interface RowLayout {
   scrollTop: number;
   rows: { at: { line: number } | null; top: number; height: number }[];
   // the visible rows, in CONTENT coordinates (from the top of the body, not of the viewport);
-  // a leader may add a margin either side. at: null for the grid's draft and new-task rows; { line } can gain a file in M3
+  // a leader may add a margin either side. at: null for the grid's draft and new-task rows. A leader's rows are
+  // the root file's; a follower's natural layout gives a mounted row's file as at.file (§5.5)
 }
 ```
 
@@ -411,7 +445,7 @@ interface Exporter {
 
 Exporters belong to the plugin whose fields they read, as renderers do (the TSV exporter is in `src/plugins/estimate/exporters/`), are registered through its manifest, and appear as buttons on the preview toolbar, greyed out by `requires` as renderers are. Failures (clipboard permission, framed contexts) are shown visibly.
 
-**TSV exporter ("Copy for Excel").** Tab-separated text, one header row then one row per item in document order:
+**TSV exporter ("Copy for Excel").** Tab-separated text, one header row then one row per item of the composed tree (§2.12) in document order, a mounted row's cells through the column mapping:
 
 - `#` — outline number prefixed with `'` so spreadsheets keep it as text (otherwise `1.10` pastes as the number 1.1)
 - `level` — 1-based depth
@@ -523,7 +557,7 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 - Comment and blank lines render as greyed rows: a WBS cell with no number, then one cell spanning the remaining columns and holding the raw line text, indentation included. They are editable as raw text — editing one into an item line is an ordinary text edit and the row changes kind on the next render — and they can be selected, deleted and moved like any row. The reverse is not a grid edit: an item's title cell edits only the title (§4b.2), so a `//` typed there is quoted and reads back as part of the title. An item is commented out in the text editor.
 - Front matter renders as a single collapsed greyed row at the top, read-only.
 - The last body row is one blank **new task** row. Typing into it inserts a new item line at the end of the document at the indent of the last item line (or indent 0 if none).
-- A read-only **total** row below it shows document `effective` and `doneSum` per summable column. It is pinned to the bottom of the grid's scroll area (its cells are sticky). It keeps its own place at the end of the table, which is what lets the last task and the new-task row scroll clear of it, so the body needs no extra padding.
+- A read-only **total** row below it shows document `effective` and `doneSum` per summable column, mounted plans included (§2.12). The grid shows only the active file's own rows; editing mounted rows in the grid comes later. It is pinned to the bottom of the grid's scroll area (its cells are sticky). It keeps its own place at the end of the table, which is what lets the last task and the new-task row scroll clear of it, so the body needs no extra padding.
 - The **current row**, the one the focused cell or selected row is on, has the views' cursor band across its full width, behind its cells, as well as the focused cell's outline. A selected row keeps its own style over it, and a done row keeps the band.
 
 ### 4b.2 Cells
@@ -625,6 +659,8 @@ The text editor offers every fix as a lint action, whatever its tier; `confirm` 
 #### 4b.6.3 Problems list
 
 A panel in the grid view listing every diagnostic in document order, with its severity, message, row title (or line number), and its fixes as buttons. Clicking an entry focuses the row, or the cell when there is a span. The panel shows a count, even when collapsed. Diagnostics the grid can't show inline (hidden columns, settings, identity) appear only here.
+
+With mounted files (§2.12), the list shows the root file's problems first, then each mounted file's in composed order; when more than one file has problems, each group is headed by its path. A mounted file's entry names its row in that file, offers no fixes (their edits are for that file's text), and clicking it makes that file active with the cursor on the row, where its fixes are offered as usual. The settings banner and the grid's inline marks show only the root file's.
 
 #### 4b.6.4 Structure operations work in levels
 
@@ -733,6 +769,8 @@ The schedule plugin's renderer (§2.11): one row per item, nested like the tree,
 
 The schedule plugin's second renderer (`src/plugins/schedule/renderers/gantt/`), and the first that follows (§3.3). It draws from its `RowLayout`: the editor's when one leads, otherwise its natural layout. A row with no item stays empty, and only rows in the layout are drawn, so a folded parent's children have no marks while its bracket still spans their dates.
 
+With mounted files (§2.12), and until the editors show them (Task 36): following an editor, the Gantt shows only the root file's rows, since the editor's rows are; a mount row's bracket still spans its whole plan. Standalone, its natural layout has every row of the composed tree, and keys a mounted row by its file and line. A mounted row is shaded, and has no cursor, hover or click-to-line.
+
 - **Geometry** is a pure function, `ganttGeometry(model, layout, dayWidth, today)`, returning plain data: per row, a bar, a summary bracket or a milestone diamond, its flags (critical, late, done, pinned), a pinned start's `pinX`, a late row's `deadlineX`, and its layout row's `top` and `height`; a band for every layout row with a line, an empty one too; the deadline lines, the project finish, the today line, and the scale. The renderer only places what it returns.
 - **Layers,** from bottom to top: the cursor and hover bands, the scale's week lines, the marks, then the deadline, today and project-finish lines. Each item's marks sit on a transparent full-width row, which takes its clicks.
 - **The x axis is working days**: a position is `WorkHours / hoursPerDay × dayWidth`, so weekends take no space. `dayWidth` is 24px. The **extent** runs from hour 0 to the later of the project finish and the latest deadline, rounded up to a whole working day, plus one working day.
@@ -762,7 +800,8 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
   - Open file is the single-file workspace: the File System Access API where available, falling back to file input and download.
   - Open folder picks a folder with `showDirectoryPicker` (read and write). It lists the folder's `.plan` and `.rows` files recursively, as paths relative to the folder, skipping dot-folders and `node_modules`. The file shown first is the one last active in that folder, else the first at its top level, else the first listed. A folder with no plan files opens nothing: the open files stay, and the status reads "No plan files in folder".
   - In a browser without `showDirectoryPicker`, such as Firefox, Open folder is disabled, with a tooltip saying it needs Edge or Chrome. In a cross-origin frame it is disabled with a tooltip saying so.
-  - Paths resolve relative to the file they appear in. A path outside the folder is refused with a plain reason; until M3b an include refused this way is left out of the snapshot.
+  - Paths resolve relative to the file they appear in. A path outside the folder is refused with a plain reason, and a mount to it gets `mount-outside` (§2.12).
+  - **Mounted files** are gathered before each analysis (`PLUGINS.md` §6). A mounted file open in the store gives its current text, unsaved edits included; any other is read from disk once, and kept while it stays mounted. They are read again on focus and Refresh, with the open files.
   - **Remembering the folder.** The last folder opened is kept in IndexedDB, with the file last active in it, as a per-viewer convenience. While one is remembered, **Reopen _name_** asks the browser for permission again with one click. A refusal says "Permission to open _name_ was refused" and keeps Reopen. A folder that no longer resolves is forgotten, with a status line saying so; opening another folder replaces it.
 - **Open files.** The files opened in this session form a store, and the single-file workspace uses it too, holding one file. Each file holds its path, its own buffer (so its undo history survives switching files), the text as last read from or written to disk, whether it is unsaved, and whether it changed on disk since (_stale_) or can no longer be read (_missing_). Exactly one is active: the editors, analysis and views follow it, and `analyze` gets its path as the filename.
 - **File panel.** For a workspace that can list files, a collapsible panel left of the editor lists them grouped by folder, with markers for unsaved (●), changed on disk (↻) and missing on disk (✕). Clicking a file, or Enter on it, makes it active, reading it the first time; the arrow keys move between files.

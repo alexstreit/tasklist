@@ -46,6 +46,8 @@ export function showSyntax(view: EditorView, model: Model): void {
   if (model.doc.text !== view.state.doc.toString()) return;
   const starts: number[] = [];
   const visit = (node: ItemNode): void => {
+    // Only the file's own rows: a mounted row's span is in another file.
+    if (node.file !== model.file) return;
     if (node.done) starts.push(node.span.from);
     node.children.forEach(visit);
   };

@@ -132,14 +132,13 @@ describe('ref cells', () => {
     expect(lineOf(7)).toBe('    Review | 4h');
   });
 
-  it('writes a dependency on a parent or on the row itself, and the schedule reports it', () => {
+  it('writes a dependency on a parent or on the row itself; the schedule reports the cycle, and a parent is a valid target (Task 35)', () => {
     open(PLAN);
     edit(9, DEPS, '1, 2.1');
     expect(lineOf(5)).toBe('Design {#design}');
     expect(lineOf(9)).toBe('    API {#api} | 3d | deps=#design, #api');
     const codes = analyze(buffer.text()).diagnostics.map((d) => d.code);
-    expect(codes).toContain('schedule-dep-on-summary');
-    expect(codes).toContain('schedule-dep-cycle');
+    expect(codes.filter((c) => c.startsWith('schedule-dep'))).toEqual(['schedule-dep-cycle']);
   });
 
   it('after Alt+Up moves rows, shows the new outline numbers, and the references in the file are unchanged', () => {

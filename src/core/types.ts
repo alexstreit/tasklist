@@ -43,6 +43,8 @@ export interface Diagnostic {
   fixes?: Fix[];
   /** The plugin whose stage gave it; unset for core's diagnostics (PLUGINS.md §5). */
   source?: string;
+  /** The mounted file it is in, by resolved path; unset for the root file's. Its line and spans are in that file. */
+  file?: string;
 }
 
 /** A declared column. `type` is the rows type kind; only `duration` and `number` are summed (spec §2.6). */
@@ -96,8 +98,12 @@ export interface ItemNode extends NodeBase {
   /** One per declared column, in order; null when the row doesn't set it. */
   fields: (Field | null)[];
   children: ItemNode[];
-  /** Structural reference: `1`, `1.2`, `2.1.5`. Only item nodes count. */
+  /** Structural reference: `1`, `1.2`, `2.1.5`, across the composed tree. Only item nodes count. */
   outlineNumber: string;
+  /** The file the row is in, by resolved path: the root file's own path, or '' for a new document. `line` and the spans are in it. */
+  file: string;
+  /** A mount row's target, resolved, when it resolves inside the folder; for the file badge. */
+  mount?: string;
 }
 
 export type Node = BlankNode | CommentNode | FrontMatterNode | ItemNode;
@@ -124,6 +130,12 @@ export interface Inactive {
 export interface ModelReader {
   readonly roots: readonly ItemNode[];
   readonly columns: readonly Column[];
+  /**
+   * The node's cell for root column `index`, through the column mapping (PLUGINS.md §6): a mounted
+   * row's own file may order its columns differently, or lack one. Null when it has no such cell.
+   * Read cells through this, never `node.fields[index]`.
+   */
+  field(node: ItemNode, index: number): Field | null;
   /** A node-scope field's value; undefined when its stage didn't set it on this node. */
   get<T>(node: ItemNode, key: FieldKey<T>): T | undefined;
   /** A document-scope field's value. */
@@ -132,11 +144,15 @@ export interface ModelReader {
 
 /** The fixed core, plus the plugin fields behind `get` and `value` (PLUGINS.md §4). */
 export interface Model extends ModelReader {
-  /** The rows document the model was read from: its text, schema and spans. Editors ask the rows edit API and tokenizer for edits and tokens against it. */
+  /** The root file's path, as `analyze` was given it; '' for a new document. A node is mounted when its `file` isn't this. */
+  file: string;
+  /** The root file's rows document: its text, schema and spans. Editors ask the rows edit API and tokenizer for edits and tokens against it. */
   doc: RowsDocument;
+  /** Every file in the composed tree, the root first, then each mounted file in composed order, with its rows document and lines. */
+  files: ReadonlyMap<string, { doc: RowsDocument; lines: readonly Node[] }>;
   columns: Column[];
   roots: ItemNode[];
-  /** Every line of the file in order, as parsed. Lossless, like the tree: an
+  /** Every line of the root file in order, as parsed. Lossless, like the tree: an
    *  editor showing the file needs the comment, blank and front matter lines
    *  too, and must not classify them again for itself. */
   lines: readonly Node[];
@@ -171,6 +187,8 @@ export interface RenderContext {
    *  renderer itself requested through setCursorLine. */
   scrollToCursor: boolean;
   setCursorLine(line: number): void;
+  /** Make the file at `path` the active file: a mount row's file badge (Open). */
+  openFile?(path: string): void;
   // Hover across panes (spec §3.3): the shell relays a hovered line between the editor and the view.
   /** The pointer is over the row on `line`; null when it left the rows. */
   setHoverLine?(line: number | null): void;
@@ -200,9 +218,10 @@ export interface RowLayout {
   /**
    * The visible rows (a leader may add a margin either side), in content coordinates: from the
    * top of the body, not of the viewport. `at` is null for a row with no line, such as the
-   * grid's draft row; `{ line }` can gain a file in M3.
+   * grid's draft row. `file` is a mounted row's file, in a follower's own natural layout; a
+   * leader's rows are the root file's, so they have none.
    */
-  rows: { at: { line: number } | null; top: number; height: number }[];
+  rows: { at: { line: number; file?: string } | null; top: number; height: number }[];
 }
 
 export interface Renderer {

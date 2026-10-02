@@ -63,18 +63,32 @@ const uiRule = {
 };
 
 // Analysis never reads the clock (PLUGINS.md §5): the same text gives the same model on any day.
-const noClock = {
-  files: ['src/core/**/*.ts', 'src/plugins/**/*.ts'],
-  ignores: ['src/plugins/*/renderers/**', 'src/plugins/*/exporters/**'],
-  languageOptions: { parser: tseslint.parser },
-  rules: {
-    'no-restricted-syntax': [
-      'error',
-      { selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']", message: 'Analysis never reads the clock.' },
-      { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: 'Analysis never reads the clock.' },
-    ],
+const clockSyntax = [
+  { selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']", message: 'Analysis never reads the clock.' },
+  { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: 'Analysis never reads the clock.' },
+];
+
+// Plugins and views read a row's cells through model.field (PLUGINS.md §4): a mounted row's own
+// fields are in its own file's column order. `model.fields()`, the keys written, is a call.
+const fieldsSyntax = [
+  {
+    selector: "MemberExpression[property.name='fields']:not(CallExpression > MemberExpression.callee)",
+    message: "Read a row's cells with model.field(node, index); node.fields is in its own file's column order.",
   },
-};
+];
+
+const syntax = (files, selectors, ignores) => ({
+  files,
+  ...(ignores ? { ignores } : {}),
+  languageOptions: { parser: tseslint.parser },
+  rules: { 'no-restricted-syntax': ['error', ...selectors] },
+});
+const stages = ['src/plugins/*/renderers/**', 'src/plugins/*/exporters/**'];
+const noClock = [
+  syntax(['src/core/**/*.ts'], clockSyntax),
+  syntax(['src/plugins/**/*.ts'], [...clockSyntax, ...fieldsSyntax], stages),
+  syntax([...stages.map((s) => `${s}/*.ts`), 'src/views/**/*.ts', 'src/ui/**/*.ts'], fieldsSyntax),
+];
 
 const restrict = (files, patterns, ignores) => ({
   files,
@@ -101,7 +115,7 @@ export default [
   restrict(['src/plugins/*/renderers/**/*.ts', 'src/plugins/*/exporters/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows]),
   restrict(['src/views/**/*.ts'], [analyzeOnly, noCodeMirror, rowsEntryOnly, noRows, viewsCoreOnly]),
   uiRule,
-  noClock,
+  ...noClock,
   restrict(['src/editor/**/*.ts', 'src/buffer/CodeMirrorBuffer.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['src/grid/**/*.ts'], [analyzeOnly, noParseRows, rowsEntryOnly]),
   restrict(['tests/**/*.ts'], [rowsEntryOnly]),

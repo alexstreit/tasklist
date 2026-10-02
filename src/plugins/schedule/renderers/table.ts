@@ -3,7 +3,7 @@
 
 import type { ItemNode, Model, RenderContext, Renderer, WorkHours } from '../../../core';
 import { formatDate } from '../../../ui/dates';
-import { addItemRow, createGrid, mount, muted } from '../../../ui/grid';
+import { addItemRow, addTitleCell, createGrid, mount, muted } from '../../../ui/grid';
 import { critical, duration, finish, late, milestone, slack, start } from '../fields';
 import './table.css';
 
@@ -27,12 +27,10 @@ export const scheduleRenderer: Renderer = {
     // Starts at the start edge; finishes, and milestones, at the end edge, since a finish is exclusive.
     const date = (t: WorkHours, edge: 'start' | 'end') => formatDate(calendar.toDate(t, edge), calendar);
     const visit = (node: ItemNode, depth: number): void => {
-      const row = addItemRow(table, node, ctx);
+      const row = addItemRow(table, node, ctx, model);
       row.classList.toggle('critical', model.get(node, critical)!);
       row.classList.toggle('late', model.get(node, late)!);
-      const title = row.insertCell();
-      title.textContent = node.title;
-      title.style.paddingLeft = `${0.5 + depth * 1.25}em`;
+      addTitleCell(row, node, ctx, depth);
 
       const begins = model.get(node, start)!;
       const ends = model.get(node, finish)!;

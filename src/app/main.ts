@@ -4,7 +4,7 @@
 // is mounted (spec §3.7, §6).
 
 import { CodeMirrorBuffer } from '../buffer';
-import { Notice, unmetReason } from '../core';
+import { mountsOf, Notice, unmetReason } from '../core';
 import type { Exporter, Model, Renderer, Workspace } from '../core';
 import { mountTextEditor } from '../editor';
 import { mountGrid } from '../grid';
@@ -14,7 +14,7 @@ import { cursorItemFor, itemLines } from './cursor';
 import { ask, names } from './dialog';
 import { createOpenFiles, isDirty } from './files';
 import type { OpenFile, OpenFiles, SaveResult } from './files';
-import { createIncludes } from './includes';
+import { createMounts } from './mounts';
 import { mountFilePanel } from './panel';
 import { analyze, exporters, registry, renderers } from './registry';
 import { createFolderMemory, createFolderWorkspace, createSingleFileWorkspace, folderUnavailable } from './workspace';
@@ -57,7 +57,7 @@ let dirty = true;
 let timer: ReturnType<typeof setTimeout> | undefined;
 // True when the editor itself moved the cursor, so the preview scrolls to follow it.
 let editorMovedCursor = false;
-// A finished gather re-analyzes the current text with the new snapshot.
+// A finished read of a mounted file re-analyzes the current text with the new snapshot.
 const gathered = (): void => {
   dirty = true;
   schedule();
@@ -146,11 +146,44 @@ function renderExporters(): void {
   });
 }
 
+// The root's mounts as of its last analysis, as written: the next snapshot follows them.
+let mounted: { path: string; refs: string[] } | null = null;
+
+/**
+ * Analyzes the active file with the files it mounts (PLUGINS.md §6). The mounts come from its model,
+ * so when they change, or another file becomes active, it is analyzed again with the new snapshot.
+ */
+function analyzeActive(): Model {
+  const { buffer, path } = files.active();
+  const text = buffer.text();
+  const root = path ?? '';
+  const { workspace } = files;
+  const run = (refs: readonly string[] | null) =>
+    analyze(text, {
+      filename: path ?? undefined,
+      version: buffer.version(),
+      // Only a workspace that can list files can read the ones mounted; otherwise each mount says to open the folder.
+      ...(workspace.can.list ? { files: refs === null ? new Map() : mounts.snapshot(root, refs), resolve: (from: string, ref: string) => workspace.resolve(from, ref) } : {}),
+    });
+  const known = mounted?.path === root ? mounted.refs : null;
+  const next = run(known);
+  const refs = mountsOf(next);
+  if (known !== null && refs.join('\n') === known.join('\n')) return next;
+  mounted = { path: root, refs };
+  return run(refs);
+}
+
+/** A file badge's Open, or a problem in a mounted file: that file becomes the active one, at `line`. */
+function openFile(path: string, line?: number): void {
+  files.show(path).then(
+    () => line !== undefined && editor?.setCursorLine(line),
+    (e) => report('open', e),
+  );
+}
+
 function render(): void {
   if (dirty) {
-    const { buffer, path } = files.active();
-    const text = buffer.text();
-    model = analyze(text, { filename: path ?? undefined, files: includes.snapshot(path, text), version: buffer.version() });
+    model = analyzeActive();
     lines = itemLines(model);
     dirty = false;
     editor?.update(model);
@@ -171,7 +204,16 @@ function render(): void {
   const scrollToCursor = editorMovedCursor && cursorItem !== null && cursorItem.line !== highlightedLine;
   editorMovedCursor = false;
   highlightedLine = cursorItem?.line ?? null;
-  active.render(model, host, { cursorLine, cursorItem, scrollToCursor, setCursorLine, setHoverLine, onHoverLine, ...(active.follows ? channel.context : {}) });
+  active.render(model, host, {
+    cursorLine,
+    cursorItem,
+    scrollToCursor,
+    setCursorLine,
+    openFile: (path) => openFile(path),
+    setHoverLine,
+    onHoverLine,
+    ...(active.follows ? channel.context : {}),
+  });
 }
 
 function activate(renderer: Renderer): void {
@@ -257,7 +299,8 @@ function onFilesChange(): void {
 
 function useFiles(next: OpenFiles<CodeMirrorBuffer>): void {
   files = next;
-  includes = createIncludes(next.workspace, gathered);
+  mounts = createMounts({ workspace: next.workspace, openText }, gathered);
+  mounted = null;
   files.onChange(onFilesChange);
   renderToolbar();
   updateTitle();
@@ -332,6 +375,10 @@ async function open(create: () => Workspace): Promise<void> {
 /** Reads every open file again, on focus and Refresh (spec §6). */
 async function refresh(): Promise<void> {
   await files.refresh();
+  // Mounted files are read again too, and the active file analyzed with them.
+  mounts.reread();
+  dirty = true;
+  schedule();
   const missing = files.files().filter((f) => f.missing);
   if (missing.length > 0) status.textContent = `${names(missing.map(nameOf))} ${missing.length === 1 ? 'is' : 'are'} no longer on disk`;
   updateTitle();
@@ -343,7 +390,7 @@ let shownBuffer = first;
 // One editor is mounted at a time, over the active file's buffer (spec §3.4).
 const editors = [
   { id: 'text', label: 'Text', mount: (): PlanEditor => mountTextEditor(files.active().buffer, editorHost, { onCursorLine, onSave: () => void save() }) },
-  { id: 'grid', label: 'Grid', mount: (): PlanEditor => mountGrid(files.active().buffer, editorHost, { onCursorLine }) },
+  { id: 'grid', label: 'Grid', mount: (): PlanEditor => mountGrid(files.active().buffer, editorHost, { onCursorLine, onOpenFile: openFile }) },
 ];
 // Which editor was last used. A per-viewer convenience: it may be unavailable
 // (private browsing), and nothing depends on it.
@@ -443,7 +490,9 @@ async function renderReopen(): Promise<void> {
 }
 
 let files: OpenFiles<CodeMirrorBuffer> = createOpenFiles(createSingleFileWorkspace(), first, null, { makeBuffer, ask: { overwrite } });
-let includes = createIncludes(files.workspace, gathered);
+/** A mounted file open in the store gives its current text, unsaved edits included. */
+const openText = (path: string): string | undefined => files.files().find((f) => f.path === path)?.buffer.text();
+let mounts = createMounts({ workspace: files.workspace, openText }, gathered);
 files.onChange(onFilesChange);
 watch(first);
 mountEditor(lastEditor());

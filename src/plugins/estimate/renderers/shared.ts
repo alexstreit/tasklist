@@ -19,7 +19,7 @@ export function fillCell(td: HTMLTableCellElement, model: Model, node: ItemNode,
   const column = model.columns[index];
   const cell = model.get(node, rollup)?.get(column.name);
   if (!cell) {
-    td.textContent = node.fields[index]?.text ?? '';
+    td.textContent = model.field(node, index)?.text ?? '';
     return;
   }
   // An unestimated subtree shows nothing rather than "0h".

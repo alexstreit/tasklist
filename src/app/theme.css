@@ -25,6 +25,9 @@
   --cursor-row-fg: #1e3a8a;
   --near-row-bg: #eff6ff;
   --near-row-edge: #93c5fd;
+  --mounted-row-bg: #f8f7f2;
+  --badge-bg: #f3f4f6;
+  --badge-fg: #374151;
 
   /* editor tokens (cm-plan-*) */
   --tok-front-matter: #7c6f64;
@@ -85,6 +88,9 @@
     --cursor-row-fg: #dbeafe;
     --near-row-bg: #172554;
     --near-row-edge: #3b82f6;
+    --mounted-row-bg: #1a1f2b;
+    --badge-bg: #374151;
+    --badge-fg: #e5e7eb;
 
     --tok-front-matter: #a89f91;
     --tok-comment: #8b8b8b;

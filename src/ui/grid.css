@@ -3,8 +3,12 @@
 .plan-grid th { color: var(--fg-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
 .plan-grid tbody tr { cursor: pointer; }
 .plan-grid tbody tr:hover, .plan-grid tbody tr.hover { background: var(--hover); }
+.plan-grid tr.mounted { background: var(--mounted-row-bg); cursor: default; }
+.plan-grid tr.mounted:hover { background: var(--mounted-row-bg); }
 .plan-grid tr.done { color: var(--done-fg); text-decoration: line-through; }
 .plan-grid tr.near-cursor, .plan-grid tr.near-cursor.done { box-shadow: inset 3px 0 var(--near-row-edge); background: var(--near-row-bg); }
 .plan-grid tr.at-cursor, .plan-grid tr.at-cursor.done { background: var(--cursor-row-bg); color: var(--cursor-row-fg); }
 .plan-grid .muted { color: var(--fg-faint); margin-left: 0.5em; font-size: 0.9em; }
 .plan-grid td.outline { color: var(--fg-muted); user-select: none; }
+.plan-grid .file-badge { margin-left: 0.6em; padding: 0 6px; font: inherit; font-size: 0.85em; color: var(--badge-fg); background: var(--badge-bg); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; text-decoration: none; }
+.plan-grid .file-badge:disabled { cursor: default; }

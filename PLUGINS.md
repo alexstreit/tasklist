@@ -10,7 +10,7 @@ A plugin is a manifest the app checks at startup, plus stages that add typed fie
 - **Fields are typed keys, not properties.** A stage writes `ctx.set(node, start, value)` with a key its plugin exports. Readers import that key, so every dependency between plugins shows up as an import and can be checked.
 - **Pinnable values share one shape**, `{ derived?, pin?, effective, mode }`, defined in core. The pin review lists pins from any plugin without knowing any of them.
 - **Stages are ordered once, at registration**, from what they read and write. At analyse time a stage whose required roles or keys are missing, or whose inputs didn't run, is skipped, and the model records why.
-- **`analyze` is synchronous and pure.** It never reads the clock or the workspace. The shell gathers included files first and hands over a snapshot. With no `project-start`, scheduling is skipped, and a fix writes the date.
+- **`analyze` is synchronous and pure.** It never reads the clock or the workspace. The shell gathers mounted files first and hands over a snapshot; core reads each file once, as itself, and composes one tree. With no `project-start`, scheduling is skipped, and a fix writes the date.
 - **Core reads the format once.** `readTree` converts every duration to hours and reports plan spec §2.6's diagnostics, as `readPlan` does today; `hours()` is a lookup. Estimate is nothing but roll-ups, so a build without it still schedules.
 - **Scheduling works in working hours from the project start**, and every step goes through `calendar.add`, so holidays and later per-resource calendars swap in without touching the scheduler.
 - **Interpreters are not a separate phase.** VISION's plugin model has four parts.
@@ -22,9 +22,9 @@ Workspace ──files──► App shell (holds the buffer, builds the registry)
                           │ text and a file snapshot
                           ▼
   analyze (core, pure, synchronous)
-    parsePlan ─► readTree ─► bindVocabulary ─► stage runner
-                 items,      roles, keys,      fixed order;
-                 done, hours markers           skips, with reasons
+    per file:  parsePlan ─► readTree ─► bindVocabulary ─► compose ─► stage runner
+                            items,      roles, keys,      mounts,    fixed order;
+                            done, hours markers           columns    skips, with reasons
                                   ▲                 ▲
                                   └── plugin registry (manifests) ──┘
                           │
@@ -107,11 +107,14 @@ interface Pinnable<T> {
 
 interface Model {
   // fixed core
-  doc: RowsDocument;
-  lines: Line[];
-  roots: ItemNode[];
-  columns: Column[];
-  bindings: Bindings; // roles, keys and markers, after profile and file merge
+  file: string; // the root file's path; '' for a new document
+  doc: RowsDocument; // the root file's
+  lines: Line[]; // the root file's
+  files: ReadonlyMap<string, { doc: RowsDocument; lines: Line[] }>; // every file composed, the root first
+  roots: ItemNode[]; // the composed tree; each item has its file
+  columns: Column[]; // the root file's
+  field(node: ItemNode, index: number): Field | null; // the node's cell for root column index (§6)
+  bindings: Bindings; // the root file's roles, keys and markers, after profile and file merge
   calendar?: Calendar; // present when project-start is set; renderers use it for dates
   diagnostics: Diagnostic[];
   inactive: Inactive[]; // stages that were skipped, and why
@@ -134,7 +137,8 @@ export const rollup = definePinnableByColumn<Hours>("estimate", "rollup");
 - **The pin review** lists pins that override something: for every node field whose key is pinnable, single or by column, each value with both a `pin` and a `derived`, shown side by side. It knows no plugin, and leaf estimates never appear in it. It finds the keys through `model.fields()`. A single pinnable key carries a `label` and a `kind` for it; a by-column key carries neither, since its entries are named by their column and formatted by the column's type (a duration column as a duration, a number column as the plain number).
 - **Pin diagnostics are the owning plugin's.** Schedule's "pin has no effect" is `pin !== undefined && effective > pin`, and "pin equals derived" applies in `pinned` mode only, since in `additive` mode an equal pin doubles rather than repeats. Estimate keeps exactly today's diagnostics.
 - **What moves and what stays.** Each column's `effective`, `childSum` and `mode` become the `rollup` map's `Pinnable` (`childSum` is its `derived`; `childrenHaveValue` is `derived !== undefined`). `hasValue` and `doneSum` become estimate fields beside it. `done`, own and inherited, stays in core on `ItemNode`, because plan spec §2.8's inheritance is structure, not arithmetic.
-- **Storage** is a `Map` per field keyed by node, which is fine for 500-line files. The interface hides it, so it can change.
+- **Cells are read through `model.field(node, index)`**, never `node.fields[index]`. A row keeps its own file's fields, in its own file's column order and with its own spans; `field` maps a root column to the row's own column (§6), or gives null. For a root row it is the identity. Plugins, their renderers and exporters, `src/views/` and `src/ui/` are held to it by lint; the editors, which show only the root file's rows, read `node.fields` directly.
+- **Storage** is an array per field, indexed by each node's place in the composed tree, which is fine for a portfolio of ten 500-line files. The interface hides it, so it can change.
 
 ## 5. Compute stages
 
@@ -152,19 +156,23 @@ interface Stage {
 }
 
 interface StageContext {
-  model: ModelReader; // get / value, read-only
-  bindings: Bindings;
+  model: ModelReader; // get / value / field, read-only
+  bindings: Bindings; // the root file's
+  bindingsOf(node: ItemNode): Bindings; // the node's own file's
   calendar?: Calendar; // present when project-start is set
-  cell(node: ItemNode, role: string): Value | undefined; // undefined when unbound or empty
-  hours(node: ItemNode, column: string): number | undefined; // a lookup of readTree's reading
-  marked(node: ItemNode, marker: string): boolean;
+  cell(node: ItemNode, role: string): Value | undefined; // through the node's own file's bindings; undefined when unbound or empty
+  targets(node: ItemNode, role: string): ItemNode[]; // the rows its references point at, in its own file
+  hours(node: ItemNode, column: string): number | undefined; // a root column, mapped to the node's own file; a lookup of readTree's reading
+  marked(node: ItemNode, marker: string): boolean; // the node's own file's marker
   set<T>(node: ItemNode, key: FieldKey<T>, value: T): void; // node-scope keys in writes only
   setValue<T>(key: FieldKey<T>, value: T): void; // document-scope keys in writes only
-  diagnose(d: Diagnostic): void;
+  diagnose(node: ItemNode | null, d: Diagnostic): void; // about node, in its own file; null: the root file's document
 }
 ```
 
-An optional role is the normal case, not an error: in a file with no start column, `cell(node, 'start')` returns `undefined` and the stage schedules without pins. `set` and `setValue` throw when the key isn't in `writes` or has the other scope. `ctx.calendar` is set whenever a stage requires `project-start`, since the runner skips that stage otherwise, so no stage checks it for `undefined`.
+An optional role is the normal case, not an error: in a file with no start column, `cell(node, 'start')` returns `undefined` and the stage schedules without pins.
+
+**Rows from mounted files** (plan spec §2.12) are read through their own file: `cell`, `marked` and `targets` use the node's own file's bindings, markers and IDs, so a team file with no `deps` column has no dependencies and two files can both have `#api`. `targets` gives one row per reference that resolves, in the cell's order; references never cross files. `hours` and `model.field` take a root column and map it (§6). `bindingsOf` gives a file's own keys too, which is how the schedule reads a mounted file's `project-start`. A stage needs no other knowledge of files, except where a file's own rule applies, as that floor does: an item's `file` says which it is in. `set` and `setValue` throw when the key isn't in `writes` or has the other scope. `ctx.calendar` is set whenever a stage requires `project-start`, since the runner skips that stage otherwise, so no stage checks it for `undefined`.
 
 **Ordering.** The registry sorts stages once, topologically by reads and writes. Ties break by registration order, then stage id, so the order is the same on every client. A stage that reads its own output from children (roll-ups) does it inside one `run`; stages never iterate with each other.
 
@@ -172,7 +180,7 @@ An optional role is the normal case, not an error: in a file with no start colum
 
 **Renderers and exporters** declare `requires: FieldKey[]` in place of today's `ColumnRequirement[]`. When a required field's stage was skipped, the app greys them out and shows the reason of the first skipped stage in stage order, as it does today. When the plugin that owns a required field isn't registered at all, the reason is "needs the estimate plugin".
 
-**Diagnostics.** The runner sets `source: pluginId` on every stage diagnostic, so the problems list can group them; core's leave it unset. Codes stay as they are today; a new plugin's codes start with its id (`schedule-pin-no-effect`), which keeps them unique without a registry of codes. A message names the column or key it is about ("the start column", "project-start"), never a bare word shared by a field, a role and a key.
+**Diagnostics.** The runner sets `source: pluginId` on every stage diagnostic, so the problems list can group them; core's leave it unset. `diagnose` takes the node a diagnostic is about, whose file its line and spans are in, and the runner sets `file` from it when that is a mounted file; null is a document-level diagnostic on the root file. So a stage can't put a mounted row's diagnostic on the root's line of the same number. Codes stay as they are today; a new plugin's codes start with its id (`schedule-pin-no-effect`), which keeps them unique without a registry of codes. A message names the column or key it is about ("the start column", "project-start"), never a bare word shared by a field, a role and a key.
 
 **Fixes that need today.** A fix is data, and `analyze` never reads the clock, so a fix can't hold today's date. `Fix.input` gains `suggest?: 'today'`, with `before?` and `after?` text around the value: the fix writes `before + value + after` in place of `span`. Core's pure `resolveFix(fix, date)` completes such a fix: it fills the date into its edits and its label, and the fix suggests nothing more. The text editor and the grid, and their confirm panels, call it with `today()` when they show a fix, so it writes the date it showed; the fix-invariant test calls it with a fixed date. Core stays clock-free because the date is passed in; the editors may read the clock because they are UI code, and `src/ui/today.ts` holds the one function that does.
 
@@ -185,16 +193,21 @@ Core reads the format once, in full; plugins only compute. `readPlan` stays esse
 ```ts
 // core; the app builds this once from the registry
 const analyze = createAnalyzer(registry);
-analyze(text, { filename?, files?, version? }?)  // files: a snapshot of included files (M3); unused until then;
-                                                 // version: the buffer version, recorded as Model.version
-includesOf(text): string[]                       // include lines, wherever the spec puts them (subproject rows in M3b); cheap
+analyze(text, { filename?, files?, resolve?, version? }?)
+                         // files: the mounted files' texts by resolved path, null when unreadable; absent when the
+                         //   workspace can't read other files. resolve: the workspace's, for mount paths.
+                         // version: the buffer version, recorded as Model.version
+mountsOf(model): string[]                // the root's whole-file mounts as written, from its model
+readMounts(text, path): string[]         // a gathered file's, from a parse; the shell caches it by text
 
-// inside analyze
-parsePlan(text)                           // tabs, parseRows with the plan profile, as today
--> readTree(doc)                          // readPlan as today: items, outline numbers, own and inherited done,
+// inside analyze, for each file, kept while its text is the same
+parsePlan(text)                           // tabs, parseRows with its own profile
+-> readTree(doc)                          // items, outline numbers, own and inherited done,
                                           //   hours per summable cell, and the §2.6 diagnostics
 -> bindVocabulary(doc.schema, registry)   // roles, keys and markers: Bindings + diagnostics
--> the calendar, if project-start is set
+// then, once
+-> compose                                // the mounts: one tree, the column mapping, the mount diagnostics
+-> the calendar, if the root's project-start is set
 -> run the stages in order
 -> Model
 ```
@@ -219,9 +232,13 @@ Markers are resolved before this step: rows turns each glyph into its marker nam
 
 **No `project-start`, no schedule.** When the key is absent, no calendar is built and every stage that requires it is skipped with "needs project-start"; when it isn't a date, the bindings record it as mistyped, `key-type` says so, and the reason is "project-start isn't a date". Whether the key is expected is vocabulary, so core decides it: `project-start` records in `src/core/vocabulary.ts` that it is expected when `duration`, `start`, `deps` or `deadline` is bound, and core reports `no-project-start` (info, line 1) when one is and the key isn't written. Estimate-only files bind only `effort`, so they are never told. Both `no-project-start` and `key-type` carry the click fix "Set project start to today", made by one core helper (`todayFix`). The date is filled in when an editor shows the fix (§5); `analyze` never reads the clock, so two clients either side of midnight compute the same schedule from the same text.
 
-**Includes are gathered before analysis.** The shell calls `includesOf` on the open file, reads what it names, calls `includesOf` on those, and repeats until no new file appears; then it calls `analyze` with the snapshot. A file that can't be read is left out of the snapshot, and the reference to it is the rows validation error it already is.
+**Mounted files are gathered before analysis** (`src/app/mounts.ts`). The paths the active file mounts come from its last model (`mountsOf`), so it isn't parsed a second time; the paths a mounted file mounts come from `readMounts`, run once per file and kept while its text is the same. Each resolves through `workspace.resolve`, relative to the file that holds it, and a path outside the folder is never read. Gathering follows mounts until no new path appears; a path already seen isn't followed again, so a loop stops, and the active file is never read, since the buffer is its text. A file open in the store gives its current text, unsaved edits included. Any other is read from disk once and kept while it stays mounted, a failed read as null, so it isn't retried on every keystroke; a file no longer mounted is dropped, so mounting it again reads it again. Focus and Refresh read every one again; a read overtaken by that is dropped. Only a workspace that can list files gathers; otherwise `analyze` gets no `files`.
 
-`analyze` stays synchronous, so the shell keeps the last snapshot and analyzes with it (`src/app/includes.ts`). It gathers again only when the set of paths `includesOf` gives for the open file differs from the last set gathered, so a failed read is retried only when that set changes (and, in M3, when the file watcher reports a change), not on every keystroke. Each gather has a generation number; one that finishes after a newer one started is dropped. Otherwise the shell stores its snapshot and re-analyzes the current buffer text with it, not the text that started the gather. A path already read isn't read again, so a cycle of includes stops, and the open file is never read, since the buffer is its text.
+`analyze` stays synchronous, so the shell analyzes with what it has: a file still being read is left out, and its mount shows nothing until the read finishes and the shell analyzes the current buffer again. When an analysis shows that the active file's mounts changed, or another file became active, the shell analyzes again at once with the new snapshot.
+
+Includes (`include:` in the frontmatter) are table imports, which come with resource and calendar tables (VISION §6); nothing gathers them yet.
+
+**Columns across files.** The model's columns are the root file's. For each mounted file, core maps each root column to one of the file's own columns in two passes. First by role: a root column bound to a role takes the mounted column bound to the same role. Then by name, among the mounted columns not already taken. A mounted column maps to at most one root column, so no total counts a value twice; a root column that maps to nothing is blank on that file's rows, with no diagnostic. `model.field`, `hours` and every view read cells through this mapping, so plugins never see it. A summable cell keeps the hours its own column read, with its own `hpd` and `dpw`.
 
 ## 7. Workspace and calendar
 
@@ -300,7 +317,7 @@ Each plugin is a folder, and every modularity rule in VISION §3.1 is checked by
 
 ```
 src/
-  core/                 parsePlan, readTree (with hours and done), includesOf, bindVocabulary, vocabulary,
+  core/                 parsePlan, readTree (with hours and done), compose (mounts), mountsOf, bindVocabulary, vocabulary,
                         fields and Pinnable, registry, stage runner, createAnalyzer,
                         Workspace and Calendar interfaces, naive calendar, mintId (IDs for grid references)
   plugins/
@@ -310,7 +327,8 @@ src/
                         click-to-line and their CSS; today's date for fixes; dates as views show them; row-layout.ts, row alignment
                         between a leading editor and a following view; imports only core's types
   views/                renderers that belong to no plugin: the pin review (pins/)
-  app/                  shell, registry wiring, single-file workspace, connecting a leader to a follower (align.ts)
+  app/                  shell, registry wiring, workspaces, open files, gathering mounted files (mounts.ts),
+                        connecting a leader to a follower (align.ts)
   editor/ grid/ buffer/ editing/   unchanged: editors are not plugins
 ```
 
@@ -325,6 +343,7 @@ Tree, table and TSV go into estimate because each reads estimate's roll-ups; a r
 | A stage writes only its declared fields, at their scope                  | `ctx.set` and `ctx.setValue` throw; a test runs every stage on the fixtures              |
 | Analysis never reads the clock                                           | ESLint: no `Date.now()` or argument-less `new Date()` in `core/` or in a plugin's stages |
 | Renderers and exporters don't import `rows`                              | Today's lint rule, with the new paths                                                    |
+| Plugins, views and `ui/` read cells through `model.field`, never `node.fields` | ESLint `no-restricted-syntax`, beside the clock rule                               |
 | The shell special-cases no plugin                                        | ESLint: `app/` may import `plugins/` only in `app/registry.ts`                           |
 | The simple case keeps working                                            | A test that boots the app on one file with only the estimate plugin registered           |
 

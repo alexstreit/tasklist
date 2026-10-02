@@ -27,7 +27,7 @@ export interface Viewport {
   rowHeight: number;
 }
 
-/** A follower's own layout when nothing leads: one row per item, in document order, at `rowHeight`. */
+/** A follower's own layout when nothing leads: one row per item of the composed tree, in document order, at `rowHeight`. */
 export function naturalLayout(model: Model, version: number, viewport: Viewport): RowLayout {
   const { bodyTop, scrollTop, height, rowHeight } = viewport;
   const items: ItemNode[] = [];
@@ -35,7 +35,12 @@ export function naturalLayout(model: Model, version: number, viewport: Viewport)
   model.roots.forEach(collect);
   const first = Math.max(0, Math.floor(scrollTop / rowHeight));
   const last = Math.min(items.length, Math.ceil((scrollTop + height) / rowHeight));
-  const rows = items.slice(first, last).map((node, i) => ({ at: { line: node.line }, top: (first + i) * rowHeight, height: rowHeight }));
+  // A mounted row's line is in its own file, so it says which.
+  const rows = items.slice(first, last).map((node, i) => ({
+    at: node.file === model.file ? { line: node.line } : { line: node.line, file: node.file },
+    top: (first + i) * rowHeight,
+    height: rowHeight,
+  }));
   return { version, bodyTop, contentHeight: items.length * rowHeight, scrollTop, rows };
 }
 

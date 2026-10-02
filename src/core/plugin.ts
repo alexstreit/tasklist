@@ -10,22 +10,37 @@ import type { Diagnostic, Exporter, ItemNode, Model, ModelReader, Renderer } fro
 import { CORE_KEYS, CORE_MARKERS, CORE_ROLES, pluginOf } from './vocabulary';
 
 export interface StageContext {
-  /** Read-only: the tree and the fields earlier stages wrote. */
+  /** Read-only: the composed tree and the fields earlier stages wrote. */
   model: ModelReader;
+  /** The root file's. */
   bindings: Bindings;
+  /** The bindings of the file the node is in: the root's, or a mounted file's own. */
+  bindingsOf(node: ItemNode): Bindings;
   /** Present when project-start is set, so always for a stage that requires it. */
   calendar?: Calendar;
-  /** The typed value of the row's cell in the column bound to `role`; undefined when unbound, empty or unreadable. */
+  /** The typed value of the row's cell in the column bound to `role` in the row's own file; undefined when unbound, empty or unreadable. */
   cell(node: ItemNode, role: string): Value | undefined;
-  /** A summable cell as `readTree` read it, in hours (duration) or as the number, without its sign; undefined when empty or unreadable. */
+  /**
+   * The rows the references in the row's `role` cell point at, in the row's own file: one per
+   * reference that resolves, in the cell's order. References never cross files.
+   */
+  targets(node: ItemNode, role: string): ItemNode[];
+  /**
+   * A summable cell as `readTree` read it, in hours (duration) or as the number, without its sign;
+   * undefined when empty or unreadable. `column` is a root column's name, mapped to the node's own file.
+   */
   hours(node: ItemNode, column: string): number | undefined;
-  /** The row's own marker, or its `NAME=true` cell; false for a marker the file doesn't use. */
+  /** The row's own marker in its own file, or its `NAME=true` cell; false for a marker that file doesn't use. */
   marked(node: ItemNode, marker: string): boolean;
   /** Node-scope keys in the stage's `writes` only; throws otherwise. */
   set<T>(node: ItemNode, key: FieldKey<T>, value: T): void;
   /** Document-scope keys in the stage's `writes` only; throws otherwise. */
   setValue<T>(key: FieldKey<T>, value: T): void;
-  diagnose(d: Diagnostic): void;
+  /**
+   * A diagnostic about `node`, whose line and spans are in the node's own file; core sets its
+   * `file` from the node. Null for a document-level diagnostic on the root file.
+   */
+  diagnose(node: ItemNode | null, d: Diagnostic): void;
 }
 
 /** A pure function that declares everything it reads and writes only what it declares. */

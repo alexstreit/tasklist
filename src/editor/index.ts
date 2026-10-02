@@ -123,7 +123,8 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
     },
     update(model) {
       showSyntax(view, model);
-      showDiagnostics(view, model.diagnostics, (edits) => buffer.apply(edits, 'text-editor'));
+      // A mounted file's diagnostics are in the problems list; their lines are in that file.
+      showDiagnostics(view, model.diagnostics.filter((d) => d.file === undefined), (edits) => buffer.apply(edits, 'text-editor'));
       layout.publish();
     },
     onRowLayout(cb) {

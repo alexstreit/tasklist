@@ -2,10 +2,12 @@
 
 import type { CursorItem, ItemNode, Model } from '../core';
 
-/** Item line numbers in document order. */
+/** The active file's item line numbers, in document order. */
 export function itemLines(model: Model): number[] {
   const out: number[] = [];
   const visit = (n: ItemNode): void => {
+    // The cursor is in the active file, so only its own rows can be at it.
+    if (n.file !== model.file) return;
     out.push(n.line);
     n.children.forEach(visit);
   };

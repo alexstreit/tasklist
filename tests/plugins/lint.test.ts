@@ -64,4 +64,20 @@ describe('lint rules for the plugin seams', () => {
   it("a plugin's renderers may read the clock", async () => {
     expect(await lint('src/plugins/estimate/renderers/probe.ts', 'export const a = Date.now();\n')).toEqual([]);
   });
+
+  // Task 35: a mounted row's own fields are in its own file's column order.
+  it.each([
+    'src/plugins/estimate/probe.ts',
+    'src/plugins/estimate/renderers/probe.ts',
+    'src/plugins/estimate/exporters/probe.ts',
+    'src/views/probe/probe.ts',
+    'src/ui/probe.ts',
+  ])('%s reads cells through model.field, never node.fields', async (path) => {
+    const probe = "import type { ItemNode, Model } from '../../core';\nexport const f = (m: Model, n: ItemNode) => [n.fields[0], m.field(n, 0), m.fields()];\n";
+    expect(await lint(path, probe)).toEqual(["Read a row's cells with model.field(node, index); node.fields is in its own file's column order."]);
+  });
+
+  it('a stage still may not read the clock, beside the cell rule', async () => {
+    expect(await lint('src/plugins/estimate/probe.ts', 'export const a = Date.now();\n')).toEqual(['Analysis never reads the clock.']);
+  });
 });

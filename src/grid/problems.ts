@@ -14,6 +14,8 @@ export interface ProblemsHooks {
   titleOf(line: number): string | null;
   /** Focus the row a diagnostic is on, or the cell its span falls in; nothing when the line has no row. */
   focus(diagnostic: Diagnostic): void;
+  /** Make a mounted file the active file, at `line`: one of its problems was clicked. */
+  open(path: string, line: number): void;
 }
 
 export interface Problems {
@@ -105,22 +107,52 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
     first.focus();
   }
 
+  /** The title of the item on a mounted file's line, or null. */
+  function mountedTitle(file: string, line: number): string | null {
+    const node = model?.files.get(file)?.lines[line - 1];
+    return node?.kind === 'item' && node.title !== '' ? node.title : null;
+  }
+
+  /**
+   * A mounted file's problem names its file and offers no fixes: their edits are for that file's
+   * text, so clicking it opens the file at the row, where they are offered.
+   */
   function problem(diagnostic: Diagnostic): HTMLLIElement {
     const li = document.createElement('li');
     li.className = diagnostic.severity;
     li.dataset.line = String(diagnostic.line);
-    const where = hooks.titleOf(diagnostic.line) ?? `Line ${diagnostic.line}`;
-    const go = button('problem', '', () => hooks.focus(diagnostic));
+    const { file, line } = diagnostic;
+    if (file !== undefined) li.dataset.file = file;
+    const where = (file === undefined ? hooks.titleOf(line) : mountedTitle(file, line)) ?? `Line ${line}`;
+    const go = button('problem', '', () => (file === undefined ? hooks.focus(diagnostic) : hooks.open(file, line)));
     go.append(part('severity', diagnostic.severity), part('where', where), part('message', diagnostic.message));
-    li.append(go, ...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(li, fix))));
+    li.append(go);
+    if (file === undefined) li.append(...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(li, fix))));
     return li;
   }
 
-  /** Every diagnostic in document order, each with its row and its fixes (spec §4b.6.3). */
+  /**
+   * Every diagnostic, each with its row and its fixes (spec §4b.6.3): the root file's first, then
+   * each mounted file's in composed order, in document order within each. When more than one file
+   * has problems, each group is headed by its file's path.
+   */
   function renderList(): void {
-    const all = [...(model?.diagnostics ?? [])].sort((a, b) => a.line - b.line || (a.span?.from ?? -1) - (b.span?.from ?? -1));
+    const byPlace = (a: Diagnostic, b: Diagnostic) => a.line - b.line || (a.span?.from ?? -1) - (b.span?.from ?? -1);
+    const all = model?.diagnostics ?? [];
+    const groups = [...(model?.files.keys() ?? [''])]
+      .map((path, i) => ({ path, list: all.filter((d) => (i === 0 ? d.file === undefined : d.file === path)).sort(byPlace) }))
+      .filter((group) => group.list.length > 0);
     count.textContent = `Problems (${all.length})`;
-    entries.replaceChildren(...all.map(problem));
+    entries.replaceChildren(
+      ...groups.flatMap(({ path, list }) => {
+        const items: HTMLLIElement[] = list.map(problem);
+        if (groups.length === 1) return items;
+        const heading = document.createElement('li');
+        heading.className = 'problem-file';
+        heading.textContent = path || 'Untitled';
+        return [heading, ...items];
+      }),
+    );
   }
 
   /**
@@ -130,7 +162,8 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
    * would help.
    */
   function renderBanner(settings: Span | null): void {
-    const diagnostics = [...(model?.diagnostics ?? [])].sort((a, b) => a.line - b.line);
+    // The active file's settings only: a mounted file's are in the problems list.
+    const diagnostics = (model?.diagnostics ?? []).filter((d) => d.file === undefined).sort((a, b) => a.line - b.line);
     const inSettings = (d: Diagnostic) => model?.lines[d.line - 1]?.kind === 'front-matter';
     const settingsEdit = (d: Diagnostic) => settings !== null && d.fixes?.some((f) => f.edits.every((e) => e.from >= settings.from && e.to <= settings.to));
     const shared = new Map<string, Diagnostic[]>();

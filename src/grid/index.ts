@@ -36,6 +36,8 @@ type Row =
 export interface GridHooks {
   /** `fromApi` is true when the move came from setCursorLine rather than the user. */
   onCursorLine(line: number, fromApi: boolean): void;
+  /** Make a mounted file the active file, at `line`: a problem in it was clicked. */
+  onOpenFile?(path: string, line: number): void;
 }
 
 /** The grid leads (spec §3.4): its rows are its table's body rows. */
@@ -101,6 +103,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       const row = byLine.get(diagnostic.line);
       if (row) place(row.line, diagnostic.span ? columnFor(row, diagnostic) : WBS);
     },
+    open: (path, line) => hooks.onOpenFile?.(path, line),
   });
   const table = document.createElement('table');
   table.className = 'plan-sheet';
@@ -1117,7 +1120,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const text = buffer.text();
     const level = levels(next);
     const items = new Map<number, ItemNode>();
-    const collect = (node: ItemNode): void => void (items.set(node.line, node), node.children.forEach(collect));
+    // The grid shows the active file's own lines; mounted rows are other files'.
+    const collect = (node: ItemNode): void => void (node.file === next.file && (items.set(node.line, node), node.children.forEach(collect)));
     next.roots.forEach(collect);
 
     rows = [];
@@ -1146,6 +1150,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     marks = new Map();
     const lineRows = new Map(rows.map((row) => [row.line, row]));
     for (const diagnostic of next.diagnostics) {
+      if (diagnostic.file !== undefined) continue;
       const row = lineRows.get(diagnostic.line);
       if (!row) {
         if (frontMatter && !frontMatter.diagnostic) frontMatter.diagnostic = diagnostic;

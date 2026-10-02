@@ -6,7 +6,7 @@
 import { formatDuration } from '../../core';
 import type { FieldKey, ItemNode, Model, Pinnable, RenderContext, Renderer } from '../../core';
 import { formatDate } from '../../ui/dates';
-import { addItemRow, createGrid, mount, muted } from '../../ui/grid';
+import { addItemRow, addTitleCell, createGrid, mount, muted } from '../../ui/grid';
 import './pins.css';
 
 interface Entry {
@@ -59,8 +59,8 @@ export const pinsView: Renderer = {
     }
     const table = createGrid('plan-pins', ['#', '', 'pinned', 'pin', 'derived', 'effective']);
     for (const { node, what, value, format } of list) {
-      const row = addItemRow(table, node, ctx);
-      row.insertCell().textContent = node.title;
+      const row = addItemRow(table, node, ctx, model);
+      addTitleCell(row, node, ctx);
       row.insertCell().textContent = what;
       // An additive pin adds to what is derived, so it shows its sign.
       row.insertCell().textContent = `${value.mode === 'additive' ? '+' : ''}${format(value.pin!)}`;

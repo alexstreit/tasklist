@@ -11,6 +11,8 @@ export type GanttMark = { kind: 'bar' | 'summary'; x: number; width: number } | 
 
 export interface GanttRow {
   line: number;
+  /** The row's file: the root file's path, or a mounted file's in a standalone chart. */
+  file: string;
   /** From the layout, in its content coordinates. */
   top: number;
   height: number;
@@ -31,7 +33,7 @@ export interface Gantt {
   width: number;
   rows: GanttRow[];
   /** One per layout row with a line, item or not: where the cursor and hover bands go. */
-  bands: { line: number; top: number; height: number }[];
+  bands: { line: number; file: string; top: number; height: number }[];
   /** One per distinct deadline date. */
   deadlines: { x: number; label: string }[];
   finish: number;
@@ -44,6 +46,9 @@ export interface Gantt {
 }
 
 const LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+/** A row's key: its line alone is ambiguous once files are mounted. */
+export const rowKey = (row: { file: string; line: number }): string => `${row.file}\n${row.line}`;
 const weekday = (iso: IsoDate) => new Date(`${iso}T00:00:00Z`).getUTCDay();
 
 /** The chart for the rows in `layout`. Needs the schedule's fields and the model's calendar. */
@@ -52,8 +57,8 @@ export function ganttGeometry(model: Model, layout: RowLayout, dayWidth: number,
   const hpd = calendar.hoursPerDay;
   const x = (t: WorkHours) => (t / hpd) * dayWidth;
 
-  const items = new Map<number, ItemNode>();
-  const collect = (node: ItemNode): void => void (items.set(node.line, node), node.children.forEach(collect));
+  const items = new Map<string, ItemNode>();
+  const collect = (node: ItemNode): void => void (items.set(rowKey(node), node), node.children.forEach(collect));
   model.roots.forEach(collect);
 
   // Every row's deadline, folded or not, drawn or not.
@@ -68,8 +73,11 @@ export function ganttGeometry(model: Model, layout: RowLayout, dayWidth: number,
   const rows: GanttRow[] = [];
   const bands: Gantt['bands'] = [];
   for (const row of layout.rows) {
-    if (row.at) bands.push({ line: row.at.line, top: row.top, height: row.height });
-    const node = row.at && items.get(row.at.line);
+    if (!row.at) continue;
+    // A leader's rows are the root file's: until the editors show mounted rows, so is what follows them.
+    const at = { line: row.at.line, file: row.at.file ?? model.file };
+    bands.push({ ...at, top: row.top, height: row.height });
+    const node = items.get(rowKey(at));
     if (!node) continue;
     const begins = model.get(node, start)!;
     const ends = model.get(node, finish)!;
@@ -80,6 +88,7 @@ export function ganttGeometry(model: Model, layout: RowLayout, dayWidth: number,
     const pinned = begins.mode !== 'derived';
     rows.push({
       line: node.line,
+      file: node.file,
       top: row.top,
       height: row.height,
       mark,

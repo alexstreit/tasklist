@@ -16,7 +16,8 @@ function items(model: Model): Map<Row, ItemNode> {
   let map = itemsOf.get(model);
   if (!map) {
     map = new Map();
-    const visit = (node: ItemNode): void => void (map!.set(node.row, node), node.children.forEach(visit));
+    // Only the file's own rows: references never cross files.
+    const visit = (node: ItemNode): void => void (node.file === model.file && (map!.set(node.row, node), node.children.forEach(visit)));
     model.roots.forEach(visit);
     itemsOf.set(model, map);
   }

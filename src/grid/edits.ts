@@ -82,6 +82,8 @@ export function levels(model: Model): Map<number, { shown: number; indent: numbe
   const indent = rowLevels(model.doc);
   const out = new Map<number, { shown: number; indent: number }>();
   const visit = (node: ItemNode, depth: number): void => {
+    // Only the file's own rows: a mounted row's line is in another file.
+    if (node.file !== model.file) return;
     out.set(node.line, { shown: depth, indent: indent.get(node.row) ?? 0 });
     node.children.forEach((child) => visit(child, depth + 1));
   };

@@ -35,14 +35,14 @@ export const rollupStage: Stage = {
         const pin = ctx.hours(item, name);
         let value: Pinnable<Amount>;
         if (pin === undefined) value = { effective: childSum, mode: 'derived' };
-        else if (item.fields[index]!.additive) value = { pin, effective: childSum + pin, mode: 'additive' };
+        else if (model.field(item, index)!.additive) value = { pin, effective: childSum + pin, mode: 'additive' };
         else {
           value = { pin, effective: pin, mode: 'pinned' };
           if (derived !== undefined && pin !== derived) {
             const fmt = column.type === 'duration' ? formatDuration : String;
-            ctx.diagnose({
+            ctx.diagnose(item, {
               line: item.line,
-              span: item.fields[index]!.span,
+              span: model.field(item, index)!.span,
               severity: 'info',
               code: 'override-differs',
               message: `override differs from children (${fmt(pin)} vs ${fmt(derived)})`,

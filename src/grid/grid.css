@@ -37,6 +37,7 @@
 .problems > summary { padding: 4px 8px; cursor: pointer; color: var(--fg-muted); user-select: none; }
 .problems ol { list-style: none; margin: 0; padding: 0 8px 6px; max-height: 14em; overflow: auto; }
 .problems li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 2px 0; }
+.problems li.problem-file { display: block; padding: 6px 0 2px; font-weight: 600; color: var(--fg-muted); }
 .problems .problem { display: flex; gap: 8px; align-items: baseline; font: inherit; color: var(--fg); background: none; border: none; padding: 0; text-align: left; cursor: pointer; }
 .problems .problem:hover .message, .problems .problem:focus .message { text-decoration: underline; }
 .problems .severity { font-weight: 600; min-width: 4.5em; }
