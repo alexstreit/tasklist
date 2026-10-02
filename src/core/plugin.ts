@@ -1,7 +1,7 @@
 // Plugins, stages and the registry (PLUGINS.md §3 and §5). A plugin is a
 // manifest the app checks at startup; its stages add typed fields to the model.
 
-import type { Value } from 'rows';
+import type { TextEdit, Value } from 'rows';
 import type { Bindings } from './bindings';
 import type { Calendar } from './calendar';
 import { fieldName } from './fields';
@@ -20,6 +20,12 @@ export interface StageContext {
   calendar?: Calendar;
   /** The typed value of the row's cell in the column bound to `role` in the row's own file; undefined when unbound, empty or unreadable. */
   cell(node: ItemNode, role: string): Value | undefined;
+  /**
+   * The edits that write `text` into the row's cell for `role`, in its own file's offsets, from rows'
+   * `setCell`: how a stage builds a fix. Null when the role is unbound in that file or rows refuses.
+   * It never applies anything.
+   */
+  cellEdit(node: ItemNode, role: string, text: string): TextEdit[] | null;
   /**
    * The rows the references in the row's `role` cell point at, in the row's own file: one per
    * reference that resolves, in the cell's order. References never cross files.

@@ -1,6 +1,7 @@
 // The backward pass (spec §2.11): late starts and finishes, slack, the critical rows and lateness.
 // Deadlines seed it, so slack is measured against them; negative slack means already late for one.
 
+import { formatDate } from '../../core';
 import type { ItemNode, Stage, WorkHours } from '../../core';
 import { critical, deadline, duration, finish, late, lateFinish, lateStart, network, projectFinish, slack, start } from './fields';
 import { spanOf } from './network';
@@ -69,7 +70,7 @@ export const backwardStage: Stage = {
           span: spanOf(ctx, n, 'deadline'),
           severity: 'warning',
           code: 'schedule-late',
-          message: `finishes ${calendar.toDate(end, 'end')}, after its deadline ${date.text}`,
+          message: `finishes ${formatDate(calendar.toDate(end, 'end'), calendar)}, after its deadline ${formatDate(date.text, calendar)}`,
         });
       }
     }

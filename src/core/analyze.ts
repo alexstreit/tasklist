@@ -1,8 +1,8 @@
 // Single entry point: parseRows, readTree and bindVocabulary for each file, composition, the
 // calendar, then the registry's stages. Spec §2.12, §3.2, PLUGINS.md §5–§6.
 
-import { parseRows, readFlag } from 'rows';
-import type { Column as RowsColumn, RowsDocument, Value } from 'rows';
+import { parseRows, readFlag, setCell } from 'rows';
+import type { Column as RowsColumn, RowsDocument, TextEdit, Value } from 'rows';
 import { bindVocabulary } from './bindings';
 import { compose } from './compose';
 import type { FileRead } from './compose';
@@ -168,16 +168,28 @@ export function createAnalyzer(registry: Registry): (text: string, options?: Ana
     // Each file's column for each role and marker, looked up once per analysis: stages ask for every row.
     const markerColumns = new Map<string, RowsColumn | undefined>();
     const roleColumns = new Map<string, Map<string, number | undefined>>();
-    /** The typed value of the node's cell for `role`, in its own file. */
-    const cell = (node: ItemNode, role: string): Value | undefined => {
+    /** The index of the column bound to `role` in the node's own file. */
+    const roleColumn = (node: ItemNode, role: string): number | undefined => {
       let columns = roleColumns.get(node.file);
       if (!columns) roleColumns.set(node.file, (columns = new Map()));
       if (!columns.has(role)) {
         const { doc: own, bindings: ownBindings } = fileOf(node).read;
         columns.set(role, own.schema.columns.find((c) => c.name === ownBindings.roles.get(role))?.index);
       }
-      const index = columns.get(role);
+      return columns.get(role);
+    };
+    /** The typed value of the node's cell for `role`, in its own file. */
+    const cell = (node: ItemNode, role: string): Value | undefined => {
+      const index = roleColumn(node, role);
       return (index !== undefined && node.row.cells[index]?.value) || undefined;
+    };
+    /** The edits that write `text` into the node's cell for `role`, in its own file's offsets; null when unbound or refused. */
+    const cellEdit = (node: ItemNode, role: string, text: string): TextEdit[] | null => {
+      const index = roleColumn(node, role);
+      if (index === undefined) return null;
+      const own = fileOf(node).read.doc;
+      const result = setCell(own, node.row, own.schema.columns.find((c) => c.index === index)!, text);
+      return 'edits' in result ? result.edits : null;
     };
     // A field is written once a stage that writes it has run; a skipped writer passes its reason on.
     const written = new Set<FieldKey<unknown>>();
@@ -210,6 +222,7 @@ export function createAnalyzer(registry: Registry): (text: string, options?: Ana
         bindingsOf: (node) => fileOf(node).read.bindings,
         ...(calendar ? { calendar } : {}),
         cell,
+        cellEdit,
         targets: (node, role) => {
           const value = cell(node, role);
           if (value?.type !== 'ref') return [];

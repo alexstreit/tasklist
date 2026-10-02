@@ -1,6 +1,8 @@
 // Typed model fields (PLUGINS.md §4). Every computed value is a field that one
 // plugin owns, read with the key its owner exports, never as a property.
 
+import type { Edge } from './calendar';
+
 export interface FieldKey<T> {
   readonly plugin: string;
   readonly name: string;
@@ -25,6 +27,8 @@ export interface Pinnable<T> {
   effective: T;
   /** The only record of whether a value is pinned: pinned is `mode !== 'derived'`. `additive` is estimate's only. */
   mode: 'derived' | 'pinned' | 'additive';
+  /** For a `'date'` kind: the edge its values show at (`formatPinnableDate`). Unset means `'start'`. */
+  edge?: Edge;
 }
 
 /** Hours, shown with formatDuration; or working hours from project-start, shown as a date. */

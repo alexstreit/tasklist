@@ -27,6 +27,7 @@
   --near-row-edge: #93c5fd;
   --mounted-row-bg: #f8f7f2;
   --segment-border: #d6d3c4;
+  --segment-gutter-fg: #a8a28c;
   --badge-bg: #f3f4f6;
   --badge-fg: #374151;
 
@@ -91,6 +92,7 @@
     --near-row-edge: #3b82f6;
     --mounted-row-bg: #1a1f2b;
     --segment-border: #3b4458;
+    --segment-gutter-fg: #6b7590;
     --badge-bg: #374151;
     --badge-fg: #e5e7eb;
 

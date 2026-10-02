@@ -3,9 +3,8 @@
 // with both a pin and a derived value, in document order. Leaf estimates have nothing derived, so
 // they never appear.
 
-import { formatDuration } from '../../core';
+import { formatDuration, formatPinnableDate } from '../../core';
 import type { FieldKey, ItemNode, Model, Pinnable, RenderContext, Renderer } from '../../core';
-import { formatDate } from '../../ui/dates';
 import { addItemRow, addTitleCell, createGrid, mount, muted } from '../../ui/grid';
 import './pins.css';
 
@@ -20,8 +19,8 @@ interface Entry {
 function entries(model: Model): Entry[] {
   const calendar = model.calendar;
   const keys = model.fields().filter((key) => key.scope === 'node' && key.pinnable !== 'no');
-  // A single key's kind says how to show it; a by-column value is shown by its column's type.
-  const byKind = (key: FieldKey<unknown>) => (key.kind === 'date' ? (t: number) => formatDate(calendar!.toDate(t, 'start'), calendar!) : formatDuration);
+  // A single key's kind says how to show it, a date at the value's own edge; a by-column value is shown by its column's type.
+  const byKind = (key: FieldKey<unknown>, value: Pinnable<number>) => (key.kind === 'date' ? (t: number) => formatPinnableDate(t, value.edge, calendar!) : formatDuration);
   const byColumn = (name: string) => (model.columns.find((c) => c.name === name)?.type === 'duration' ? formatDuration : String);
   const overrides = (value: Pinnable<number> | undefined): value is Pinnable<number> => value?.pin !== undefined && value.derived !== undefined;
 
@@ -30,7 +29,7 @@ function entries(model: Model): Entry[] {
     for (const key of keys) {
       if (key.pinnable === 'single') {
         const value = model.get(node, key as FieldKey<Pinnable<number>>);
-        if (overrides(value)) out.push({ node, what: key.label ?? key.name, value, format: byKind(key) });
+        if (overrides(value)) out.push({ node, what: key.label ?? key.name, value, format: byKind(key, value) });
       } else {
         for (const [column, value] of model.get(node, key as FieldKey<Map<string, Pinnable<number>>>) ?? []) {
           if (overrides(value)) out.push({ node, what: column, value, format: byColumn(column) });

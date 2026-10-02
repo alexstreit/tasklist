@@ -164,10 +164,11 @@ describe('a mounted file’s diagnostics', () => {
   const HEAD = '---\nprofile: schedule\nproject-start: 2026-10-05\n---\n';
 
   it('keep its file, with lines in it; a stage’s warning lands on the mounted row, not the root’s line of the same number', () => {
-    // Line 5 of each file: the root's A, and the team's milestone with an estimate.
+    // Line 5 of each file: the root's A, and the team's milestone with an estimate, and no date or dependency (Task 38).
     const model = compose(`${HEAD}A | mount=t.plan\n`, { 't.plan': `${HEAD}^M | 1d\n` });
     expect(model.diagnostics.map(({ line, code, file, source }) => ({ line, code, file, source }))).toEqual([
       { line: 5, code: 'schedule-milestone-effort', file: 't.plan', source: 'schedule' },
+      { line: 5, code: 'schedule-milestone-undated', file: 't.plan', source: 'schedule' },
     ]);
     const d = model.diagnostics[0];
     expect(model.files.get('t.plan')!.doc.text.slice(d.span!.from, d.span!.to)).toBe('1d');

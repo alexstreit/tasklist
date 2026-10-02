@@ -87,6 +87,11 @@ describe('the composed text editor', () => {
     const numbers = [...document.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].map((e) => e.textContent).filter((t) => t !== '');
     // jsdom draws every line: the master's 1–6, alpha's 1–7, the master's 7, beta's 1–8, the master's 8, and the empty last line.
     expect(numbers.slice(1)).toEqual(['1', '2', '3', '4', '5', '6', '1', '2', '3', '4', '5', '6', '7', '7', '1', '2', '3', '4', '5', '6', '7', '8', '8', '9']);
+    // Task 38: a segment's numbers are in its colour, dimmer than the root's, so alpha's 7 and the master's 7 differ.
+    const inSegment = [...document.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].filter((e) => e.textContent !== '').slice(1).map((e) => e.classList.contains('cm-segment-gutter'));
+    const root = false;
+    const seg = true;
+    expect(inSegment).toEqual([root, root, root, root, root, root, ...Array(7).fill(seg), root, ...Array(8).fill(seg), root, root]);
     // No block above a segment: the mount line is its header, and its controls end the line.
     expect(document.querySelectorAll('.cm-segment-header')).toHaveLength(0);
     const mounts = [...document.querySelectorAll('.cm-line.cm-segment-mount')];

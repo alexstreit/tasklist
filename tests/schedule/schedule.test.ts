@@ -93,7 +93,7 @@ describe('diagnostics', () => {
   it('schedule-late: the finish passes the row’s own deadline', () => {
     const model = run('A | 2d | | | | 2026-10-05\n');
     expect(found(model, 'schedule-late')).toEqual([{ line: 5, severity: 'warning', source: 'schedule' }]);
-    expect(model.diagnostics.find((d) => d.code === 'schedule-late')!.message).toBe('finishes 2026-10-06, after its deadline 2026-10-05');
+    expect(model.diagnostics.find((d) => d.code === 'schedule-late')!.message).toBe('finishes Tue 6 Oct, after its deadline Mon 5 Oct');
   });
 
   it('a row that finishes at the end of its deadline day is not late', () => {

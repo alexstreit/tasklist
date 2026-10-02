@@ -1,6 +1,7 @@
 // The forward pass (spec §2.11): durations, starts and finishes, in working hours from project-start.
 // Every finish goes through calendar.add; no stage adds hours itself.
 
+import { formatDate, formatPinnableDate } from '../../core';
 import type { ItemNode, Pinnable, Stage, WorkHours } from '../../core';
 import { duration, finish, milestone, network, projectFinish, start } from './fields';
 import { readNetwork, spanOf } from './network';
@@ -25,6 +26,8 @@ export const forwardStage: Stage = {
     const finishes = new Map<ItemNode, WorkHours>();
     /** What a row passes down to its descendants: the later of its derived start and its pin. */
     const floor = new Map<ItemNode, WorkHours>();
+    /** The row, or an ancestor, has a dependency or a start pin of its own. */
+    const dated = new Map<ItemNode, boolean>();
 
     for (const { node: n, end } of net.order) {
       const summary = n.children.length > 0;
@@ -44,12 +47,15 @@ export const forwardStage: Stage = {
       if (own !== undefined) derived = Math.max(derived, calendar.fromDate(own, 'start'));
       for (const link of net.into.get(n)!) derived = Math.max(derived, calendar.add(finishes.get(link.from)!, link.lag));
       const date = ctx.cell(n, 'start');
-      // A start pin is the start of its day: the row may begin as soon as that working day does.
-      const pin = date?.type === 'date' ? calendar.fromDate(date.text, 'start') : undefined;
-      floor.set(n, pin === undefined ? derived : Math.max(derived, pin));
-      starts.set(n, { derived, ...(pin === undefined ? {} : { pin }), effective: floor.get(n)!, mode: pin === undefined ? 'derived' : 'pinned' });
       const marked = ctx.marked(n, 'milestone');
-      ctx.set(n, milestone, marked && !summary);
+      const point = marked && !summary;
+      // A start pin is the start of its day: the row may begin as soon as that working day does.
+      // A milestone's is the end of its day: it happens on that date, so it shows on it.
+      const pin = date?.type === 'date' ? calendar.fromDate(date.text, point ? 'end' : 'start') : undefined;
+      floor.set(n, pin === undefined ? derived : Math.max(derived, pin));
+      starts.set(n, { derived, ...(pin === undefined ? {} : { pin }), effective: floor.get(n)!, mode: pin === undefined ? 'derived' : 'pinned', ...(point ? { edge: 'end' as const } : {}) });
+      dated.set(n, (up !== undefined && dated.get(up)!) || pin !== undefined || ctx.cell(n, 'deps')?.type === 'ref');
+      ctx.set(n, milestone, point);
 
       if (summary) {
         if (marked) ctx.diagnose(n, { line: n.line, severity: 'warning', code: 'schedule-milestone-parent', message: 'a parent row is a summary, not a milestone; its dates come from its children' });
@@ -84,11 +90,29 @@ export const forwardStage: Stage = {
       const value = starts.get(n)!;
       ctx.set(n, start, value);
       ctx.set(n, finish, finishes.get(n)!);
+      const point = value.edge === 'end';
+      if (point && !dated.get(n)) {
+        const due = ctx.cell(n, 'deadline');
+        const edits = due?.type === 'date' ? ctx.cellEdit(n, 'start', due.text) : null;
+        ctx.diagnose(n, {
+          line: n.line,
+          severity: 'info',
+          code: 'schedule-milestone-undated',
+          message: `${n.title} has no date or dependency, so it sits at the project start.`,
+          ...(edits ? { fixes: [{ label: 'Use its due date as its date', tier: 'click' as const, edits }] } : {}),
+        });
+      }
       if (value.pin === undefined) continue;
       const at = { line: n.line, span: spanOf(ctx, n, 'start') };
       const column = ctx.bindings.roles.get('start');
+      // A milestone pinned to a day that isn't worked converts to the end of the working day before it.
+      const pinned = point ? (ctx.cell(n, 'start') as { text: string }).text : undefined;
+      if (pinned !== undefined && calendar.toDate(value.pin, 'end') < pinned) {
+        const shown = formatDate(calendar.toDate(value.pin, 'end'), calendar);
+        ctx.diagnose(n, { ...at, severity: 'info', code: 'schedule-milestone-nonworking', message: `${n.title} falls on ${formatDate(pinned, calendar)}, so it's shown on ${shown}.` });
+      }
       if (value.effective > value.pin) {
-        const when = calendar.toDate(value.effective, 'start');
+        const when = formatPinnableDate(value.effective, value.edge, calendar);
         ctx.diagnose(n, { ...at, severity: 'info', code: 'schedule-pin-no-effect', message: `the ${column} column's date has no effect; the row starts ${when}` });
       } else if (value.pin === value.derived) {
         ctx.diagnose(n, { ...at, severity: 'info', code: 'schedule-pin-equals-derived', message: `the ${column} column's date is when the row would start anyway` });

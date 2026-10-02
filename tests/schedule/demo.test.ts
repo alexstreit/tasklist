@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { analyze } from '../../src/app/registry';
 import type { ItemNode, Model } from '../../src/core';
 import { critical, finish, late, start } from '../../src/plugins/schedule/fields';
-import { formatDate } from '../../src/ui/dates';
+import { formatDate } from '../../src/core';
 import demo from '../../examples/demo.plan?raw';
 
 function node(model: Model, title: string): ItemNode {

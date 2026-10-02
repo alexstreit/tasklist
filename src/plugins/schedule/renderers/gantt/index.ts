@@ -6,7 +6,7 @@
 // today lines.
 
 import type { FileLine, ItemNode, Model, RenderContext, Renderer, RowLayout, WorkHours } from '../../../../core';
-import { formatDate } from '../../../../ui/dates';
+import { formatDate, formatPinnableDate } from '../../../../core';
 import { naturalLayout } from '../../../../ui/row-layout';
 import { today } from '../../../../ui/today';
 import { critical, deadline, duration, finish, late, milestone, projectFinish, slack, start } from '../../fields';
@@ -103,12 +103,14 @@ function mount(host: HTMLElement): State {
 function tooltip(model: Model, node: ItemNode): string {
   const calendar = model.calendar!;
   const date = (t: WorkHours, edge: 'start' | 'end') => formatDate(calendar.toDate(t, edge), calendar);
+  const begins = model.get(node, start)!;
   const ends = model.get(node, finish)!;
   const point = model.get(node, milestone)!;
+  const from = formatPinnableDate(begins.effective, begins.edge, calendar);
   const span = point ? 'milestone' : model.get(node, duration) ? formatDays(model.get(node, duration)!.effective, calendar.hoursPerDay) : null;
   return [
     node.title,
-    point ? date(ends, 'end') : `${date(model.get(node, start)!.effective, 'start')} – ${date(ends, 'end')}`,
+    point ? from : `${from} – ${date(ends, 'end')}`,
     ...(span ? [span] : []),
     `slack ${formatDays(model.get(node, slack)!, calendar.hoursPerDay)}`,
   ].join('\n');

@@ -1,11 +1,12 @@
 // What the text editor adds over a composed buffer (spec §4.5): each segment's lines shaded and
 // bordered, with a class for their mount depth and indented by line padding under their mount row;
 // and each segment's mount line as its header: the header's background, the border starting there,
-// and its file's unsaved marker, Open and Unmount at the line's end.
+// and its file's unsaved marker, Open and Unmount at the line's end. A segment's line numbers are
+// in its colour, dimmer than the root's, so its numbering can't be read as the root's going on.
 
-import { RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { RangeSet, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import type { EditorState, Extension } from '@codemirror/state';
-import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view';
+import { Decoration, EditorView, GutterMarker, gutterLineClass, ViewPlugin, WidgetType } from '@codemirror/view';
 import type { DecorationSet, ViewUpdate } from '@codemirror/view';
 import { piecesOf } from '../buffer/composed';
 import type { PieceMap, Segment } from '../buffer/pieces';
@@ -169,7 +170,34 @@ const shading = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+const segmentGutter = new (class extends GutterMarker {
+  elementClass = 'cm-segment-gutter';
+})();
+
+/** The gutter class on every line inside a segment, read from the piece map. */
+const gutterClasses = StateField.define<RangeSet<GutterMarker>>({
+  create: (state) => segmentLines(state),
+  update: (value, tr) => (tr.docChanged || piecesOf(tr.startState) !== piecesOf(tr.state) ? segmentLines(tr.state) : value),
+  provide: (field) => gutterLineClass.from(field),
+});
+
+function segmentLines(state: EditorState): RangeSet<GutterMarker> {
+  const pieces = piecesOf(state);
+  if (!pieces || pieces.segments.length === 0) return RangeSet.empty;
+  const starts = new Set<number>();
+  for (const s of pieces.segments) {
+    const { from, to } = pieces.range(s);
+    for (let pos = from; pos < to; ) {
+      const line = state.doc.lineAt(pos);
+      if (pieces.segmentAt(line.from)) starts.add(line.from);
+      pos = line.to + 1;
+    }
+  }
+  return RangeSet.of([...starts].sort((a, b) => a - b).map((at) => segmentGutter.range(at)));
+}
+
 const theme = EditorView.theme({
+  '.cm-gutterElement.cm-segment-gutter': { color: 'var(--segment-gutter-fg)', backgroundColor: 'var(--mounted-row-bg)' },
   '.cm-segment': { backgroundColor: 'var(--mounted-row-bg)', boxShadow: 'inset 3px 0 0 var(--segment-border)' },
   // A segment's mount line is its header: the header's background, and the border starts there.
   '.cm-segment-mount': { backgroundColor: 'var(--badge-bg)', boxShadow: 'inset 3px 0 0 var(--segment-border)' },
@@ -191,5 +219,5 @@ const theme = EditorView.theme({
 
 /** The composed text editor's extensions; `actions` are the mount lines' Open and Unmount. */
 export function segments(actions: SegmentActions): Extension {
-  return [unsavedField, controls(actions), shading, theme];
+  return [unsavedField, controls(actions), shading, gutterClasses, theme];
 }

@@ -4,7 +4,7 @@
 // what this returns.
 
 import type { IsoDate, ItemNode, Model, RowLayout, WorkHours } from '../../../../core';
-import { formatDate } from '../../../../ui/dates';
+import { formatDate } from '../../../../core';
 import { critical, deadline, finish, late, milestone, projectFinish, start } from '../../fields';
 
 export type GanttMark = { kind: 'bar' | 'summary'; x: number; width: number } | { kind: 'milestone'; x: number };

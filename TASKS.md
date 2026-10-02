@@ -1197,6 +1197,8 @@ Expected, in work hours, with the displayed dates:
 
 **Changed by Task 35:** a dependency may point at a parent row, so one project can follow another. Forward, it waits for the parent's finish, its latest descendant's, plus the lag; backward, the successor's late start less the lag limits the late finish of every descendant. `schedule-dep-on-summary` is deleted, with its code, its test and its spec rows. The network's points are now each row's start and finish, so a row that depends on its own ancestor is a cycle too. Rewritten tests: `tests/schedule/schedule.test.ts` "schedule-dep-on-summary: the dependency is ignored" became "a dependency on a parent waits for its latest descendant, plus the lag"; `tests/grid/refs.test.ts` "writes a dependency on a parent or on the row itself, and the schedule reports it" now expects only `schedule-dep-cycle`.
 
+**Changed by Task 38:** a milestone's start pin converts with `fromDate(d, 'end')`, not `'start'`, so a pinned milestone shows on its date; every other start pin still converts at `'start'`. A milestone's `start` carries `edge: 'end'` (PLUGINS.md §4), so Beta ready's expected `start` in the fixture test gains it, with every value unchanged. `toDate(0, 'end')` is hour 0's own day. Schedule messages show dates as the views do: `schedule-late` reads "finishes Tue 13 Oct, after its deadline Mon 12 Oct" (was "finishes 2026-10-13, after its deadline 2026-10-12"). Two new infos, `schedule-milestone-nonworking` and `schedule-milestone-undated`.
+
 ---
 
 ## Task 29 — Row alignment between panes
@@ -1419,6 +1421,8 @@ Expected, in work hours, with the displayed dates:
 **New tests:** `tests/schedule/gantt-geometry.test.ts` and `gantt.test.ts`; `tests/views/pins.test.ts`; `tests/core/fields.test.ts` (`Model.fields()`, `label` and `kind`); `tests/renderers/scroll-to-cursor.test.ts`, which checks that the tree, table and schedule views still scroll their cursor row into view, `nearest`, now that `#host` scrolls (only the tree's had a test); in `tests/align/connect.test.ts`, "hosts at different heights" (follower host 32px lower, leader host 32px lower, and a host moving after connection); and in `tests/app/shell.test.ts`, "lines the Gantt up with the text editor's lines, and shows the pin review".
 
 **Changed by Task 32:** the cursor band is no longer on the Gantt's `.gantt-row`, but on a separate `.gantt-band`, drawn below the week lines; `.gantt-row` holds an item's marks and takes its clicks. Every layout row with a line has a band, including a row with no item, which still has no marks. `ganttGeometry` returns those as `bands`. The deadline, finish and today lines are drawn over the marks. "bands the cursor row" in `tests/schedule/gantt.test.ts` now reads `.gantt-band.at-cursor`.
+
+**Changed by Task 38:** a milestone's start pin converts at `'end'`, so its pin mark (`pinX`) sits on its diamond when the pin holds. The pin review formats a date pin at its value's own edge (`formatPinnableDate`), so a milestone's pin shows on its date; a task's pin still shows at `'start'`. `formatDate` moved again, from `src/ui/dates.ts` to `src/core/dates.ts`, beside `formatPinnableDate`; `src/ui/dates.ts` is gone. The Gantt tooltip gives a start through `formatPinnableDate`. The geometry table is unchanged.
 
 **Spec:** plan-format-spec §2.11 (the `deadline` field), §3.2 (`fields()`), §3.3 and §3.4 (hosts at different heights, converted by the shell), §5.3 (the preview as a column), and the new §5.5 Gantt and §5.6 Pin review. PLUGINS.md §4 (`label`, `kind` for single keys only, `fields()`, `definePinnable`'s signature) and §8 (the Gantt in `renderers/`, `views/pins/`, dates in `ui/`). CLAUDE.md's non-negotiable 5 lists `deadline` and `projectFinish` among the schedule fields renderers read. No rows spec is touched, and rows is unchanged.
 
@@ -2220,13 +2224,14 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
   - Alt+Down on Product A swaps it with Product B in the master, and the segments follow.
 
   — cases six to nine: `Review` before Spec in beta, then undone; Outdent disabled with "That would move it out of alpha.plan." as its tooltip and as Alt+Shift+Left's note; Code above Spec in beta, undone; Move up disabled on Spec with no tooltip; Alt+Down gives the master Product B then Product A, beta's segment after Product B and alpha's after Product A, outline numbers 1 Product B … 2.2 Build, and one Ctrl+Z restores the text exactly (this needed the two fixes to Task 36's buffer below).
+
 - [x] Unmount on Product B clears its cell: beta's rows leave the grid, and `beta.plan` is unchanged. One undo brings them back. — the Unmount case, from the toolbar; after the browser pass, a later case does it from alpha's header, and another opens the file from the header and from the badge.
 - [x] Deleting Product A asks with the wording above. Cancel changes nothing. Apply removes the row only. — the twelfth case. Product A is referred to by Product B's `deps=#a`, so the question goes on as Task 31's does: "Delete Product A? teams/alpha.plan stays as it is; it just won't be shown here. Product B refers to it in deps; that reference will be removed." Apply removes the row and that reference (decision 2 below), and alpha's file is untouched.
 - [x] A diagnostic in `beta.plan` (for example `4 hours` typed into a work cell) shows on that cell. Its entry in the problems list sits under beta's group and focuses the row, and its fix applies to `beta.plan`. — the fourteenth case. `4 hours` is typed in the text editor, since the grid normalises it to `4h`. Beta's work column also loses its units there, which gives a settings diagnostic with a fix. The cell has the warning, every entry names beta (it is the only group, so it has no heading, as in Task 35), clicking the warning focuses the cell, the settings banner stays hidden (it is the root's), and "Add unit=h hpd=8 dpw=5" puts beta's settings back.
 - [x] The Gantt, following the grid, draws all rows aligned, using injected measurements as in Task 29. — `tests/align/grid-composed.test.ts`: the grid's layout has all fourteen body rows in composed order, keyed by file and line, and the Gantt draws the seven item rows at their tops.
 - [x] The speed figure is recorded, or the task stopped to ask. — It stopped and asked (4,457 ms for a full rebuild); reusing rows was chosen. Figures under Timing below.
 - [x] Every existing test passes, and rewritten tests are listed in the notes. — 4,090 tests (3,866 before); typecheck, lint and `vite build` clean.
-- [ ] **Browser pass in Edge, on `examples/portfolio/` and a real folder:** pending review (there is no browser here). Also check there: the mount rows as headers in both editors and both themes, and the segment border from the mount row down.
+- [x] **Browser pass in Edge, on `examples/portfolio/` and a real folder:** pending review (there is no browser here). Also check there: the mount rows as headers in both editors and both themes, and the segment border from the mount row down.
   - edit cells in two team files from the master;
   - reorder two projects;
   - Unmount, then undo;
@@ -2351,11 +2356,11 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
 
 **Timing** (jsdom, Vitest, ten files with 5,009 composed lines and 4,979 grid rows, medians of 20 commits and 10 inserts; no timing test):
 
-| Measurement | Edit | Analysis | Rebuild | Total |
-| --- | --- | --- | --- | --- |
-| Before reuse: full rebuild, as stopped | | | 4,457 ms | |
-| Committing a cell (Task 30.3's estimate in team 5) | 60 ms | 22 ms | 56 ms | 138 ms |
-| Inserting a row near the top (above team 1's Task 0.1) | 41 ms | 21 ms | 74 ms | 136 ms |
+| Measurement                                            | Edit  | Analysis | Rebuild  | Total  |
+| ------------------------------------------------------ | ----- | -------- | -------- | ------ |
+| Before reuse: full rebuild, as stopped                 |       |          | 4,457 ms |        |
+| Committing a cell (Task 30.3's estimate in team 5)     | 60 ms | 22 ms    | 56 ms    | 138 ms |
+| Inserting a row near the top (above team 1's Task 0.1) | 41 ms | 21 ms    | 74 ms    | 136 ms |
 
 - Each total is under 150 ms in three runs, the highest 144 ms.
 - **First opening the portfolio:** analysis 145 ms, and the first build of the grid about 1,030 ms. The first build creates every row.
@@ -2432,6 +2437,121 @@ No other existing test changed.
 
 **Human review:** the routing of cell edits through column mapping first. It decides which file and which column every portfolio edit lands in.
 
-## Task 38 — Gantt zoom _(placeholder)_
+---
 
-**Serves:** M3b, for the 18-month view. Day, week and month scales, with the scale labels and `dayWidth` changing to match. Alignment and geometry keep the same rules.
+## Task 38 — Dated milestones
+
+**Serves:** M3b, from Task 37's browser pass (VISION §5). A milestone can now be placed on a date, for a tradeshow, a release date or a board meeting. Today, a milestone's start pin converts at the start of its day, while a milestone shows the end of its day, so a pinned milestone displays a day early. A milestone with no date and no dependency also silently sits at the project start.
+
+**Rules**
+
+1. **A milestone's start pin converts at the end of its day**, `fromDate(d, 'end')`. The milestone then shows on the pinned date, and work that depends on it starts the next working day. Other rows' pins are unchanged (`'start'`). Add a one-line comment at the conversion saying why the edge differs.
+2. **It's still a floor**, as every pin is. If its predecessors finish later, the milestone moves with them and gets `schedule-pin-no-effect`, as any pin does.
+3. **A fixed event is a pin plus a deadline on the same date.** No new rule is needed for it: the deadline also converts at `'end'`, so a milestone kept on its date isn't late, and one pushed past it is.
+4. **A pin on a non-working day.** A milestone pinned to a Saturday or Sunday converts to the end of the last working day before it, and gets the info `schedule-milestone-nonworking`: "_Show_ falls on Sat 24 Oct, so it's shown on Fri 23 Oct."
+5. **An undated milestone** gets the info `schedule-milestone-undated`, "_Some task_ has no date or dependency, so it sits at the project start." A milestone counts as undated when it has no dependency of its own, no start pin of its own, and no ancestor with either. When the row has a `due` and the file has a column bound to `start`, the info carries the click fix **"Use its due date as its date"**. The fix writes the `due` value into the `start` cell with `setCell` (through `applyFile` when the row is mounted), as one undo step.
+
+**Deliverables**
+
+- The rules above, in the schedule plugin, each with its diagnostic codes in spec §2.9.
+- `fromDate` for a non-working day at `'end'`, defined as in rule 4. Check that the calendar already does this, and add the case to the calendar tests if it doesn't.
+- **`toDate(0, 'end')` is hour 0's own day**, since there is no working hour before hour 0: `project-start`'s day, or the Monday after a weekend `project-start`, the same as `toDate(0, 'start')`. This is how a milestone at the project start shows its date. Add it to the calendar tests.
+- **Spec:** §2.11 for milestone pins, fixed events and undated milestones; §5.5, the Gantt places a pinned milestone's diamond at its date.
+- **Notes:** add "changed by Task 38" lines to the notes of Tasks 28 and 30, which describe milestone pins converting at `'start'`. VISION is already updated (§5, Milestones and Deadlines).
+
+**The test file:** written by hand, `tests/fixtures/milestones.plan`, with `profile: schedule` and `project-start: 2026-10-05` (Monday, hour 0, 8 hours a day).
+
+| Row            | Cells                                               |
+| -------------- | --------------------------------------------------- |
+| Prep `{#prep}` | est 16d                                             |
+| `^`Show A      | start 2026-10-23                                    |
+| `^`Show B      | start 2026-10-23, deps `#prep`                      |
+| `^`Show C      | start 2026-10-23, deps `#prep`, due 2026-10-23      |
+| `^`Show D      | start 2026-10-24                                    |
+| `^`Some task   | due 2027-11-29                                      |
+| After A        | est 1d, deps `#showa` (anchor Show A as `{#showa}`) |
+
+Expected values, worked out by hand. Never take them from output, and if one disagrees, stop and report it. Fri 23 Oct is day 14, so its end is hour 120. Mon 26 Oct is day 15, and its end is hour 128.
+
+| Row       | start / finish | Shown               | Gantt x (days) | Diagnostics                                |
+| --------- | -------------- | ------------------- | -------------- | ------------------------------------------ |
+| Prep      | 0 / 128        | Mon 5 – Mon 26 Oct  | 0, width 16    |                                            |
+| Show A    | 120            | Fri 23 Oct          | 15             |                                            |
+| Show B    | 128            | Mon 26 Oct          | 16             | `schedule-pin-no-effect`                   |
+| Show C    | 128            | Mon 26 Oct, late    | 16             | `schedule-pin-no-effect`, `schedule-late`  |
+| Show D    | 120            | Fri 23 Oct          | 15             | `schedule-milestone-nonworking`            |
+| Some task | 0              | Mon 5 Oct           | 0              | `schedule-milestone-undated`, with its fix |
+| After A   | 120 / 128      | Mon 26 – Mon 26 Oct | 15, width 1    |                                            |
+
+Applying Some task's fix writes `start=2027-11-29` on its row. The row then sits at the end of Mon 29 Nov 2027 and loses the info. One Ctrl+Z restores it.
+
+**Acceptance criteria**
+
+- [x] The fixture test asserts every cell of the table above, including each diagnostic's code, row and severity, and the Gantt geometry. — `tests/schedule/milestones.test.ts`, written from the table: start and finish, the schedule table's two date cells and late outline, the Gantt mark's kind, x and width (dayWidth 1), and the exact diagnostics list with code, row, severity and source. The code agreed with every value on the first run. The fix's result is checked too: one changed line, `start=2027-11-29` on Some task's row, start hour 2408 (day 300's end, worked by hand: 60 weeks after Mon 5 Oct 2026), shown as Mon 29 Nov 2027, and no undated info.
+- [x] The fix applies in the grid and the text editor, and in a mounted file through `applyFile`. It's absent when the row has no `due`, and when no column is bound to `start`. — `tests/editing/milestone-fix.test.ts`: the text editor and the grid on a file of their own, then the composed text editor and the composed grid writing a mounted team file only. Each is undone by one Ctrl+Z. The two absences are in `milestones.test.ts`.
+- [x] Unchanged: Task 28's fixture, Task 30's geometry table, Task 35's portfolio and `examples/demo.plan`. None of them pins a milestone. — Every value is unchanged, and every milestone in them has a dependency, so none gets a new info. Task 28's fixture test (and `tests/grid/m1.test.ts`, which rebuilds it) gains `edge: 'end'` on Beta ready's `start`, and its `schedule-late` message is reworded (below).
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 4,171 tests (4,128 before); typecheck, lint and `vite build` clean.
+- [x] **Browser pass in Edge:** pending review (there is no browser here). Put a tradeshow in the portfolio master as a pin plus a deadline on the same date. Make a team's work push past it, and check that it shows late on the Gantt. Apply the undated fix.
+
+**Visible changes:**
+
+- Pinned milestones show on their date.
+- The two new infos and the fix.
+
+**Not in this task:**
+
+- Pinning a finish date.
+- Hard (must-start-on) pins.
+- Gantt zoom (Task 39).
+
+**Decisions taken** (asked and answered before any code was written):
+
+- **How a stage builds a fix:** a new `StageContext.cellEdit(node, role, text): TextEdit[] | null`. It returns the edits that write that cell in the node's own file, from rows' `setCell`, in that file's offsets, or null when the role is unbound there or rows refuses. It never applies anything. PLUGINS.md §5 documents it as the way a stage builds a fix, and says a stage diagnostic's fixes go through `applyFile` by its `file`.
+- **A date's edge travels on the value:** `Pinnable` gains `edge?: 'start' | 'end'`, meaningful for `kind: 'date'`, with unset meaning `'start'`. The forward stage sets `'end'` on every milestone's `start`, pinned or not. Core's `formatPinnableDate(t, edge, calendar)` formats it, and the pin review, the schedule table's shown and muted dates, and the Gantt tooltip all use it. `schedule-pin-no-effect` gives a milestone's date at the same edge. PLUGINS.md §4 documents it.
+- **`toDate(0, 'end')` is hour 0's own day**, the same as `toDate(0, 'start')`, so with a weekend `project-start` it is the Monday after it. The deliverable is reworded to match.
+- **Dates in messages read as the views show them.** `formatDate` moved from `src/ui/dates.ts` to `src/core/dates.ts`, beside `formatPinnableDate`. `src/ui/dates.ts` is removed, and the `src/ui` lint rule is unchanged (it may import only core types). Every schedule message that shows a date uses it, `schedule-late` included.
+
+**Decisions taken** (by me, within the task; please check):
+
+- **"A dependency of its own" means a filled `deps` cell,** a reference value in the column bound to `deps`, whether or not the link survives cycle removal. A milestone whose only link is in a cycle already has `schedule-dep-cycle`, and telling it that it has no dependency would be wrong.
+- **Non-working is detected through the calendar,** with no weekday arithmetic in the stage: the pin's day is not worked when `toDate(pin, 'end')` comes before the pinned date. A holiday calendar would then report holidays too. A weekend pin before `project-start` (Sat 3 Oct with a Mon 5 Oct start) gets no info: it converts to hour 0, which shows on Mon 5 Oct, later than the pin, not earlier.
+- **The undated info has no span**: it is about the row, not a cell. The non-working info's span is the start cell.
+- **The messages use the task's wording**, with the row's title written plainly ("Show D falls on Sat 24 Oct, so it's shown on Fri 23 Oct."). They are the plugin's only messages written as sentences with the title, as the task gives them; the others stay lower-case fragments.
+- **The schedule table's muted derived date follows its existing rule**: it shows whenever a start is pinned, even when equal to the shown date. So Show B reads `Mon 26 Oct ⟨Mon 26 Oct⟩`, and Show A `Fri 23 Oct ⟨Mon 5 Oct⟩`.
+- **`cellEdit` shares the role-column lookup with `cell`** (`roleColumn` in `analyze.ts`), so both read the same column in the node's own file.
+
+**Visible changes:**
+
+- A milestone with a start pin shows on its pinned date in the schedule table, the Gantt (diamond and pin mark) and the tooltip. Work that depends on it starts the next working day.
+- A milestone pinned to a Saturday or Sunday shows on the Friday before, with the info `schedule-milestone-nonworking` on its start cell.
+- A milestone with no date or dependency, its own or an ancestor's, gets the info `schedule-milestone-undated`. When the row has a `due` and the file has a start column, the info carries the click fix "Use its due date as its date", in the text editor (a lint action) and the grid (the problems list), on a mounted file too.
+- The pin review shows a milestone's pin, derived and effective dates at the end edge: Show A's pin reads Fri 23 Oct (it would have read Mon 26 Oct).
+- The schedule table shows a pinned milestone's muted derived date at the end edge: Show B reads `Mon 26 Oct ⟨Mon 26 Oct⟩` (it would have been `⟨Tue 27 Oct⟩`).
+- In the composed text editor, a segment's line numbers are in the segment's colour, dimmer than the root's, on the segment's shading (from the browser pass): alpha's last line, 7, no longer reads as a duplicate of Product B's 7. A new theme token, `--segment-gutter-fg`, has a light and a dark value; the gutter cells take the class `cm-segment-gutter`.
+- A row at hour 0 shown at the end edge (a milestone or a zero-length row at the project start) shows `project-start`'s day, not the working day before it.
+- `schedule-late` reads "finishes Tue 13 Oct, after its deadline Mon 12 Oct" (was "finishes 2026-10-13, after its deadline 2026-10-12"). `schedule-pin-no-effect` names its date the same way ("…; the row starts Tue 6 Oct", was "…; the row starts 2026-10-06"), and gives a milestone's at the end edge: Show B's reads Mon 26 Oct.
+
+**Rewritten tests:**
+
+- `tests/schedule/fixture.test.ts`: Beta ready's expected `start` gains `edge: 'end'` (its numbers are unchanged), and the `schedule-late` message is "finishes Tue 13 Oct, after its deadline Mon 12 Oct" (was "finishes 2026-10-13, after its deadline 2026-10-12").
+- `tests/grid/m1.test.ts`: Beta ready's expected `start` gains `edge: 'end'`, as above.
+- `tests/schedule/schedule.test.ts`: "schedule-late: the finish passes the row's own deadline" expects "finishes Tue 6 Oct, after its deadline Mon 5 Oct" (was "finishes 2026-10-06, after its deadline 2026-10-05").
+- `tests/composition/mounts.test.ts`: "keep its file, with lines in it…": the team's `^M | 1d` has no date or dependency, so it also gets `schedule-milestone-undated`, in `t.plan` on line 5.
+- `tests/app/shell-composed.test.ts`: "numbers each file's lines as its own…" also checks which gutter numbers carry `cm-segment-gutter`: alpha's 1–7 and beta's 1–8, and none of the master's.
+- `tests/schedule/demo.test.ts` and `tests/grid/m1.test.ts` import `formatDate` from `src/core` (was `src/ui/dates`). No assertion changed.
+
+**New tests:**
+
+- `tests/schedule/milestones.test.ts` on `tests/fixtures/milestones.plan`: the table; the messages; the fix and its result; the fix's absence with no `due` and with no start column; which milestones count as dated (a dependency or pin of their own or an ancestor's); no info on a task; the pin review, the table's muted date and the Gantt tooltip at the milestone's edge, with a task's pin still at `'start'`; and `ctx.cellEdit` on a mounted row, whose edits are in the team file's offsets and change nothing in the model or the files until applied.
+- `tests/editing/milestone-fix.test.ts`: the fix in the text editor and the grid, and on a mounted file through `applyFile` in the composed text editor and the composed grid, each undone by one Ctrl+Z.
+- `tests/core/calendar.test.ts`: Sat 24 Oct and Sun 25 Oct at `'end'` are hour 120 (end of Fri 23 Oct); `toDate(0, 'end')` is hour 0's own day, Mon 5 Oct, and the Monday after a weekend `project-start`. The calendar already converted a weekend day's end to the Friday before (an existing test checks Sat 10 Oct); the 24 Oct case is added.
+
+**Moved imports:** `formatDate` is imported from `src/core` (was `src/ui/dates`) in `src/plugins/schedule/renderers/table.ts`, `src/plugins/schedule/renderers/gantt/index.ts`, `src/plugins/schedule/renderers/gantt/geometry.ts`, `src/views/pins/index.ts` (which now imports `formatPinnableDate` only), `tests/schedule/demo.test.ts` and `tests/grid/m1.test.ts`. The schedule stages import `formatDate` and `formatPinnableDate` from core.
+
+**Spec and docs:**
+
+- plan-format-spec §2.11: a milestone's start pin converts at `'end'`; dates in messages as §5.4 shows them; the new milestone bullets (pins, non-working days, fixed events, undated milestones and the fix); `schedule-late`'s example message; `schedule-pin-no-effect` names the effective start at its edge; two rows in the diagnostics table. (§2.9 has no schedule example of its own; its table points at §2.11.) §4.5: a segment's gutter numbers in `--segment-gutter-fg`. §5.4: starts at their own edge, `toDate(0, 'end')`, a milestone's muted derived date. §5.5: a pinned milestone's diamond and pin mark. §5.6: date pins at the value's edge.
+- PLUGINS.md §4: `Pinnable.edge` and `formatPinnableDate`. §5: `cellEdit`, and fixes from a stage go through `applyFile` by their file. §7.2: a milestone's start pin converts at `'end'`, and `toDate(0, 'end')`. §8: dates in core, not `ui/`.
+- Tasks 28 and 30: "Changed by Task 38" notes.
+
+**Human review:** read `tests/schedule/milestones.test.ts` against the table first, then `forward.ts`'s pin conversion and the two infos.

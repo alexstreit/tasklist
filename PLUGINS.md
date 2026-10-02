@@ -103,6 +103,7 @@ interface Pinnable<T> {
   pin?: T; // what the row's own cell says, when it says something
   effective: T; // what is used, by the owning stage's rule
   mode: "derived" | "pinned" | "additive"; // 'additive' is estimate's only
+  edge?: "start" | "end"; // a 'date' kind's: the edge its values show at; unset means 'start'
 }
 
 interface Model {
@@ -135,6 +136,7 @@ export const rollup = definePinnableByColumn<Hours>("estimate", "rollup");
 - **Why keys and not properties.** One `Model` type with optional properties for every plugin would make every renderer depend on every plugin, and declaration merging would do the same invisibly. A key is an import, so the dependency is visible and the import test (§8) can check it against `requires`.
 - **Scopes.** `node` fields hold one value per item; `document` fields hold one value per file (totals, the critical path, the project finish). Estimate's roll-ups are one **by-column** pinnable key, a map from column name to `Pinnable`, because fields are declared statically in the manifest and a file's columns are not.
 - **Pinnable values.** `mode` is the only record of whether a value is pinned: "pinned" is `mode !== 'derived'`, never a separate boolean. How `effective` follows from `derived` and `pin` is the owning stage's rule. For estimate, `derived` is the children's sum when any child has a value (today's `childSum` and `childrenHaveValue`) and absent otherwise, so a leaf's estimate is a pin with nothing derived; an override replaces and `+` adds. For schedule, `derived` always exists, and a start pin is a floor, so `effective` can be later than `pin`.
+- **A date's edge.** A `'date'` value is working hours, and the same hour is the end of one day and the start of the next, so a `Pinnable` may say which edge its values show at. `edge` is unset for `'start'`. Schedule sets `'end'` on a milestone's `start`, since a milestone happens on its date (plan spec §2.11). Core's `formatPinnableDate(t, edge, calendar)` formats a value at its edge, and the pin review, the schedule table and the Gantt tooltip all use it, so none of them knows about milestones.
 - **The pin review** lists pins that override something: for every node field whose key is pinnable, single or by column, each value with both a `pin` and a `derived`, shown side by side. It knows no plugin, and leaf estimates never appear in it. It finds the keys through `model.fields()`. A single pinnable key carries a `label` and a `kind` for it; a by-column key carries neither, since its entries are named by their column and formatted by the column's type (a duration column as a duration, a number column as the plain number).
 - **Pin diagnostics are the owning plugin's.** Schedule's "pin has no effect" is `pin !== undefined && effective > pin`, and "pin equals derived" applies in `pinned` mode only, since in `additive` mode an equal pin doubles rather than repeats. Estimate keeps exactly today's diagnostics.
 - **What moves and what stays.** Each column's `effective`, `childSum` and `mode` become the `rollup` map's `Pinnable` (`childSum` is its `derived`; `childrenHaveValue` is `derived !== undefined`). `hasValue` and `doneSum` become estimate fields beside it. `done`, own and inherited, stays in core on `ItemNode`, because plan spec §2.8's inheritance is structure, not arithmetic.
@@ -162,6 +164,7 @@ interface StageContext {
   bindingsOf(node: ItemNode): Bindings; // the node's own file's
   calendar?: Calendar; // present when project-start is set
   cell(node: ItemNode, role: string): Value | undefined; // through the node's own file's bindings; undefined when unbound or empty
+  cellEdit(node: ItemNode, role: string, text: string): TextEdit[] | null; // edits writing that cell, in its own file; null when unbound or refused
   targets(node: ItemNode, role: string): ItemNode[]; // the rows its references point at, in its own file
   hours(node: ItemNode, column: string): number | undefined; // a root column, mapped to the node's own file; a lookup of readTree's reading
   marked(node: ItemNode, marker: string): boolean; // the node's own file's marker
@@ -182,6 +185,8 @@ An optional role is the normal case, not an error: in a file with no start colum
 **Renderers and exporters** declare `requires: FieldKey[]` in place of today's `ColumnRequirement[]`. When a required field's stage was skipped, the app greys them out and shows the reason of the first skipped stage in stage order, as it does today. When the plugin that owns a required field isn't registered at all, the reason is "needs the estimate plugin".
 
 **Diagnostics.** The runner sets `source: pluginId` on every stage diagnostic, so the problems list can group them; core's leave it unset. `diagnose` takes the node a diagnostic is about, whose file its line and spans are in, and the runner sets `file` from it when that is a mounted file; null is a document-level diagnostic on the root file. So a stage can't put a mounted row's diagnostic on the root's line of the same number. Codes stay as they are today; a new plugin's codes start with its id (`schedule-pin-no-effect`), which keeps them unique without a registry of codes. A message names the column or key it is about ("the start column", "project-start"), never a bare word shared by a field, a role and a key.
+
+**Fixes from a stage.** A stage builds a fix with `cellEdit(node, role, text)`: the edits, from rows' `setCell`, that write `text` into the row's cell for `role` in the row's own file, in that file's offsets. It returns null when the role is unbound in that file or rows refuses the edit, and it never applies anything: the model and the buffer stay as they are until someone applies the fix. A stage diagnostic carries its node's `file`, so the editors apply its fixes to that file, through `applyFile` when it is mounted, as one undo step. The schedule's "Use its due date as its date" is the first (plan spec §2.11).
 
 **Fixes that need today.** A fix is data, and `analyze` never reads the clock, so a fix can't hold today's date. `Fix.input` gains `suggest?: 'today'`, with `before?` and `after?` text around the value: the fix writes `before + value + after` in place of `span`. Core's pure `resolveFix(fix, date)` completes such a fix: it fills the date into its edits and its label, and the fix suggests nothing more. The text editor and the grid, and their confirm panels, call it with `today()` when they show a fix, so it writes the date it showed; the fix-invariant test calls it with a fixed date. Core stays clock-free because the date is passed in; the editors may read the clock because they are UI code, and `src/ui/today.ts` holds the one function that does.
 
@@ -295,14 +300,14 @@ interface Calendar {
   // 'end': the hour just after d's last working hour
   toDate(t: WorkHours, edge: Edge): IsoDate;
   // 'start': the working day hour t falls in
-  // 'end': the working day hour t - 1 falls in (an exclusive finish)
+  // 'end': the working day hour t - 1 falls in (an exclusive finish); hour 0's own day for t = 0
   hoursPerDay: number; // for showing durations in days
 }
 ```
 
 The forward and backward passes never add hours themselves: every finish is `calendar.add(start, duration)`, every lag `calendar.add(finish, lag)`. Start pins convert with `fromDate(d, 'start')`; deadlines with `fromDate(d, 'end')`, so a task that finishes at the end of the deadline day is not late. Renderers show starts with `toDate(t, 'start')` and finishes with `toDate(t, 'end')`, so an 8-hour task that starts on Monday also finishes on Monday.
 
-Which edge to use is the caller's decision, not the calendar's: the schedule plugin converts start pins at `'start'` and deadlines at `'end'`, with a one-line comment at each conversion saying why.
+Which edge to use is the caller's decision, not the calendar's: the schedule plugin converts start pins at `'start'`, a milestone's start pin and deadlines at `'end'`, with a one-line comment at each conversion saying why. `toDate(0, 'end')` is hour 0's own day, the same as `toDate(0, 'start')`, since there is no working hour before hour 0; with a weekend project-start, that is the Monday after it.
 
 - **The naive calendar** is Monday to Friday at `hpd` hours a day, with `hpd` taken from the column bound to `effort` (8 if unset). Its `add` is plain addition.
 - **Holidays** change only `toDate` and `fromDate`: the hour axis skips the days that aren't worked.
@@ -320,13 +325,14 @@ Each plugin is a folder, and every modularity rule in VISION §3.1 is checked by
 src/
   core/                 parsePlan, readTree (with hours and done), compose (mounts), mountsOf, bindVocabulary, vocabulary,
                         fields and Pinnable, registry, stage runner, createAnalyzer,
-                        Workspace and Calendar interfaces, naive calendar, mintId (IDs for grid references),
+                        Workspace and Calendar interfaces, naive calendar, dates as views and messages show them
+                        (dates.ts: formatDate, formatPinnableDate), mintId (IDs for grid references),
                         relativePath and mountRefusal (mounting from the grid, mounting.ts)
   plugins/
     estimate/           the roll-up stages and their fields; tree, table and TSV move here
     schedule/           the forward and backward passes and their fields; the schedule table and the Gantt, in renderers/
   ui/                   shared UI code for renderers and editors: the row-per-item table, cursor highlight,
-                        click-to-line and their CSS; today's date for fixes; dates as views show them; row-layout.ts, row alignment
+                        click-to-line and their CSS; today's date for fixes; row-layout.ts, row alignment
                         between a leading editor and a following view; imports only core's types
   views/                renderers that belong to no plugin: the pin review (pins/)
   app/                  shell, registry wiring, workspaces, open files, gathering mounted files (mounts.ts),

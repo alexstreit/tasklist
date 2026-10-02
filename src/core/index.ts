@@ -3,6 +3,7 @@ export * from './fields';
 export * from './plugin';
 export * from './bindings';
 export * from './calendar';
+export { formatDate, formatPinnableDate } from './dates';
 export * from './vocabulary';
 export * from './workspace';
 export { createAnalyzer, mountsOf, parsePlan, readMounts } from './analyze';
