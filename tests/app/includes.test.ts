@@ -97,4 +97,17 @@ describe('the include loop', () => {
     await settle();
     expect(reads).toEqual(['a.plan']);
   });
+
+  it('leaves out an include the workspace refuses to resolve, as outside its folder', async () => {
+    const { workspace, reads, settle } = fakeWorkspace({ 'team.plan': 'T | 1h\n' });
+    workspace.resolve = (_from, ref) => {
+      if (ref.startsWith('..')) throw new Error(`${ref} is outside the folder`);
+      return ref;
+    };
+    const includes = createIncludes(workspace, () => {});
+    includes.snapshot('q4.plan', include('../out.plan', 'team.plan'));
+    await settle();
+    expect(reads).toEqual(['team.plan']);
+    expect(includes.snapshot('q4.plan', include('../out.plan', 'team.plan'))).toEqual(new Map([['team.plan', 'T | 1h\n']]));
+  });
 });

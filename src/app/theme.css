@@ -13,6 +13,7 @@
   --border: #dddddd;
   --border-soft: #eeeeee;
   --hover: #f3f4f6;
+  --backdrop: rgb(0 0 0 / 0.3);
   --button-bg: #ffffff;
   --button-border: #d1d5db;
   --accent-bg: #dbeafe;
@@ -73,6 +74,7 @@
     --border: #374151;
     --border-soft: #1f2937;
     --hover: #1f2937;
+    --backdrop: rgb(0 0 0 / 0.5);
     --button-bg: #1f2937;
     --button-border: #4b5563;
     --accent-bg: #1e3a8a;

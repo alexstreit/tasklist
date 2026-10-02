@@ -423,7 +423,7 @@ No totals row: it breaks sorting and filtering, and `=SUM()` is one keystroke.
 
 ### 3.7 PlanBuffer
 
-The app owns exactly one document buffer. Editors never hold their own copy of the text.
+The app owns one buffer per open file (§6) and hands the active file's to whichever editor is mounted. Editors never hold their own copy of the text.
 
 ```ts
 interface TextEdit {
@@ -436,7 +436,7 @@ interface BufferChange {
   text: string; // document after the change
   edits: TextEdit[]; // what changed, in original coordinates
   mapPos(pos: number): number; // position before → position after
-  origin: string; // "text-editor" | "grid" | "undo" | "redo" | "load" | future: "remote"
+  origin: string; // "text-editor" | "grid" | "undo" | "redo" | "load" | "remote"
 }
 
 interface PlanBuffer {
@@ -452,6 +452,7 @@ interface PlanBuffer {
 - `CodeMirrorBuffer` is the production implementation. It wraps a CodeMirror `EditorState` and is the **only** module outside `src/editor/` that imports from CodeMirror. `EditorState`, `Transaction` and `ChangeSet` never appear in its public types.
 - `InMemoryBuffer` is a test implementation with a simple undo stack. Both pass one shared test suite.
 - An edit with origin `load` replaces the whole document and clears the undo history: the recorded edits no longer describe the new text.
+- An edit with origin `remote` is a change made on disk, applied as a line diff (§6). It stays out of the undo history: the entries before it are mapped through it, so undo never reverts it.
 - The text editor mounts its `EditorView` on the state owned by `CodeMirrorBuffer`; its edits arrive at the buffer like any other, with origin `text-editor`.
 - Undo and redo are buffer operations. No editor calls CodeMirror's history commands directly.
 - The buffer knows characters only. Lines, nodes and columns are `analyze()`'s business.
@@ -756,10 +757,21 @@ All colours are CSS custom properties defined in `src/app/theme.css` on `:root`,
 
 ## 6. Persistence and deployment
 
-- Single user, files on disk. Open/save go through the workspace (`PLUGINS.md` §7.1): the single-file workspace uses the File System Access API where available, falling back to file input and download.
-- The unsaved-changes indicator goes off only when the file on disk matches the buffer: after opening, or after a save in place. A download leaves it on. Leaving the page prompts only when the buffer differs from the text last opened, saved or downloaded.
+- Single user, files on disk. Open and save go through the workspace (`PLUGINS.md` §7.1); the shell checks what the workspace can do, never which kind it is, nor the browser's name.
+- **Workspaces.** The toolbar offers **Open file** and **Open folder**.
+  - Open file is the single-file workspace: the File System Access API where available, falling back to file input and download.
+  - Open folder picks a folder with `showDirectoryPicker` (read and write). It lists the folder's `.plan` and `.rows` files recursively, as paths relative to the folder, skipping dot-folders and `node_modules`. The file shown first is the one last active in that folder, else the first at its top level, else the first listed. A folder with no plan files opens nothing: the open files stay, and the status reads "No plan files in folder".
+  - In a browser without `showDirectoryPicker`, such as Firefox, Open folder is disabled, with a tooltip saying it needs Edge or Chrome. In a cross-origin frame it is disabled with a tooltip saying so.
+  - Paths resolve relative to the file they appear in. A path outside the folder is refused with a plain reason; until M3b an include refused this way is left out of the snapshot.
+  - **Remembering the folder.** The last folder opened is kept in IndexedDB, with the file last active in it, as a per-viewer convenience. While one is remembered, **Reopen _name_** asks the browser for permission again with one click. A refusal says "Permission to open _name_ was refused" and keeps Reopen. A folder that no longer resolves is forgotten, with a status line saying so; opening another folder replaces it.
+- **Open files.** The files opened in this session form a store, and the single-file workspace uses it too, holding one file. Each file holds its path, its own buffer (so its undo history survives switching files), the text as last read from or written to disk, whether it is unsaved, and whether it changed on disk since (_stale_) or can no longer be read (_missing_). Exactly one is active: the editors, analysis and views follow it, and `analyze` gets its path as the filename.
+- **File panel.** For a workspace that can list files, a collapsible panel left of the editor lists them grouped by folder, with markers for unsaved (●), changed on disk (↻) and missing on disk (✕). Clicking a file, or Enter on it, makes it active, reading it the first time; the arrow keys move between files.
+- **Replacing the open files.** Open file, Open folder and Reopen replace the open files. If any is unsaved, they first ask "_alpha.plan and beta.plan_ have unsaved changes." with **Save all and continue** (continues only if every save succeeds), **Discard and continue** and **Cancel** (changes nothing).
+- **Saving.** Ctrl+S and Save write the active file. **Save all** (shown when the workspace can list) writes every unsaved file. Save As is shown only when the workspace can pick a location (`can.saveAs`); in a folder, creating files comes in a later task, and a file with no path is not saved. Save writes the buffer as-is; nothing re-serialises from the tree. A saved file is byte-identical to the opened one except for tab-to-space and CRLF-to-LF normalisation.
+- **Before each write in place**, the file is read again. If it no longer matches the text last read or written, the app asks "_alpha.plan_ changed on disk since you opened it. Overwrite it, or keep your changes unsaved?" (**Overwrite**, **Keep**) and writes nothing unless told to overwrite. A file missing on disk asks "_alpha.plan_ is no longer on disk. Save it again at _teams/alpha.plan_?"; **Yes** writes it at its path, creating it. A download overwrites nothing, so it is not checked.
+- **Changes on disk.** When the window regains focus, and on **Refresh** (shown when the workspace saves in place), the workspace is listed again and every open file is read again. A file that changed on disk and has no unsaved changes gets the change as a line diff (only the lines that differ), with origin `remote`, outside the undo history (§3.7). A file with unsaved changes is left as it is and marked stale, and saving it asks, as above. A file that can't be read keeps its buffer, is marked missing, and the status line names it; if it reappears it is handled like any other.
+- The unsaved-changes indicator goes off only when the file on disk matches the buffer: after opening, after a save in place, or after a change on disk is applied. A download leaves it on. Leaving the page prompts while any open file's buffer differs from the text last opened, saved or downloaded.
 - Open accepts `.plan` and `.rows`. Save As defaults to `.plan`. A new document starts as `---\nprofile: plan\n---\n`.
-- Save writes the buffer as-is. Nothing re-serialises from the tree. A saved file is byte-identical to the opened one except for tab-to-space and CRLF-to-LF normalisation.
 - In contexts where the API is unavailable or blocked (e.g. a cross-origin iframe such as the VS Code Simple Browser), failures are reported visibly, never swallowed.
 - Deployed as a static build to GitHub Pages via GitHub Actions on push to the `deploy` branch (`git push origin main:deploy`). Vite `base` is `/tasklist/` under Actions and `/` locally.
 

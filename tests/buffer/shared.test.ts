@@ -100,6 +100,27 @@ describe.each(implementations)('%s', (_name, create) => {
     expect(buffer.text()).toBe('new\n');
   });
 
+  it('keeps a remote change out of the history: undo reverts the edit before it, not the change', () => {
+    const buffer = create('a\nb\nc\n');
+    buffer.apply([{ from: 0, to: 1, insert: 'A' }], 'text-editor');
+    buffer.apply([{ from: 4, to: 5, insert: 'C2\nC3' }], 'remote');
+    expect(buffer.text()).toBe('A\nb\nC2\nC3\n');
+    buffer.undo();
+    expect(buffer.text()).toBe('a\nb\nC2\nC3\n');
+    buffer.undo();
+    expect(buffer.text()).toBe('a\nb\nC2\nC3\n');
+    buffer.redo();
+    expect(buffer.text()).toBe('A\nb\nC2\nC3\n');
+  });
+
+  it('maps an undo entry after a remote change that shifts it', () => {
+    const buffer = create('a\nb\n');
+    buffer.apply([{ from: 2, to: 3, insert: 'B' }], 'grid');
+    buffer.apply([{ from: 0, to: 0, insert: 'new\n' }], 'remote');
+    buffer.undo();
+    expect(buffer.text()).toBe('new\na\nb\n');
+  });
+
   it('counts its changes, and a listener already sees the new count', () => {
     const buffer = create('a\n');
     const seen: number[] = [];

@@ -41,6 +41,16 @@ describe('saving by download', () => {
     expect(document.getElementById('save-as')!.hidden).toBe(true);
   });
 
+  // Task 34: no Save all or Refresh, as a download writes nothing in place to read back; Open
+  // folder is disabled, with why, as in Firefox.
+  it('offers neither Save all nor Refresh, and disables Open folder with a tooltip', () => {
+    const shown = [...document.querySelectorAll<HTMLButtonElement>('body > button')].filter((b) => !b.hidden).map((b) => b.id);
+    expect(shown).toEqual(['open', 'open-folder', 'save']);
+    const openFolder = document.getElementById('open-folder') as HTMLButtonElement;
+    expect(openFolder.disabled).toBe(true);
+    expect(openFolder.title).toBe('Opening a folder needs Edge or Chrome');
+  });
+
   it('keeps the unsaved indicator on after a download, and leaving does not prompt', async () => {
     view.dispatch({ changes: { from: 0, insert: '// edited\n' } });
     expect(document.title).toBe('● Untitled — Plan');

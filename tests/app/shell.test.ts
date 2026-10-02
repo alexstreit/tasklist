@@ -32,16 +32,17 @@ vi.mock('../../src/app/registry', async (original) => {
 let view: EditorView;
 let preview: HTMLElement;
 
-// Fake File System Access API.
-let openText = '';
+// Fake File System Access API. The file holds what was last written to it, as a real one does:
+// saving reads it again first (spec §6).
+let onDisk = '';
 const written: string[] = [];
 let writable = true;
 const handle = {
   name: 'q4.plan',
-  getFile: async () => ({ text: async () => openText }),
+  getFile: async () => ({ text: async () => onDisk }),
   createWritable: async () => {
     if (!writable) throw new DOMException('The user denied write access', 'NotAllowedError');
-    return { write: async (t: string) => void written.push(t), close: async () => {} };
+    return { write: async (t: string) => void written.push((onDisk = t)), close: async () => {} };
   },
 };
 const showOpenFilePicker = vi.fn(async () => [handle]);
@@ -186,7 +187,8 @@ describe('open and save', () => {
   });
 
   it('round-trips a file with comments, blank lines, trailing whitespace and front matter, converting tabs', async () => {
-    openText = '---\ncolumns: est:duration | owner:text\n---\n\n// note   \nAuth | 2d   \n\tLogin | 4h\n    Reset | 1h |\n\n';
+    const openText = '---\ncolumns: est:duration | owner:text\n---\n\n// note   \nAuth | 2d   \n\tLogin | 4h\n    Reset | 1h |\n\n';
+    onDisk = openText;
     document.getElementById('open')!.click();
     await flush();
     expect(view.state.doc.toString()).toBe(openText.replace('\t', '    '));
@@ -197,6 +199,39 @@ describe('open and save', () => {
     expect(written).toEqual([openText.replace('\t', '    ')]);
   });
 
+  it('applies an outside edit to the clean file when the window regains focus', async () => {
+    expect(document.title).toBe('q4.plan — Plan');
+    onDisk = onDisk.replace('Reset | 1h |', 'Reset | 2h |');
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    expect(view.state.doc.toString()).toBe(onDisk);
+    expect(document.title).toBe('q4.plan — Plan');
+  });
+
+  it('asks before saving over an outside edit made while the file had unsaved changes', async () => {
+    view.dispatch({ changes: { from: 0, insert: '// mine\n' } });
+    const outside = onDisk.replace('Login | 4h', 'Login | 5h');
+    onDisk = outside;
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    expect(view.state.doc.toString().startsWith('// mine\n')).toBe(true);
+    expect(view.state.doc.toString()).not.toContain('Login | 5h');
+    written.length = 0;
+    ctrlS();
+    await flush();
+    expect(document.querySelector('.dialog p')!.textContent).toBe('q4.plan changed on disk since you opened it. Overwrite it, or keep your changes unsaved?');
+    [...document.querySelectorAll<HTMLButtonElement>('.dialog button')].find((b) => b.textContent === 'Keep')!.click();
+    await flush();
+    expect(written).toEqual([]);
+    expect(onDisk).toBe(outside);
+    ctrlS();
+    await flush();
+    [...document.querySelectorAll<HTMLButtonElement>('.dialog button')].find((b) => b.textContent === 'Overwrite')!.click();
+    await flush();
+    expect(written).toEqual([view.state.doc.toString()]);
+    expect(document.title).toBe('q4.plan — Plan');
+  });
+
   it('reports a failed save and keeps the document unsaved', async () => {
     writable = false;
     view.dispatch({ changes: { from: 0, insert: 'x' } });
@@ -205,6 +240,19 @@ describe('open and save', () => {
     expect(document.getElementById('status')!.textContent).toBe('Could not save: The user denied write access');
     expect(document.title).toBe('● q4.plan — Plan');
     writable = true;
+  });
+});
+
+// Task 34: the toolbar follows what the workspace can do. A single file in Edge gets Refresh, not Save all.
+describe('toolbar with a single file saved in place', () => {
+  it('offers Open file, Open folder (disabled without a directory picker), Save, Save As and Refresh', () => {
+    const shown = [...document.querySelectorAll<HTMLButtonElement>('body > button')].filter((b) => !b.hidden).map((b) => b.id);
+    expect(shown).toEqual(['open', 'open-folder', 'save', 'save-as', 'refresh']);
+    expect(document.getElementById('open')!.textContent).toBe('Open file');
+    const openFolder = document.getElementById('open-folder') as HTMLButtonElement;
+    expect(openFolder.disabled).toBe(true);
+    expect(openFolder.title).toBe('Opening a folder needs Edge or Chrome');
+    expect(document.getElementById('files')!.hidden).toBe(true);
   });
 });
 

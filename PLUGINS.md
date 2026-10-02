@@ -231,13 +231,13 @@ Both are interfaces from the start, each with a naive first implementation, so l
 
 ```ts
 interface Workspace {
-  readonly can: { list: boolean; watch: boolean; saveInPlace: boolean };
-  open(): Promise<OpenedFile | null>; // the user picks a file (or a folder, later)
+  readonly can: { list: boolean; watch: boolean; saveInPlace: boolean; saveAs: boolean };
+  open(): Promise<OpenedFile | null>; // the user picks a file, or a folder and the file shown first
   read(path: string): Promise<string>;
   write(path: string, text: string): Promise<WriteResult>;
   saveAs(text: string, suggested: string): Promise<WriteResult>;
   list(): Promise<string[]>; // single-file: just the open file
-  resolve(from: string, ref: string): string; // an include path, relative to a file
+  resolve(from: string, ref: string): string; // relative to a file; throws, with a plain reason, outside the workspace
   watch?(path: string, onChange: () => void): () => void;
 }
 
@@ -246,13 +246,19 @@ type WriteResult =
   | { outcome: "downloaded" } // the fallback: nothing was written in place
   | { outcome: "cancelled" }
   | { outcome: "failed"; reason: string };
+
+class Notice extends Error {} // why open() opened nothing, worded for the user and shown as is
 ```
 
-The shell asks what a workspace **can** do, never which kind it is, so no code branches on the implementation. `write` says what actually happened: in the input-and-download fallback it returns `downloaded`, and the unsaved-changes indicator stays on, because nothing on disk changed.
+The shell asks what a workspace **can** do, never which kind it is, so no code branches on the implementation. `saveAs` says whether the user can pick where to save, which creates a file: the shell hides Save As without it. `list` shows the file panel and Save all; `saveInPlace` shows Refresh, and turns on the read before each write and the re-read on focus (plan-format-spec §6). `write` says what actually happened: in the input-and-download fallback it returns `downloaded`, and the unsaved-changes indicator stays on, because nothing on disk changed.
 
 Only the app shell holds the workspace. Core and plugins never see it; they get the snapshot (§6).
 
-The **single-file** implementation is today's Task 4 code moved behind the interface: File System Access where available (`saveInPlace: true`), the input-and-download fallback otherwise (`saveInPlace: false`), and visible failures in framed contexts. `read` of any other path fails with a message saying a folder workspace is needed; nothing uses that until M3.
+The **single-file** implementation is today's Task 4 code moved behind the interface: File System Access where available (`saveInPlace: true`), the input-and-download fallback otherwise (`saveInPlace: false`), and visible failures in framed contexts. Both have `saveAs: true`. `read` of any other path fails with a message saying a folder workspace is needed.
+
+The **folder** implementation (`src/app/workspace/folder.ts`) reports `{ list: true, watch: false, saveInPlace: true, saveAs: false }`. `open()` picks a folder with `showDirectoryPicker` (read and write), or, for Reopen, asks permission again on the remembered handle; it returns the file to show first (plan-format-spec §6). An empty folder, a refused permission and a remembered folder that no longer resolves are `Notice`s. `list()` returns the `.plan` and `.rows` files recursively, as paths relative to the folder, skipping dot-folders and `node_modules`. `read` and `write` take those paths; `write` creates a missing file, and its folders, which only saving back a file missing on disk does. `saveAs` fails: creating files comes later. `resolve` joins a path relative to the file it appears in, normalising `.` and `..`, and throws for a result outside the folder; M3b turns that into a diagnostic. The folder handle, with the file last active in it, is kept in IndexedDB (`src/app/workspace/memory.ts`).
+
+The shell holds the open files (`src/app/files.ts`) for whichever workspace is open; every save goes through them.
 
 ### 7.2 Calendar
 

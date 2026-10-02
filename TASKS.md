@@ -104,8 +104,8 @@ Implement `src/renderers/tree/` per spec §5, replacing the JSON dump.
 
 - [x] Open a file with comments, blank lines, trailing whitespace on some lines, a trailing `|` on one item, and a front matter block; save it unchanged; the file on disk is byte-identical except tab-to-space and CRLF-to-LF normalisation.
 - [x] Open a CRLF file, save it; the file on disk now has LF endings.
-- [x] `Ctrl+S` on a new document prompts for a location; subsequent saves don't prompt.
-- [x] Closing the tab with unsaved changes prompts (via `beforeunload`). (Changed by Task 27: after a download, the indicator stays on, and leaving prompts only once the buffer differs from what was downloaded.)
+- [x] `Ctrl+S` on a new document prompts for a location; subsequent saves don't prompt. (Changed by Task 34: each later save reads the file again first, and asks before overwriting a change made on disk.)
+- [x] Closing the tab with unsaved changes prompts (via `beforeunload`). (Changed by Task 27: after a download, the indicator stays on, and leaving prompts only once the buffer differs from what was downloaded. Changed by Task 34: it prompts while any open file has unsaved changes, and Open asks before replacing them.)
 - [x] Works in Chrome and in a browser without File System Access (Firefox) via the fallback.
 - [x] In a framed context (VS Code Simple Browser) failure is reported visibly.
 
@@ -972,7 +972,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 - `src/core/plugin.ts`: `Stage` gains `roles`, `keys` and `markers`. `StageContext` gains `bindings`, `calendar`, `cell` and `marked`. `pluginReads(plugin)` is the union of the plugin's stages' declarations, and `createRegistry` checks it against the vocabulary and the plugin's id.
 - `src/core/analyze.ts`: after `readTree`, `bindVocabulary`, then the calendar when `project-start` is bound, with `hpd` from the effort column (8 if unset). The runner checks required roles, then required keys, then reads. `cell` returns the rows `Value` in the role's column. `marked` is rows' `readFlag` on the marker's column, so `done=true` counts, as for `ownDone`. `includesOf(text)` returns rows' include paths. `analyze` takes `files`, which is unused until M3.
 - `readTree` no longer reports `unknown-key`, which moved to `bindVocabulary`. Vocabulary diagnostics are listed after `readTree`'s and before the tab infos, then sorted by line as before.
-- `src/core/workspace.ts`: `Workspace`, `OpenedFile` (`path`, `text`) and `WriteResult`. `src/app/workspace.ts` (`createSingleFileWorkspace`) replaces `src/app/files.ts`. A native write that fails returns `failed` with the browser's message. `read` or `write` of any path other than the open file's fails, saying a folder workspace is needed. `resolve` joins a relative path to the file's folder.
+- `src/core/workspace.ts`: `Workspace`, `OpenedFile` (`path`, `text`) and `WriteResult`. `src/app/workspace.ts` (`createSingleFileWorkspace`) replaces `src/app/files.ts`. (Task 34 moved it to `src/app/workspace/single.ts`, and `src/app/files.ts` is now the open-files store.) A native write that fails returns `failed` with the browser's message. `read` or `write` of any path other than the open file's fails, saying a folder workspace is needed. `resolve` joins a relative path to the file's folder.
 - `src/app/includes.ts`: `createIncludes(workspace, onGathered)`, the cached include loop (see Decisions). The shell calls `snapshot(path, text)` before every `analyze`.
 - `src/app/main.ts`: the shell tracks the open file's `path`, and saves with `write(path)` or `saveAs(text, path ?? 'untitled.plan')`. It reports `failed` in the status line, as it reported a thrown error before, and it checks `can.saveInPlace`, not the kind of workspace.
 - rows: `readValue(text, type)` is exported, with `ValueType = Pick<Column, 'kind' | 'enumValues' | 'unit'>`. A `Column` is one, so cells call it as before, and a key passes `{ kind: 'date' }`. It is listed among DESIGN §4's helpers, with unit tests in `packages/rows/tests/values.test.ts`.
@@ -1687,7 +1687,7 @@ Expected, in work hours, with the displayed dates:
 
 - Base 0.12: `mount` joins the keys reserved in base §9. `base-9-reserved-base-only` (+ `--strict`) gained a `mount: mount` line, so its later line numbers moved down by one, edited by hand.
 - Extensions 0.10: a new §12 Mounts (§12.1 declaration, §12.2 targets, §12.3 mount rows), so §1–§11 and the case names citing them keep their numbers. The intro, §1 (canonical-form keys), §2 (implicit column order), §8 and §10 also changed. Base and extensions version references updated in DESIGN, the conformance README and `plan-format-spec.md`.
-- **Reading of "never positional":** the implicit mount column is never positional, as for every implicit column (ext §2). A *declared* mount column is filled like any other declared column, by position or by name, so that canonical form (implicit columns declared) still reads back the same (`ext-12-mount-declared-column`). Making a declared column unfillable by position would be a new rule.
+- **Reading of "never positional":** the implicit mount column is never positional, as for every implicit column (ext §2). A _declared_ mount column is filled like any other declared column, by position or by name, so that canonical form (implicit columns declared) still reads back the same (`ext-12-mount-declared-column`). Making a declared column unfillable by position would be a new rule.
 - **Settled by analogy** (QUESTIONS.md A11–A15):
   - A11, implicit `MOUNT:text`: by analogy with ext §6.1's `nest:`. No question settled `nest:`'s implicit column; it has been in the spec since the first draft. Q16 settled what a wrong nest column is.
   - A12, empty `mount:` declares nothing: A1.
@@ -1702,3 +1702,121 @@ Expected, in work hours, with the displayed dates:
 - **Q44 (spec owner):** `mount:` naming the lead, or the key column's name whether or not identity applies (`key`'s value, or `id` when `key` is unset), is `invalid-mount-column`, always on the `mount` line, and `mount` is ignored, as in A13 and A14. The lead is a row's title and the key column its identity, so neither can also be a mount target. In its first version the key part applied only with identity. The `setAnchor` property then failed on `mount: id` with no `key:`: the file's first anchor turned identity on and added the error, so every mount was lost. A rule that changes when the first anchor appears would make anchor edits add or remove errors in other rows, so the name counts whether or not identity applies. The edit API is unchanged. Generators gained `mount: name` and `mount: id`.
 
 **Human review:** read the new spec section and the `expected.json` files first. Each one is a claim about what a mount means.
+
+---
+
+## Task 34 — Folder workspace and open files
+
+**Serves:** M3a (VISION §6, §7; PLUGINS.md §7.1). The app opens a folder in Edge, lists its plan files, keeps several of them open with their own undo history and unsaved state, and saves each one in place. Mounting and composing come in M3b. This task is the foundation they need: a store of open files that knows what's on disk.
+
+**Deliverables**
+
+- **`FolderWorkspace`** (`src/app/workspace/`), behind the existing `Workspace` interface. It reports `can: { list: true, watch: false, saveInPlace: true }`.
+  - `open()` picks a folder with `showDirectoryPicker` (read and write).
+  - `list()` returns the folder's `.plan` and `.rows` files, recursively, as paths relative to the folder. It skips dot-folders and `node_modules`.
+  - `read` and `write` take those paths.
+  - `resolve(from, ref)` joins a path relative to the file it appears in. It refuses a result outside the folder with a plain reason, which M3b turns into a diagnostic.
+  - **Remembering the folder:** the handle is kept in IndexedDB, as a per-viewer convenience, so "Reopen _Portfolio_" can ask Edge for permission again with one click. If permission is refused, the app falls back to the open buttons.
+- **Choosing a workspace:** the toolbar offers "Open file" (today's single-file workspace) and "Open folder". In a browser without `showDirectoryPicker`, such as Firefox, "Open folder" is disabled with a tooltip saying it needs Edge or Chrome. The shell checks capabilities, never browser names.
+- **Open files** (`src/app/files.ts`): a store of the files opened in this session.
+  - Each file holds:
+    - its path;
+    - its own `PlanBuffer`, so its undo history survives switching between files;
+    - the text as last read from or written to disk (`disk`);
+    - whether it's dirty;
+    - whether it changed on disk since then (`stale`).
+  - Exactly one open file is **active**. The editors, analysis and views follow it, and switching files swaps the buffer the shell hands them.
+  - `analyze` receives the active file's path as its filename, so a `.plan` file with no profile gets the plan profile, as now.
+  - The single-file workspace uses the same store, holding one file, so there is one code path.
+- **File panel:** a collapsible list on the left of the editor, shown only when the workspace can list files.
+  - Files are grouped by folder.
+  - Each file shows an unsaved marker, and a marker when it changed on disk.
+  - Clicking a file makes it active. Opening it the first time reads it.
+  - The panel is keyboard reachable: arrows move, Enter opens.
+- **Saving:**
+  - Ctrl+S saves the active file. **Save all** in the toolbar saves every dirty file.
+  - Before each write, the file is read again. If it no longer matches `disk`, the app asks "_alpha.plan_ changed on disk since you opened it. Overwrite it, or keep your changes unsaved?" and writes nothing unless told to overwrite.
+  - The leave-page prompt fires while any file is dirty, following the Task 27 rule per file.
+- **Re-reading on focus, and a Refresh button:** every open file is read again. For a file that changed on disk:
+  - If it isn't dirty, the change is applied to its buffer as a **line diff** (only the lines that differ), with origin `remote`, outside the undo history.
+  - If it is dirty, nothing is applied. The file is marked `stale`, and saving it asks, as above.
+
+  The line diff is a pure helper in `src/buffer/` with its own tests. M3b uses it for segments.
+
+- **Spec:** plan-format-spec §6 (folders, open files, saving, changes on disk), §3.7 (`remote` is now used), and PLUGINS.md §7.1 (the folder implementation).
+
+**Acceptance criteria** (with an in-memory fake of the File System Access handles)
+
+- [x] Opening a folder lists its plan files recursively with relative paths, and skips dot-folders and `node_modules`. — `tests/app/folder-workspace.test.ts`, "lists plan and rows files recursively"; a dot-file is listed (see Decisions).
+- [x] `resolve` joins relative paths, normalises `.` and `..`, and refuses a path outside the folder. — `tests/app/folder-workspace.test.ts`, "resolves relative paths".
+- [x] Two files open: edit A, switch to B, edit B, switch back to A. A's text and undo history are as they were, and Ctrl+Z undoes A's edit, not B's. — through the panel and a keydown in the mounted text editor, `tests/app/shell-folder.test.ts`, "keeps each file’s text and undo history"; on the store alone, `tests/app/files.test.ts`.
+- [x] Ctrl+S writes only the active file. Save all writes every dirty file and clears their markers. — `tests/app/shell-folder.test.ts`, "saving"; `tests/app/files.test.ts`, "save writes only the file it is given".
+- [x] A file changed on disk while clean: focusing the window applies only the changed lines. An undo after that doesn't revert the disk change, and the cursor on an unchanged line stays put. — `tests/app/shell-folder.test.ts`, "focusing the window applies a clean file’s change" (line and column of the cursor checked after a change to a line above it); the single edit and origin `remote` in `tests/app/files.test.ts`; the single file in `tests/app/shell.test.ts`.
+- [x] A file changed on disk while dirty: it's marked stale, nothing is applied, and saving asks. Keep writes nothing; Overwrite writes. — `tests/app/shell-folder.test.ts`, `tests/app/files.test.ts` and, for the single file, `tests/app/shell.test.ts`.
+- [x] The line diff helper is property-tested: applying its edits to the old text gives the new text, and lines that exist in both are left untouched. — `tests/buffer/line-diff.test.ts`, 400 seeds each: the edits rebuild the new text and leave exactly as many old lines untouched as the longest common subsequence has (checked by plain dynamic programming); and every line kept from the old text is outside every edit.
+- [x] Reopening the remembered folder asks for permission once, and a refusal falls back cleanly. — `tests/app/folder-workspace.test.ts`, "remembering the folder"; `tests/app/shell-folder.test.ts`, "reopening the remembered folder" and the last case of "replacing the open files".
+- [x] The single-file workspace's tests (Tasks 4 and 27) pass unchanged through the store. — apart from the fake file handle in `tests/app/shell.test.ts` and the `can` shape in `tests/app/workspace.test.ts` (see Rewritten tests); no case's expectations changed.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 2083 tests (2013 before); typecheck, lint and `vite build` clean.
+- [x] **Browser pass in Edge:** pending review. Also check there: Enter on a file in the panel opens it (a native button press, which jsdom doesn't simulate), and Reopen and Open folder after "Save all and continue" still show the browser's prompt (they need a recent click).
+  - Open a real folder (a OneDrive-synced one if you can).
+  - Switch between files.
+  - Save, then edit the same file in another editor and focus back.
+  - Reload, and reopen the folder.
+  - Check in Firefox that "Open folder" is disabled with its tooltip.
+
+**Visible changes:** "Open folder", the file panel, Save all, Refresh, and the changed-on-disk prompt.
+
+**Not in this task:**
+
+- Mounts and composition (M3b).
+- Tabs.
+- Creating, renaming or deleting files from the app.
+- Watching files (Edge has no API for it yet).
+- Tauri.
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **The single file gets the same checks.** The read before each write, and the re-read on focus and Refresh, apply whenever `can.saveInPlace`, so a single file in Edge gets them too. The download fallback skips them, since a download overwrites nothing.
+2. **The file shown first** is the folder's last-active file (remembered with the folder handle), else the first top-level file, else the first listed. An empty folder opens nothing, the open files stay, and the status reads "No plan files in folder".
+3. **Replacing the open files asks first.** Open file, Open folder and Reopen ask "_alpha.plan and beta.plan_ have unsaved changes." with Save all and continue, Discard and continue, and Cancel. Save all and continue goes through the normal save path, changed-on-disk prompt included, and continues only if every save succeeds.
+4. **`can.saveAs`** joins `can` (PLUGINS.md §7.1): true for the single-file workspace, false for a folder. The shell hides Save As without it, and a pathless file in a folder isn't saved ("Creating files comes in a later task").
+5. **A file that can't be read** on a re-read keeps its buffer and stays open, marked missing, and the status line names it. Saving it asks "_alpha.plan_ is no longer on disk. Save it again at _teams/alpha.plan_?"; Yes writes it at its path, creating it (the only file creation in this task). If it reappears it is handled like any other file. Focus and Refresh also list the folder again.
+6. **Save all** is shown when `can.list`, **Refresh** when `can.saveInPlace`: the single file in Edge gets Refresh but not Save all, and the download fallback neither.
+7. **A refused Reopen** says "Permission to open _Portfolio_ was refused" and keeps Reopen. The handle is forgotten only when it no longer resolves (with a status line saying so) or when another folder is opened.
+
+**Decisions taken** (by me, within the task; please check):
+
+- **An empty folder is a `Notice`, not `null`.** Decision 2 said `open()` returns null. But null already means the picker was dismissed, and the shell couldn't tell the two apart to show the status without asking which kind of workspace it holds. So `open()` throws a `Notice` (`src/core/workspace.ts`), whose message the shell shows as is. A refused permission and a forgotten folder are notices too. The behaviour is as decided.
+- **Asked before the picker, not after.** The unsaved-changes question comes before the picker or permission prompt, so Cancel shows no picker, and the remembered folder changes only when an open goes ahead. If the user then dismisses the picker, or the folder is empty, nothing is replaced: Discard and continue has discarded nothing.
+- **The active buffer carries over.** The first file of the new open files is loaded into the outgoing active buffer (origin `load`, which clears its history), so the mounted editor stays mounted. That is today's Open, and it's why Task 4's tests pass unchanged. Every other file gets its own buffer.
+- **The changed-on-disk prompt** uses the same in-page dialog as decision 3, with **Overwrite** and **Keep**. In every dialog the last button is the one that changes nothing; it has the focus, and Escape picks it, so Enter never overwrites by accident.
+- **Save all and continue** counts a download as a success, since nothing is lost. A **Save all** where one file is kept still saves the others.
+- **Normalisation:** tabs and CRLF are normalised whenever a file is read (opening, the read before a write, a re-read), so normalising alone never counts as a change on disk. A save doesn't ask when the disk already holds the text being saved. A stale marker clears when the disk is back to the text last read.
+- **Dot-files are listed.** The task says to skip dot-folders, so `.x.plan` at any level is listed.
+- **Open folder in a cross-origin frame** is disabled, with the tooltip "Opening a folder does not work in an embedded browser frame", since "needs Edge or Chrome" would be wrong in a framed Edge.
+- **A leading `/` in a path** is treated as an empty segment, as the single-file `resolve` already does, so `/x.plan` resolves next to the file. Neither the task nor the spec defines it.
+- **Includes:** a path `resolve` refuses is left out of the include snapshot, like a failed read (`src/app/includes.ts`), until M3b makes it a diagnostic. Before this change, a throw there would have broken analysis.
+- **`InMemoryBuffer`** maps its undo and redo entries through a `remote` change, as CodeMirror's history does.
+- `src/app/workspace.ts` moved to `src/app/workspace/single.ts` with `git mv`, so the rename is staged. Nothing else is staged.
+
+**Visible changes:**
+
+- The toolbar's Open reads **Open file**, followed by **Open folder** and, while a folder is remembered, **Reopen _name_**. Open folder is disabled, with a tooltip, without `showDirectoryPicker` (Firefox) or in a cross-origin frame.
+- **File panel** left of the editor in a folder: grouped by folder, with ● unsaved, ↻ changed on disk and ✕ missing on disk; collapsible from its "Files" heading; the arrow keys move between files and Enter or a click opens one.
+- **Save all** (folders) and **Refresh** (folders and a single file saved in place). Save As is hidden in a folder.
+- **Re-reading on window focus**, also for a single file in Edge: an outside edit to a file with no unsaved changes now appears in the editor.
+- **The changed-on-disk prompt** and the **missing-on-disk prompt** on saving.
+- **Open file, Open folder and Reopen ask before replacing unsaved files.** Before this task, Open replaced an unsaved document silently.
+- The leave-page prompt counts every open file, not only the one showing.
+- New status lines: "No plan files in folder", "Permission to open _name_ was refused", "_name_ can no longer be found, so it was forgotten", "_file_ is no longer on disk", "_file_ was not saved", "Saved _a_ and _b_".
+
+**Rewritten tests:**
+
+- `tests/app/shell.test.ts`: the fake file handle's `getFile` returned the text last opened (`openText`), whatever was written. Saving now reads the file again first, so the fake would have reported a change on disk on the second save of "Ctrl+S on a new document". It now returns the text last written (`onDisk`), as a real file does, and the round-trip case sets `onDisk` instead of `openText`. No expectation changed. New cases: an outside edit to the clean file is applied on focus; an outside edit while unsaved makes saving ask (Keep, then Overwrite); and the toolbar.
+- `tests/app/workspace.test.ts`: the native workspace's `can` gains `saveAs: true`.
+
+**New tests:** `tests/buffer/line-diff.test.ts`, `tests/app/files.test.ts`, `tests/app/folder-workspace.test.ts`, `tests/app/shell-folder.test.ts`, and the fake handles in `tests/support/fs.ts`. Added cases: `remote` in `tests/buffer/shared.test.ts`; a refused include path in `tests/app/includes.test.ts`; the fallback's toolbar in `tests/app/shell-download.test.ts`.
+
+**Spec:** plan-format-spec §3.7 (one buffer per open file; `remote`) and §6 (workspaces, remembering the folder, open files, the file panel, replacing the open files, saving, changes on disk). PLUGINS.md §7.1 (`can.saveAs`, `Notice`, `resolve` refusing, the folder implementation). The working draft of PLUGINS.md in claude.ai needs the same §7.1 change. No rows change.
+
+**Human review:** read the open-files store and the save path first (`src/app/files.ts`, `save` and `confirmWrite`). Every later M3 task writes through them.

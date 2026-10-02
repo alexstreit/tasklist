@@ -1,9 +1,20 @@
 // The include loop (PLUGINS.md §6): the shell gathers included files before analysis, so analyze
 // stays synchronous and never sees the workspace. With the single-file workspace every read fails,
-// so until M3 the snapshot is always empty.
+// so the snapshot is empty; a folder workspace reads the included files.
 
 import { includesOf } from '../core';
 import type { Workspace } from '../core';
+
+/** The paths a file's includes resolve to, leaving out any the workspace refuses (outside its folder). */
+function resolved(workspace: Pick<Workspace, 'resolve'>, from: string, text: string): string[] {
+  return includesOf(text).flatMap((ref) => {
+    try {
+      return [workspace.resolve(from, ref)];
+    } catch {
+      return [];
+    }
+  });
+}
 
 export interface Includes {
   /**
@@ -37,7 +48,7 @@ export function createIncludes(workspace: Pick<Workspace, 'read' | 'resolve'>, o
         try {
           const text = await workspace.read(path);
           out.set(path, text);
-          found.push(...includesOf(text).map((ref) => workspace.resolve(path, ref)));
+          found.push(...resolved(workspace, path, text));
         } catch {
           // Left out of the snapshot: the reference is the rows error it already is.
         }
@@ -52,7 +63,7 @@ export function createIncludes(workspace: Pick<Workspace, 'read' | 'resolve'>, o
   return {
     snapshot(path, text) {
       const open = path ?? '';
-      const paths = [...new Set(includesOf(text).map((ref) => workspace.resolve(open, ref)))].sort();
+      const paths = [...new Set(resolved(workspace, open, text))].sort();
       const key = paths.join('\n');
       if (key !== gathered) {
         gathered = key;

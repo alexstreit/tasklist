@@ -14,7 +14,7 @@ export interface BufferChange {
   edits: readonly TextEdit[];
   /** Position before the change -> position after it. */
   mapPos(pos: number): number;
-  /** "text-editor" | "grid" | "undo" | "redo" | "load" | future: "remote" */
+  /** "text-editor" | "grid" | "undo" | "redo" | "load" | "remote" (the file changed on disk; not undoable) */
   origin: string;
 }
 

@@ -43,6 +43,14 @@ export class InMemoryBuffer implements PlanBuffer {
 
   apply(edits: readonly TextEdit[], origin: string): void {
     const inverse = this.run(edits, origin);
+    // A remote change stays out of the history: the entries before it are moved past it.
+    if (origin === 'remote') {
+      const map = mapper(ordered(edits));
+      for (const stack of [this.undone, this.redone]) {
+        for (const entry of stack) entry.forEach((e, i) => (entry[i] = { from: map(e.from), to: Math.max(map(e.from), map(e.to)), insert: e.insert }));
+      }
+      return;
+    }
     this.redone.length = 0;
     // Loading a file replaces the document; the old history no longer describes it.
     if (origin === 'load') this.undone.length = 0;

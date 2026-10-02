@@ -44,7 +44,9 @@ export class CodeMirrorBuffer implements PlanBuffer {
       dispatch(
         this.state.update({
           changes: edits.map((e) => ({ from: e.from, to: e.to, insert: e.insert })),
-          annotations: origin === 'load' ? [Transaction.addToHistory.of(false)] : [],
+          // A remote change (the file changed on disk) stays out of the history too, which maps the
+          // entries before it through it, so an undo never reverts it.
+          annotations: origin === 'load' || origin === 'remote' ? [Transaction.addToHistory.of(false)] : [],
         }),
       ),
     );
