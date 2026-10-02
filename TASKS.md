@@ -2010,7 +2010,7 @@ Also within the task, not asked:
   - **Highlighting.** Each line is tokenised with the syntax of the file it belongs to, from that file's own document.
   - **Shading.** Each segment line gets a class for its mount depth, shaded and bordered. Mounted rows are indented visually by their mount depth, as line padding. Their text is unchanged, and the cursor still moves through the real characters.
   - **Gutter.** It shows each file's own line numbers.
-  - **Segment header.** A block widget above each segment shows the file's path, its unsaved marker, and an Open button that makes that file active. The header can't be selected or edited.
+  - **Segment header.** A block widget above each segment shows the file's path, its unsaved marker, and an Open button that makes that file active. The header can't be selected or edited. (Changed by Task 37: the block widget is gone; the segment's mount line is its header, with the header's background and, at the line's end, ●, Open and Unmount.)
   - **Folding.** A mount row folds its own children and its segment together.
   - **Diagnostics.** Every file's diagnostics show at their composed positions, so mounted files' diagnostics now appear in the text editor too. Fixes apply through `applyFile`.
   - **Search and replace** are CodeMirror's own, over the whole composed text, and open folded segments to show a match. Replace works inside each file. A replace-all touching several files is one transaction and one undo.
@@ -2102,7 +2102,7 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
   - shaded, with a border on the left;
   - padded under its mount row;
   - each file's own line numbers in the gutter;
-  - a header with the file's path, ● when it has unsaved changes, and **Open**.
+  - a header with the file's path, ● when it has unsaved changes, and **Open**. (Changed by Task 37: the mount line is the header, with ●, Open and Unmount at its end.)
 - **Editing in place.** Typing in a segment changes that file, and the panel and header mark it unsaved.
 - **Refusals.** An edit across files is refused with the status line "Edits can't cross from one plan file into another.", and so are Alt+Up/Down, Tab and Ctrl+/ over lines of two files. Alt+Down on a mount row or a segment's last row is refused.
 - **Search and replace** (Ctrl+F, CodeMirror's panel) across every file, in a folder. Replace-all is one undo.
@@ -2131,7 +2131,7 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
   - `tests/schedule/gantt-geometry.test.ts`, `tests/ui/row-layout.test.ts` and `tests/align/connect.test.ts`: the layouts' `at` carry a file.
 - Support:
   - `tests/support/stub-follower.ts` keys items by file and line, and records the file.
-  - `tests/support/layout.ts`'s `editorLayout` counts segment headers as blocks (24px by default). Nothing measured before had one.
+  - `tests/support/layout.ts`'s `editorLayout` counts segment headers as blocks (24px by default). Nothing measured before had one. (Changed by Task 37: there are no header blocks, and it no longer counts them.)
 
 **New tests:**
 
@@ -2226,7 +2226,7 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
 - [x] The Gantt, following the grid, draws all rows aligned, using injected measurements as in Task 29. — `tests/align/grid-composed.test.ts`: the grid's layout has all fourteen body rows in composed order, keyed by file and line, and the Gantt draws the seven item rows at their tops.
 - [x] The speed figure is recorded, or the task stopped to ask. — It stopped and asked (4,457 ms for a full rebuild); reusing rows was chosen. Figures under Timing below.
 - [x] Every existing test passes, and rewritten tests are listed in the notes. — 4,090 tests (3,866 before); typecheck, lint and `vite build` clean.
-- [ ] **Browser pass in Edge, on `examples/portfolio/` and a real folder:** pending review (there is no browser here). Also check there: the headers' look in both themes, and the shading's left border on mounted rows.
+- [ ] **Browser pass in Edge, on `examples/portfolio/` and a real folder:** pending review (there is no browser here). Also check there: the mount rows as headers in both editors and both themes, and the segment border from the mount row down.
   - edit cells in two team files from the master;
   - reorder two projects;
   - Unmount, then undo;
@@ -2249,9 +2249,11 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
   - the keys give the same notes.
 - "Dependencies between plan files come later." for an outline number in another file, from any row; it was "There's no task 2.1." before.
 - **The file badge** on a mount row's title, with a menu: Open and Unmount. Unmount is also a toolbar button. _(Changed after the browser pass: the menu moved to the header below, and the badge opens its file, as in the views.)_
-- **Headers for mounted files** _(added after the browser pass)_:
-  - A header row above each mounted file's rows spans every column. It has the file's name (as messages name it), ● when the file has unsaved changes, and Open and Unmount buttons.
-  - It is not focusable or editable, the keyboard's moves skip it, and the row layout publishes it as `at: null`, so a following Gantt leaves its row empty.
+- **The mount row is the segment's header** _(after the browser pass; this replaces the header row that was first added here, and the text editor's header block widget from Task 36)_:
+  - **In the grid,** the mount row whose file is shown under it has the header background, and its title cell shows the badge, then ● when that file has unsaved changes, then Open and Unmount.
+  - **In the text editor,** the mount line has the same background, with ●, Open and Unmount as an inline widget at the line's end. The block widget above the segment is gone, so segments sit directly under their mount line, and the Gantt following the text editor moves up with them.
+  - **The border** starts at the mount row and runs to the segment's last row. The mount row's own master children are inside it, unshaded.
+  - **The controls** in a cell are out of the tab order, as the checkboxes are. The row stays focusable and editable.
   - Mounted rows are shaded with the text editor's segment tokens, `--mounted-row-bg` and `--segment-border` from `theme.css`, at every depth.
   - The hover and cursor bands now show over that shading; before, the shading hid them on mounted rows.
   - Switching editors now marks unsaved files at once: the shell tells a newly mounted editor which files are unsaved.
@@ -2262,6 +2264,15 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
 - **The problems list:** fixes for mounted files' problems in place, and a click focuses the row instead of opening the file. Inline marks show every file's diagnostics.
 - **The Gantt** following the grid draws every row of every plan.
 - **Moving a mount row** reorders projects, and one undo puts them back.
+- **Mounting from the grid** _(added after the browser pass)_:
+  - A toolbar button, **Mount plan…**, enabled on an item row in a folder workspace. It reads **Change mounted plan…** on a row that already mounts. In the single-file workspace it is disabled with "Open the folder to mount plans.".
+  - It opens a picker of the folder's `.plan` files, with a filter, below the toolbar.
+  - Disabled, each with its reason as the tooltip:
+    - the row's own file;
+    - a file that would make a loop, above the row or through its own mounts;
+    - a file shown elsewhere in the plan;
+    - the file the row mounts now.
+  - Choosing a file writes `mount=` with the path relative to the row's file, as one undo step.
 - **Line operations in the composed text editor** _(added after the browser pass; this replaces Task 36's decision 3)_:
   - Alt+Up/Down, and Tab and Ctrl+/ on a selection, act on the lines of the file the cursor is in, not on composed lines.
   - A move swaps with the previous or next line in that file, and the segments recompose: Alt+Down on Product A gives Product B, beta's segment, Product A, alpha's segment.
@@ -2281,7 +2292,7 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
    - Messages are plain text; the task's italics and bold were emphasis.
    - A mounted row's reference question: "Delete API from alpha.plan? UI refers to it in deps; that reference will be removed."
 4. **The status line** is a `GridHooks.status` hook. Only a mounted task's delete reports: "Deleted API from alpha.plan.". A root task's delete stays silent, as before.
-5. **The badge and Unmount.** _(Changed after the browser pass: the badge's menu moved to a header row above each mounted file's rows, with Open and Unmount; the badge now opens its file, as in the views; the toolbar's Unmount stays.)_
+5. **The badge and Unmount.** _(Changed after the browser pass: the badge's menu went; the badge opens its file, as in the views; Open and Unmount are on the segment's mount row, its header; the toolbar's Unmount stays.)_
    - The grid's mount rows get the file badge. Clicking it opens a menu with Open and Unmount.
    - The toolbar's Unmount is enabled on any row with a `mount=` cell: a mount that shows nothing, and a nested mount row in a team file, which is cleared in its own file.
    - Unmount is `setCell(doc, row, mountColumn, null)`, so rows doesn't change.
@@ -2317,6 +2328,20 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
   - `Problems.run(host, fix, file, { onCancel, onApply })`.
   - In `src/grid/edits.ts`: `docIn`, `docOf`, `fileLabel`, `cellColumn`, `noColumn`, `hasMarker`, `unmount`; `levels`, `canMarkDone` and `insertItem` take an optional file; `isRefColumn` takes the node.
 - **New CSS** in `src/grid/grid.css` for mounted rows, the badge and its menu, using existing theme tokens.
+- **Mounting from the grid** _(after the browser pass)_:
+  - **Core:** `src/core/mounting.ts`.
+    - `relativePath(from, to)`, the inverse of the workspace's `resolve`.
+    - `mountRefusal(model, row, target, mountsOf)`, which applies composition's rules to a mount not yet written: the row's own file, a file above the row (mount-loop), a file shown elsewhere except what the row shows now (mount-overlap), and a file whose own mounts reach a file above the row. Its messages are composition's, now shared as `mountWhy` in `src/core/compose.ts`; the mount diagnostics read the same.
+  - **Grid:**
+    - `GridHooks.plans()`, which the shell gives only in a folder: the `.plan` files, each with its mounts, read the way gathering reads them.
+    - `mountOn` in `src/grid/edits.ts`.
+    - The picker shows where the delete confirm does, and is dropped by any model update, as that confirm is.
+  - **Decided here:**
+    - only `.plan` files are offered, though `workspace.list()` also returns `.rows` files;
+    - the file the row mounts now is disabled, "This row mounts it already.";
+    - the reasons are core's own wording.
+  - **The truncated instruction** "including ..." was read as paths that go up with `..`: they are tested by hand and over every pair in a small tree.
+  - **Seen while testing, not changed:** CodeMirror's history joins two edits that carry no user event when they touch and are less than 500ms apart, so a grid edit made right after another, on the same line, can share its undo step. This is as before, in the single-file grid too. The test waits past it, since a person takes longer.
 - **Line operations on a file's lines** _(after the browser pass)_:
   - The keymap finds the file the selected lines are in, runs the line operation on that file's text, and dispatches the edits placed through the piece map with `placeInFile` (new in `src/buffer/composed.ts`). That is the same placement and annotation as `applyFile`, so routing, settling and undo are the same.
   - Two details found by the tests:
@@ -2340,13 +2365,29 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
 
 - `tests/app/shell-portfolio.test.ts`: "the problems list names each file; a mounted file's problem offers no fix and opens its file" became "the problems list names each file; a mounted file's problem focuses its row in the grid (Task 37)". The master stays active, and the place is on Test in alpha's segment.
 
-- After the browser pass, for the headers:
-  - `tests/app/shell-grid-composed.test.ts`:
-    - the first case lists the two header rows;
-    - the Unmount case counts beta's header among its rows;
-    - "the badge's menu opens the file, or unmounts it" became four cases: the header (its place, its marker after an edit in beta and gone after the undo, nothing focusable), ArrowDown from Product A skipping it to alpha's first row, its Unmount undone with one Ctrl+Z, and its Open and the badge each making the file active.
-  - `tests/align/grid-composed.test.ts`: each header is a layout row with no line, and the Gantt draws nothing beside it and stays aligned.
-  - `tests/grid/reuse.test.ts` is unchanged and still holds with the headers.
+- After the browser pass, for the mount row as header:
+  - `tests/app/shell-grid-composed.test.ts`: "the badge's menu opens the file, or unmounts it" became five cases:
+    - the mount row as header: no header rows, its class, its title cell's badge, ●, Open and Unmount out of the tab order, ● after an edit in beta and gone after the undo, the border's rows, and its title still edited as before;
+    - the mount row's own master children inside the border, unshaded;
+    - ArrowDown from the mount row going straight into the segment;
+    - its Unmount undone with one Ctrl+Z;
+    - its Open, and the badge, making the file active.
+  - `tests/align/grid-composed.test.ts`: the grid's layout has no header rows; the Gantt's rows have no empty rows between them.
+  - `tests/app/shell-composed.test.ts` (the text editor):
+    - "numbers each file's lines as its own, and heads each segment with its path and an Open button" now checks that there is no header block, and that each mount line has the header class and Open and Unmount, out of the tab order;
+    - the unsaved marker is looked for on alpha's mount line;
+    - a new case: the mount line's Unmount undone with one Ctrl+Z, and its Open.
+  - `tests/align/composed.test.ts`: the tops lose the 24px header above each segment: alpha's line 1 is at 120, not 144, and so on.
+  - `tests/support/layout.ts`: `editorLayout` no longer counts header blocks, which no longer exist.
+  - `tests/grid/reuse.test.ts` is unchanged and still holds.
+- After the browser pass, for mounting from the grid:
+  - `tests/app/shell-portfolio.test.ts`: the single-file case also checks Mount plan… disabled, with its tooltip.
+  - `tests/app/shell-grid-composed.test.ts`: the test folder gains `teams/gamma.plan` and `teams/loop.plan`, which mounts `../portfolio.plan`. New cases:
+    - mounting `teams/beta.plan` on a new master row composes it, and one Ctrl+Z undoes it;
+    - changing Product B's mount to gamma, and its undo;
+    - the disabled files with their reasons, and the filter and Escape;
+    - a nested mount written from Build, in alpha, as `mount=gamma.plan`.
+  - New: `tests/core/mounting.test.ts`, for `relativePath` (round trips through `resolve`, including `..`) and `mountRefusal`.
 - `tests/app/shell-composed.test.ts` _(after the browser pass)_: "refuses Alt+Down on a segment's last row and on a mount row; inside a segment it works" became the group "line operations act on the lines of the cursor's file (Task 37)", with six cases, each undone with one Ctrl+Z:
   - Alt+Down on Product A gives Product B, beta's segment, Product A, alpha's segment, with the cursor still on Product A;
   - Alt+Up on Product B gives the same;
@@ -2381,7 +2422,8 @@ No other existing test changed.
   - the new §4b.7, mounted rows: columns, markers, dependencies, structure, mount rows, deletes, file names, rebuilding;
   - §5.5: the Gantt following the grid;
   - after the browser pass, §4.3 (line operations on the lines of the cursor's file, and the cursor across a recompose) and §4b.6.4 (text-editor keys in a composed text);
-  - after the browser pass, §3.4 (headers as `at: null`), §4b.1 (shading) and §4b.7 (headers, and the badge opening its file).
+  - after the browser pass, §3.4 (no header rows or blocks), §4b.1 (shading), §4b.7 (the mount row as the segment's header) and §4.5 (the mount line as the header, in the text editor);
+  - after the browser pass, §4b.5 and §4b.7 (Mount plan…); PLUGINS.md §8 (`mounting.ts` in core).
 - PLUGINS.md §4 and §6: `Model.column`, and the grid reading cells through `field`.
 - VISION §6: no change; nothing here departs from it.
 - No rows change.

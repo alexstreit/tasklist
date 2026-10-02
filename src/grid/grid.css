@@ -78,16 +78,21 @@
 .sheet-confirm .fix-warning { flex-basis: 100%; color: var(--fg); border-left: 2px solid var(--diag-warning); padding-left: 6px; }
 .sheet-confirm .fix { font: inherit; font-size: 12px; border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 0 8px; cursor: pointer; }
 .sheet-confirm .sheet-notice { flex-basis: 100%; font-size: 12px; color: var(--fg); border-left: 2px solid var(--diag-error); padding-left: 6px; }
-/* Mounted files' rows (spec §4b.1, §4b.7): the text editor's segment tokens, shading and a border on the left, at
-   every mount depth. Low enough in specificity that the hover and cursor bands still show over them. */
+/* Mounted files' rows (spec §4b.1, §4b.7): the text editor's segment tokens, shading at every mount depth; low enough in
+   specificity that the hover and cursor bands still show over them. A segment's mount row is its header, with the
+   header's background; the border runs from it to the segment's last row, past the mount row's own (unshaded) children. */
 .plan-sheet tr.mounted { background: var(--mounted-row-bg); }
-.plan-sheet tr.mounted > td:first-child, .plan-sheet tr.segment-header > td { box-shadow: inset 3px 0 0 var(--segment-border); }
-/* A mounted file's header row, as the text editor's segment header. */
-.plan-sheet tbody tr.segment-header { height: auto; user-select: none; }
-.plan-sheet tr.segment-header > td { padding: 2px 6px; font-size: 12px; color: var(--badge-fg); background: var(--badge-bg); border-top: 1px solid var(--segment-border); }
-.plan-sheet tr.segment-header .segment-path { margin-right: 8px; }
-.plan-sheet tr.segment-header .segment-unsaved { margin-right: 8px; color: var(--fg-muted); }
-.plan-sheet tr.segment-header .segment-action { margin-right: 6px; font: inherit; font-size: 11px; border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 0 6px; cursor: pointer; }
-.plan-sheet tr.segment-header .segment-action:disabled { color: var(--fg-faint); cursor: default; }
+.plan-sheet tr.segment-mount { background: var(--badge-bg); }
+.plan-sheet tr.in-segment > td:first-child { box-shadow: inset 3px 0 0 var(--segment-border); }
+.plan-sheet td.title .segment-unsaved { margin-left: 8px; color: var(--fg-muted); }
+.plan-sheet td.title .segment-action { margin-left: 6px; font: inherit; font-size: 11px; border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 0 6px; cursor: pointer; }
+.plan-sheet td.title .segment-action:disabled { color: var(--fg-faint); cursor: default; }
 /* A mount row's file badge, which opens its file. */
 .plan-sheet .file-badge { margin-left: 0.6em; padding: 0 6px; font: inherit; font-size: 0.85em; color: var(--badge-fg); background: var(--badge-bg); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+/* Mount plan…: the picker of the folder's plan files (spec §4b.7), where the delete confirm shows. */
+.sheet-confirm .mount-picker { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.sheet-confirm .mount-picker ul { list-style: none; margin: 0; padding: 0; max-height: 14em; overflow: auto; align-self: stretch; }
+.sheet-confirm .mount-choice { font: inherit; text-align: left; width: 100%; padding: 2px 6px; color: var(--fg); background: none; border: none; cursor: pointer; }
+.sheet-confirm .mount-choice:hover:not(:disabled) { background: var(--hover); }
+.sheet-confirm .mount-choice:disabled { color: var(--fg-faint); cursor: default; }
+.sheet-confirm .fix-input { font: inherit; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--accent-border); border-radius: 2px; padding: 0 4px; }

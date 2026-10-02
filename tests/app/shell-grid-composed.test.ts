@@ -16,7 +16,10 @@ import portfolioPlan from '../../examples/portfolio/portfolio.plan?raw';
 const memory = fakeMemory();
 vi.mock('../../src/app/workspace/memory', () => ({ createFolderMemory: () => memory }));
 
-const folder = fakeFolder('Portfolio', { 'portfolio.plan': portfolioPlan, teams: { 'alpha.plan': alpha, 'beta.plan': beta } });
+// Beside the portfolio: gamma, a plan mounted nowhere, and loop, which mounts the master (Mount plan…, Task 37).
+const gamma = '---\nprofile: plan\n---\nGamma task | 1d\n';
+const loop = 'Loop | mount=../portfolio.plan\n';
+const folder = fakeFolder('Portfolio', { 'portfolio.plan': portfolioPlan, teams: { 'alpha.plan': alpha, 'beta.plan': beta, 'gamma.plan': gamma, 'loop.plan': loop } });
 Object.assign(window, { showDirectoryPicker: vi.fn(async () => folder.handle) });
 
 // Cell columns, as the grid numbers them: the root is `profile: schedule`.
@@ -120,7 +123,6 @@ describe('the composed grid', () => {
   it('shows the master’s rows with alpha’s and beta’s in composed order, numbered across the plan and shaded', () => {
     const shown = gridRows().map((tr) => {
       if (tr.classList.contains('new-task')) return 'new task';
-      if (tr.classList.contains('segment-header')) return `header ${tr.querySelector('.segment-path')!.textContent}`;
       const kind = tr.classList.contains('front-matter') ? 'settings' : tr.classList.contains('item') ? `${tr.cells[0].textContent} ${own(tr.querySelector('td.title')!)}` : 'comment';
       return `${tr.dataset.file}:${tr.dataset.line} ${kind}${tr.classList.contains('mounted') ? ' (mounted)' : ''}`;
     });
@@ -128,13 +130,11 @@ describe('the composed grid', () => {
       'portfolio.plan:1 settings',
       'portfolio.plan:5 comment',
       'portfolio.plan:6 1 Product A',
-      'header alpha.plan',
       'teams/alpha.plan:1 settings (mounted)',
       'teams/alpha.plan:5 comment (mounted)',
       'teams/alpha.plan:6 1.1 Design (mounted)',
       'teams/alpha.plan:7 1.2 Build (mounted)',
       'portfolio.plan:7 2 Product B',
-      'header beta.plan',
       'teams/beta.plan:1 settings (mounted)',
       'teams/beta.plan:6 comment (mounted)',
       'teams/beta.plan:7 2.1 Spec (mounted)',
@@ -273,40 +273,70 @@ describe('the composed grid', () => {
     expect(panelFile(BETA).textContent).not.toContain('●');
     expect(await text()).toBe(composedText(portfolioPlan.replace(' | mount=teams/beta.plan ', ''), alpha, '').replace(lines(portfolioPlan)[6], lines(portfolioPlan)[6].replace(' | mount=teams/beta.plan ', '')));
     await undo();
-    // Beta's header, settings, comment, Spec and Code.
-    expect(gridRows().filter((tr) => tr.dataset.file === BETA)).toHaveLength(5);
+    // Beta's settings, comment, Spec and Code.
+    expect(gridRows().filter((tr) => tr.dataset.file === BETA)).toHaveLength(4);
     expect(await text()).toBe(composedText());
   });
 
-  it('a header above each mounted file’s rows names it, marks it unsaved, and is no place (Task 37, after the browser pass)', async () => {
-    const header = (file: string) => gridRows().find((tr) => tr.classList.contains('segment-header') && tr.dataset.file === file)!;
-    const alphaHeader = header(ALPHA);
-    // Right above alpha's settings row, spanning every column, with no line and nothing focusable.
-    expect(gridRows()[gridRows().indexOf(alphaHeader) + 1]).toBe(row(ALPHA, 1));
-    expect(alphaHeader.cells).toHaveLength(1);
-    expect(alphaHeader.cells[0].colSpan).toBe(gridRows()[2].cells.length);
-    expect(alphaHeader.dataset.line).toBeUndefined();
-    expect(alphaHeader.querySelectorAll('[tabindex="0"], td[tabindex]')).toHaveLength(0);
-    expect([...alphaHeader.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Open', 'Unmount']);
-    expect(alphaHeader.querySelector('.segment-unsaved')).toBeNull();
-    // An edit in beta marks beta's header; undoing it clears the mark.
+  it('a segment’s mount row is its header: badge, unsaved marker, Open and Unmount, out of the tab order (Task 37, after the browser pass)', async () => {
+    expect(document.querySelectorAll('#editor tr.segment-header')).toHaveLength(0);
+    const productA = row(ROOT, 6);
+    expect(productA.classList.contains('segment-mount')).toBe(true);
+    expect(productA.classList.contains('mounted')).toBe(false);
+    const parts = () => [...cell(ROOT, 7, TITLE).children].map((el) => `${el.className}:${el.textContent}:${(el as HTMLElement).tabIndex}`);
+    expect(parts()).toEqual(['file-badge:beta.plan:-1', 'segment-action:Open:-1', 'segment-action:Unmount:-1']);
+    // An edit in beta marks Product B, after its badge; undoing it clears the mark.
     await edit(BETA, 8, OWNER, 'ana');
-    expect(header(BETA).querySelector('.segment-unsaved')?.textContent).toBe('●');
-    expect(header(ALPHA).querySelector('.segment-unsaved')).toBeNull();
+    expect(parts()).toEqual(['file-badge:beta.plan:-1', 'segment-unsaved:●:-1', 'segment-action:Open:-1', 'segment-action:Unmount:-1']);
     await undo();
-    expect(header(BETA).querySelector('.segment-unsaved')).toBeNull();
+    expect(parts()).toEqual(['file-badge:beta.plan:-1', 'segment-action:Open:-1', 'segment-action:Unmount:-1']);
+    // The border runs from the mount row to the segment's last row; the master's next row is outside it.
+    const bordered = gridRows().filter((tr) => tr.classList.contains('in-segment')).map((tr) => `${tr.dataset.file}:${tr.dataset.line}`);
+    expect(bordered).toEqual([
+      'portfolio.plan:6',
+      'teams/alpha.plan:1',
+      'teams/alpha.plan:5',
+      'teams/alpha.plan:6',
+      'teams/alpha.plan:7',
+      'portfolio.plan:7',
+      'teams/beta.plan:1',
+      'teams/beta.plan:6',
+      'teams/beta.plan:7',
+      'teams/beta.plan:8',
+    ]);
+    // The row itself is still a row: its title is focusable, and edited as before.
+    click(cell(ROOT, 6, TITLE), 'dblclick');
+    expect(input()!.value).toBe('Product A');
+    press(input()!, 'Escape');
     expect(await text()).toBe(composedText());
   });
 
-  it('ArrowDown from Product A skips alpha’s header (and its settings row) to alpha’s first row', () => {
+  it('the mount row’s own master children are inside the border, unshaded', async () => {
+    editorTab('Text').click();
+    await settle();
+    const view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
+    const end = view.state.doc.toString().indexOf('due=2026-10-16') + 'due=2026-10-16'.length;
+    view.dispatch({ changes: { from: end, insert: '\n    Kickoff' } });
+    await settle();
+    editorTab('Grid').click();
+    await settle();
+    const kickoff = row(ROOT, 7);
+    expect(own(kickoff.querySelector('td.title')!)).toBe('Kickoff');
+    expect([kickoff.classList.contains('in-segment'), kickoff.classList.contains('mounted')]).toEqual([true, false]);
+    await undo();
+    expect(await text()).toBe(composedText());
+  });
+
+  it('ArrowDown from the row above the segment, its mount row, goes straight into the segment', () => {
     click(cell(ROOT, 6, TITLE));
     press(cell(ROOT, 6, TITLE), 'ArrowDown');
     const at = document.activeElement!.closest('tr')!;
+    // Alpha's first row the place can be on: its settings row is read-only, so its comment line.
     expect([at.dataset.file, at.dataset.line]).toEqual([ALPHA, '5']);
   });
 
-  it('the header’s Unmount clears the mount cell, and one Ctrl+Z brings the segment back', async () => {
-    const unmountButton = () => button(`#editor tr.segment-header[data-file="${ALPHA}"] button`, 'Unmount');
+  it('the mount row’s Unmount clears its cell, and one Ctrl+Z brings the segment back', async () => {
+    const unmountButton = () => button(`#editor tr[data-file="${ROOT}"][data-line="6"] .segment-action`, 'Unmount');
     click(unmountButton());
     await settle();
     expect(gridRows().some((tr) => tr.dataset.file === ALPHA)).toBe(false);
@@ -317,8 +347,8 @@ describe('the composed grid', () => {
     expect(unmountButton()).toBeDefined();
   });
 
-  it('the header’s Open, and the mount row’s badge, make the file active', async () => {
-    click(button(`#editor tr.segment-header[data-file="${BETA}"] button`, 'Open'));
+  it('the mount row’s Open, and its badge, make the file active', async () => {
+    click(button(`#editor tr[data-file="${ROOT}"][data-line="7"] .segment-action`, 'Open'));
     await settle();
     expect(document.title).toBe('teams/beta.plan — Plan');
     panelFile(ROOT).click();
@@ -410,6 +440,95 @@ describe('the composed grid', () => {
     editorTab('Grid').click();
     await settle();
     expect(await text()).toBe(composedText());
+  });
+
+  describe('Mount plan… (Task 37, after the browser pass)', () => {
+    const GAMMA = 'teams/gamma.plan';
+    const picker = () => document.querySelector<HTMLElement>('#editor .mount-picker');
+    const choice = (path: string) => document.querySelector<HTMLButtonElement>(`#editor .mount-choice[data-path="${path}"]`)!;
+    /** Select a row and open the picker; the plans are read first. */
+    async function pick(file: string, line: number): Promise<void> {
+      select(file, line);
+      tool(row(file, line).querySelector('.file-badge') ? 'Change mounted plan…' : 'Mount plan…').click();
+      await settle();
+      expect(picker()).not.toBeNull();
+    }
+
+    it('mounting teams/beta.plan on a new master row composes it, and one Ctrl+Z undoes it', async () => {
+      // Beta is shown under Product B, where it would be an overlap: Product B unmounts it first.
+      select(ROOT, 7);
+      tool('Unmount').click();
+      await settle();
+      const adder = document.querySelector<HTMLInputElement>('#editor tr.new-task input')!;
+      adder.value = 'Launch';
+      press(adder, 'Enter');
+      await settle();
+      expect(own(cell(ROOT, 9, TITLE))).toBe('Launch');
+      // CodeMirror's history joins adjacent edits made within 500ms; a person takes longer than the fake clock.
+      vi.advanceTimersByTime(600);
+      await pick(ROOT, 9);
+      expect(tool('Change mounted plan…')).toBeUndefined();
+      expect(choice(BETA).disabled).toBe(false);
+      choice(BETA).click();
+      await settle();
+      expect(picker()).toBeNull();
+      expect(await text()).toContain(`Launch | mount=teams/beta.plan\n${beta}`);
+      expect(gridRows().filter((tr) => tr.dataset.file === BETA)).toHaveLength(4);
+      await undo();
+      expect(await text()).not.toContain('mount=teams/beta.plan');
+      expect(own(cell(ROOT, 9, TITLE))).toBe('Launch');
+      // The new row, then Product B's unmount.
+      await undo(2);
+      expect(await text()).toBe(composedText());
+    });
+
+    it('changes a mount’s path: Product B mounts gamma instead of beta, and one Ctrl+Z restores it', async () => {
+      await pick(ROOT, 7);
+      expect(document.querySelector('#editor .mount-picker-heading')!.textContent).toBe('Change the plan mounted on Product B');
+      // What Product B shows now is no overlap, but choosing it changes nothing.
+      expect([choice(BETA).disabled, choice(BETA).title]).toEqual([true, 'This row mounts it already.']);
+      choice(GAMMA).click();
+      await settle();
+      const now = await text();
+      expect(now).toContain('Product B {#b}  | mount=teams/gamma.plan  | deps=#a\n---\nprofile: plan\n---\nGamma task | 1d\n');
+      expect(gridRows().some((tr) => tr.dataset.file === BETA)).toBe(false);
+      expect(gridRows().some((tr) => tr.dataset.file === GAMMA)).toBe(true);
+      await undo();
+      expect(await text()).toBe(composedText());
+    });
+
+    it('disables the row’s own file, a file that would make a loop, and one mounted elsewhere, each with its reason', async () => {
+      await pick(ALPHA, 6);
+      const offered = [...document.querySelectorAll<HTMLButtonElement>('#editor .mount-choice')].map((b) => [b.dataset.path, b.disabled ? b.title : 'enabled']);
+      expect(offered).toEqual([
+        ['portfolio.plan', 'portfolio.plan mounts this file, directly or through other files'],
+        [ALPHA, "teams/alpha.plan is this row's own file; a file can't mount itself"],
+        [BETA, 'teams/beta.plan is already mounted elsewhere in the plan'],
+        [GAMMA, 'enabled'],
+        ['teams/loop.plan', 'teams/loop.plan mounts this file, directly or through other files'],
+      ]);
+      // The filter narrows the list; Escape closes it and writes nothing.
+      const filter = picker()!.querySelector<HTMLInputElement>('input')!;
+      filter.value = 'gam';
+      filter.dispatchEvent(new Event('input'));
+      expect([...document.querySelectorAll<HTMLLIElement>('#editor .mount-picker li')].filter((li) => !li.hidden).map((li) => li.textContent)).toEqual([GAMMA]);
+      press(filter, 'Escape');
+      expect(picker()).toBeNull();
+      expect(await text()).toBe(composedText());
+    });
+
+    it('a nested mount from a row in alpha is written relative to alpha', async () => {
+      await pick(ALPHA, 7);
+      choice(GAMMA).click();
+      await settle();
+      expect(await text()).toBe(
+        composedText(portfolioPlan, alpha.replace('Build               | 3d | deps=#design\n', `Build               | 3d | deps=#design | mount=gamma.plan\n${gamma}`)),
+      );
+      // Gamma is shown two mounts deep.
+      expect(row(GAMMA, 4).classList.contains('segment-depth-2')).toBe(true);
+      await undo();
+      expect(await text()).toBe(composedText());
+    });
   });
 
   it('Save writes the master and beta after an edit in each, and leaves alpha alone', async () => {

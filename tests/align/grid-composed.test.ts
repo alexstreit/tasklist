@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Task 37: the Gantt following the composed grid on the portfolio. The grid's rows are its table's
 // body rows in composed order, keyed by file and line, so the Gantt draws all seven rows of the
-// three plans beside them; each mounted file's header is a row with no line, which the Gantt leaves empty. Measurements are injected (tests/support/layout.ts), as in Task 29:
+// three plans beside them. A mounted file's header is its mount row, so there are no rows without a line between them. Measurements are injected (tests/support/layout.ts), as in Task 29:
 // 22px a body row, 20px the toolbar, the problems list and the header row.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -74,41 +74,37 @@ afterAll(() => {
 });
 
 describe('the Gantt following the composed grid', () => {
-  it('publishes the grid’s body rows in composed order, keyed by file and line; each header is a row with no line', () => {
+  it('publishes the grid’s body rows in composed order, keyed by file and line, with no header rows', () => {
     expect(latest!.rows.map((r) => (r.at ? `${r.at.file}:${r.at.line} ${r.top}` : `null ${r.top}`))).toEqual([
       'portfolio.plan:1 0',
       'portfolio.plan:5 22',
+      // Product A is the header of alpha's segment: alpha's rows follow it directly.
       'portfolio.plan:6 44',
-      // Alpha's header.
-      'null 66',
-      'teams/alpha.plan:1 88',
-      'teams/alpha.plan:5 110',
-      'teams/alpha.plan:6 132',
-      'teams/alpha.plan:7 154',
-      'portfolio.plan:7 176',
-      // Beta's header.
-      'null 198',
-      'teams/beta.plan:1 220',
-      'teams/beta.plan:6 242',
-      'teams/beta.plan:7 264',
-      'teams/beta.plan:8 286',
-      'portfolio.plan:8 308',
-      // The new-task row.
-      'null 330',
+      'teams/alpha.plan:1 66',
+      'teams/alpha.plan:5 88',
+      'teams/alpha.plan:6 110',
+      'teams/alpha.plan:7 132',
+      'portfolio.plan:7 154',
+      'teams/beta.plan:1 176',
+      'teams/beta.plan:6 198',
+      'teams/beta.plan:7 220',
+      'teams/beta.plan:8 242',
+      'portfolio.plan:8 264',
+      // The new-task row: the only row with no line.
+      'null 286',
     ]);
   });
 
-  it('draws all seven rows, each beside its grid row, and nothing beside a header', () => {
+  it('draws all seven rows, each beside its grid row, with no empty rows between them', () => {
     const marks = [...host.querySelectorAll<HTMLElement>('.gantt-row')].map((r) => [r.dataset.file, Number(r.dataset.line), r.style.top]);
     expect(marks).toEqual([
       ['portfolio.plan', 6, '44px'],
-      ['teams/alpha.plan', 6, '132px'],
-      ['teams/alpha.plan', 7, '154px'],
-      ['portfolio.plan', 7, '176px'],
-      ['teams/beta.plan', 7, '264px'],
-      ['teams/beta.plan', 8, '286px'],
-      ['portfolio.plan', 8, '308px'],
+      ['teams/alpha.plan', 6, '110px'],
+      ['teams/alpha.plan', 7, '132px'],
+      ['portfolio.plan', 7, '154px'],
+      ['teams/beta.plan', 7, '220px'],
+      ['teams/beta.plan', 8, '242px'],
+      ['portfolio.plan', 8, '264px'],
     ]);
-    expect(marks.some(([, , top]) => top === '66px' || top === '198px')).toBe(false);
   });
 });

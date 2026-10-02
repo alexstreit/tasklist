@@ -5,10 +5,10 @@
 
 import { readFlag } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, EditResult } from 'rows';
-import { formatDuration, preview } from '../core';
+import { formatDuration, mountRefusal, preview, relativePath } from '../core';
 import type { Column, Diagnostic, FileLine, Fix, ItemNode, Model, Node, Pinnable, Span } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
-import type { PieceMap, Segment } from '../buffer/pieces';
+import type { PieceMap } from '../buffer/pieces';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
 import {
@@ -21,6 +21,7 @@ import {
   insertIndent,
   insertItem,
   levels,
+  mountOn,
   moveItem,
   noColumn,
   setDone,
@@ -55,13 +56,15 @@ const MARKER = -2;
  * Where a row is: `vline` is its line in the buffer the grid shows (the composed text, or the
  * file's own text), which is how the grid finds it; `file` and `line` are its own file's and its
  * line there, which is how the model, the cursor and the other panes name it. `mount` is its
- * mount depth: 0 in the root, 1 in a file the root mounts, and so on.
+ * mount depth: 0 in the root, 1 in a file the root mounts, and so on. `border` is true from a
+ * segment's mount row to the segment's last row: they have its border.
  */
 interface Placed {
   vline: number;
   file: string;
   line: number;
   mount: number;
+  border: boolean;
 }
 
 /** An item line, or any other line shown as one editable full-width cell. */
@@ -73,9 +76,6 @@ type Row =
 
 /** A file's front matter, shown as one collapsed, read-only row on its first line. */
 type FrontMatter = Placed & { kind: 'front'; span: Span; text: string; diagnostic?: Diagnostic };
-
-/** The header above a mounted file's rows: its file, its mount row and its mount depth. It is no line. */
-type Header = { kind: 'header'; file: string; mountRow: FileLine; depth: number };
 
 /** What the grid needs of a composed buffer (spec §3.7): its piece map, and edits in a file's own offsets. */
 export interface ComposedSource {
@@ -90,13 +90,18 @@ export interface GridHooks {
   onOpenFile?(path: string): void;
   /** Say something on the status line: a deleted mounted task names its file. */
   status?(message: string): void;
+  /**
+   * The workspace's plan files, each with the files it mounts (resolved), for Mount plan…; absent
+   * when the workspace can't list files (the single-file workspace).
+   */
+  plans?(): Promise<{ path: string; mounts: string[] }[]>;
 }
 
 /** The grid leads (spec §3.4): its rows are its table's body rows. */
 export interface GridEditor extends Leader {
   /** Also republishes the row layout. */
   update(model: Model): void;
-  /** The files with unsaved changes: the mounted files' headers mark them. */
+  /** The files with unsaved changes: the mount rows of mounted files mark them. */
   showUnsaved(files: ReadonlySet<string>): void;
   setCursorLine(at: FileLine): void;
   /** Band the row on `line`, hovered in the other pane; null clears it. */
@@ -178,8 +183,8 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
   let model: Model | null = null;
   // The rows the place can be on, in the order shown; with each file's front matter, every body row.
   let rows: Row[] = [];
-  let shown: (Row | FrontMatter | Header)[] = [];
-  // The files with unsaved changes, for the headers' markers (the shell says, as for the text editor).
+  let shown: (Row | FrontMatter)[] = [];
+  // The files with unsaved changes, for the mount rows' markers (the shell says, as for the text editor).
   let unsaved: ReadonlySet<string> = new Set();
   // Rows by vline, and rows and front matter by their own file and line.
   const byLine = new Map<number, Row>();
@@ -383,8 +388,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     // The WBS cell's extra values (spec §4b.6.6), and a mount row's file badge.
     | { kind: 'extra'; text: string }
     | { kind: 'file'; path: string }
-    // A mounted file's header: its name, its unsaved marker, and its buttons.
-    | { kind: 'path'; text: string }
+    // A mount row whose file is shown under it is the segment's header: its unsaved marker, and its buttons.
     | { kind: 'unsaved' }
     | { kind: 'action'; action: 'open' | 'unmount'; label: string; title: string; disabled: boolean };
 
@@ -399,11 +403,10 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     parts: Part[];
   }
 
-  /** A body row: `line` is null for a header, which is no line. */
   interface RowSpec {
     className: string;
     file: string;
-    line: number | null;
+    line: number;
     cells: CellSpec[];
   }
 
@@ -504,9 +507,20 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       cells.push(reason ? { ...spec, title: reason, why: reason } : spec);
     });
 
-    cells.push(cellSpec(vline, TITLE, 'title', titleParts(node), { padding: `${0.5 + row.depth * 1.25}em` }));
+    // A mount row whose file is shown under it is the segment's header (spec §4b.7): ●, Open and Unmount after its badge.
+    const header = node.composes !== undefined && buffer.pieces !== undefined;
+    const parts = titleParts(node);
+    if (header) {
+      if (unsaved.has(node.composes!)) parts.push({ kind: 'unsaved' });
+      parts.push(
+        { kind: 'action', action: 'open', label: 'Open', title: `Open ${node.composes}`, disabled: !hooks.onOpenFile },
+        { kind: 'action', action: 'unmount', label: 'Unmount', title: `Stop showing ${node.composes} here; the file stays as it is`, disabled: false },
+      );
+    }
+    cells.push(cellSpec(vline, TITLE, 'title', parts, { padding: `${0.5 + row.depth * 1.25}em` }));
     model!.columns.forEach((_, i) => cells.push(declaredSpec(vline, node, i)));
-    return { className: rowClass(row, node.done ? 'item done' : 'item'), file: row.file, line: row.line, cells };
+    const kind = `item${node.done ? ' done' : ''}${header ? ' segment-mount' : ''}`;
+    return { className: rowClass(row, kind), file: row.file, line: row.line, cells };
   }
 
   /** A comment or blank line: one full-width cell holding the raw text. */
@@ -528,23 +542,14 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
   }
 
   /**
-   * A mounted file's header, above its rows (spec §4b.7): its name, as messages name it, its
-   * unsaved marker, Open and Unmount. It spans every column, and nothing in it takes the place.
+   * A row's classes: its kind's; its shading when it is a mounted file's (spec §4b.1); and
+   * `in-segment` from a segment's mount row to its last row, which has the segment's border.
    */
-  function headerSpec(header: Header): RowSpec {
-    const parts: Part[] = [{ kind: 'path', text: fileLabel(model!, header.file) }];
-    if (unsaved.has(header.file)) parts.push({ kind: 'unsaved' });
-    parts.push(
-      { kind: 'action', action: 'open', label: 'Open', title: `Open ${header.file}`, disabled: !hooks.onOpenFile },
-      { kind: 'action', action: 'unmount', label: 'Unmount', title: `Stop showing ${header.file} here; the file stays as it is`, disabled: false },
-    );
-    const cell: CellSpec = { className: 'segment', colSpan: leading() + 1 + model!.columns.length, parts };
-    return { className: `segment-header segment-depth-${header.depth}`, file: header.file, line: null, cells: [cell] };
-  }
-
-  /** A row's classes: its kind's, and its shading when it is a mounted file's (spec §4b.1). */
   function rowClass(row: Placed, kind: string): string {
-    return row.mount > 0 ? `${kind} mounted segment-depth-${row.mount}` : kind;
+    const classes = [kind];
+    if (row.mount > 0) classes.push('mounted', `segment-depth-${row.mount}`);
+    if (row.border) classes.push('in-segment');
+    return classes.join(' ');
   }
 
   function partElement(part: Part): globalThis.Node {
@@ -581,12 +586,6 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
         badge.disabled = !hooks.onOpenFile;
         return badge;
       }
-      case 'path': {
-        const path = document.createElement('span');
-        path.className = 'segment-path';
-        path.textContent = part.text;
-        return path;
-      }
       case 'unsaved': {
         const marker = document.createElement('span');
         marker.className = 'segment-unsaved';
@@ -595,7 +594,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
         return marker;
       }
       case 'action': {
-        // The header isn't in the tab order; its buttons are for the pointer, and the toolbar has Unmount.
+        // Not in the tab order, as the checkboxes aren't: the cell is; the toolbar has Unmount too.
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'segment-action';
@@ -645,7 +644,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
    * What each kept row was last drawn with, so an unchanged row is checked without reading the
    * DOM back (slow in jsdom): its classes, file and line, its cells, and their columns.
    */
-  const drawnRows = new WeakMap<HTMLTableRowElement, { className: string; file: string | null; line: number | null | undefined; shape: string; cells: HTMLTableCellElement[] }>();
+  const drawnRows = new WeakMap<HTMLTableRowElement, { className: string; file: string | null; line: number; shape: string; cells: HTMLTableCellElement[] }>();
 
   /** Draw a row from its spec into `tr`, a kept row or a new one: only what changed is touched. */
   function drawRow(tr: HTMLTableRowElement, spec: RowSpec): void {
@@ -655,7 +654,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     if (!was || was.shape !== shape) {
       const cells = spec.cells.map(newCell);
       tr.replaceChildren(...cells);
-      was = { className: '', file: null, line: undefined, shape, cells };
+      was = { className: '', file: null, line: -1, shape, cells };
       drawnRows.set(tr, was);
     }
     if (was.className !== spec.className) {
@@ -664,8 +663,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     }
     if (was.file !== spec.file) tr.dataset.file = was.file = spec.file;
     if (was.line !== spec.line) {
-      if (spec.line === null) delete tr.dataset.line;
-      else tr.dataset.line = String(spec.line);
+      tr.dataset.line = String(spec.line);
       was.line = spec.line;
     }
     const { cells } = was;
@@ -683,9 +681,6 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
   // The rows drawn last, each by the end of its line in the shown text, followed through every
   // change since: the next build finds a row's element there, so an insert above it keeps it.
   let kept: { pos: number; tr: HTMLTableRowElement }[] = [];
-  // Each mounted file's header row, by its file, and back.
-  let keptHeaders = new Map<string, HTMLTableRowElement>();
-  const headerOf = new WeakMap<HTMLTableRowElement, Header>();
 
   /** A plain row: the draft and new-task rows, drawn afresh each time. */
   function plainRow(className: string, columns: Column[], title?: (td: HTMLTableCellElement) => void): HTMLTableRowElement {
@@ -734,19 +729,9 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
 
     const wanted: HTMLTableRowElement[] = [];
     const next: typeof kept = [];
-    const nextHeaders = new Map<string, HTMLTableRowElement>();
     trs.clear();
     let drafted = false;
     for (const row of shown) {
-      if (row.kind === 'header') {
-        // Kept by its file, which is shown once.
-        const tr = keptHeaders.get(row.file) ?? document.createElement('tr');
-        drawRow(tr, headerSpec(row));
-        headerOf.set(tr, row);
-        nextHeaders.set(row.file, tr);
-        wanted.push(tr);
-        continue;
-      }
       if (row.kind !== 'front' && row.vline === draftLine) wanted.push(draftRow(columns)), (drafted = true);
       const pos = ends[row.vline - 1] ?? text.length;
       const tr = old.get(pos) ?? document.createElement('tr');
@@ -759,7 +744,6 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       vlineOf.set(tr, row.vline);
     }
     kept = next;
-    keptHeaders = nextHeaders;
     // The line the draft was anchored to is no longer a row (an undo, say).
     // Keep the draft on screen rather than dropping what was typed.
     if (draftLine !== null && !drafted) wanted.push(draftRow(columns));
@@ -1333,6 +1317,14 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       why: (row) => (row.file !== root() && model && !canMarkDone(model, row.file) ? plainRefusal(`file ${fileLabel(model, row.file)} has no marker done`) : null),
     },
     {
+      id: 'mount',
+      label: 'Mount plan…',
+      // Opens the picker of the folder's plan files (spec §4b.7).
+      run: (row) => row.kind === 'item' && void pickPlan(row),
+      enabled: (row) => row.kind === 'item' && hooks.plans !== undefined,
+      why: () => (hooks.plans ? null : 'Open the folder to mount plans.'),
+    },
+    {
       id: 'unmount',
       label: 'Unmount',
       // Clears the mount cell: the segment goes, and the file stays as it is. One undo step, no confirm.
@@ -1367,13 +1359,87 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       button.disabled = row === null || !actions[i].enabled(row);
       button.title = (row && button.disabled && actions[i].why?.(row)) || '';
     });
+    // On a row that already mounts, Mount plan… changes its mount.
+    const mount = buttons[actions.findIndex((a) => a.id === 'mount')];
+    mount.textContent = row?.kind === 'item' && row.node.row.mount ? 'Change mounted plan…' : 'Mount plan…';
+    // Its reason shows without a row too: in the single-file workspace there's nothing to mount from.
+    if (!hooks.plans) mount.title = 'Open the folder to mount plans.';
   }
 
-  /** A header's buttons: Open makes its file active; Unmount clears its mount row's `mount=` cell (spec §4b.7). */
-  function headerAction(header: Header, action: string | undefined): void {
-    if (action === 'open') return hooks.onOpenFile?.(header.file);
-    const row = byFile.get(keyOf(header.mountRow.file, header.mountRow.line));
-    if (action === 'unmount' && row?.kind === 'item') structure(row, (m) => withRepairs(m, unmount(m, row.node), [row.node]));
+  /**
+   * Mount plan… (spec §4b.7): a picker of the workspace's plan files, with a filter. A file core
+   * refuses for this row (its own file, a loop, one shown elsewhere) is disabled, with the reason as
+   * its tooltip. Choosing one writes the row's `mount=` cell, relative to the row's file, as one
+   * undo step. It shows below the toolbar, where the delete confirm does; any change to the buffer
+   * drops it.
+   */
+  async function pickPlan(row: Row & { kind: 'item' }): Promise<void> {
+    const listed = await hooks.plans!();
+    const current = model;
+    if (!current) return;
+    const mounts = new Map(listed.map((p) => [p.path, p.mounts]));
+    const box = document.createElement('div');
+    box.className = 'mount-picker';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-label', 'Mount a plan');
+    const heading = document.createElement('div');
+    heading.className = 'mount-picker-heading';
+    heading.textContent = `${row.node.row.mount ? 'Change the plan mounted on' : 'Mount a plan on'} ${nameOf(row.node)}`;
+    const filter = document.createElement('input');
+    filter.className = 'fix-input';
+    filter.placeholder = 'Filter';
+    filter.setAttribute('aria-label', 'Filter plans');
+    const list = document.createElement('ul');
+    const close = () => {
+      box.remove();
+      held = true;
+      restore();
+    };
+    const choices = listed.map(({ path }) => {
+      const reason = path === row.node.mount ? 'This row mounts it already.' : mountRefusal(current, row.node, path, (p) => mounts.get(p));
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mount-choice';
+      b.dataset.path = path;
+      b.textContent = path;
+      b.disabled = reason !== null;
+      if (reason !== null) b.title = reason;
+      b.addEventListener('click', () => {
+        const relative = relativePath(row.file, path);
+        if (write(b, row.file, (m) => withRepairs(m, mountOn(m, row.node, relative), [row.node]))) close();
+      });
+      const li = document.createElement('li');
+      li.append(b);
+      list.append(li);
+      return { li, b, path };
+    });
+    filter.addEventListener('input', () => {
+      const typed = filter.value.trim().toLowerCase();
+      for (const c of choices) c.li.hidden = typed !== '' && !c.path.toLowerCase().includes(typed);
+    });
+    box.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      } else if (event.key === 'Enter' && event.target === filter) {
+        event.preventDefault();
+        choices.find((c) => !c.li.hidden && !c.b.disabled)?.b.click();
+      }
+    });
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'fix';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', close);
+    box.append(heading, filter, list, cancel);
+    confirmBox.replaceChildren(box);
+    filter.focus();
+  }
+
+  /** A segment's mount row's buttons: Open makes its file active; Unmount clears its `mount=` cell (spec §4b.7). */
+  function mountAction(row: Row & { kind: 'item' }, action: string | undefined): void {
+    if (action === 'open' && row.node.composes !== undefined) return hooks.onOpenFile?.(row.node.composes);
+    if (action === 'unmount') structure(row, (m) => withRepairs(m, unmount(m, row.node), [row.node]));
   }
 
   function cellAt(event: Event): { row: Row; column: number } | null {
@@ -1459,10 +1525,12 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       if (hit?.row.kind === 'item' && hit.row.node.mount !== undefined) hooks.onOpenFile?.(hit.row.node.mount);
       return;
     }
-    // A header's buttons; the header itself takes no place.
-    const action = (event.target as HTMLElement).closest<HTMLButtonElement>('.segment-header button');
-    const header = action && headerOf.get(action.closest('tr')!);
-    if (header) return headerAction(header, action.dataset.action);
+    // A mount row's Open and Unmount; they don't move the place.
+    const action = (event.target as HTMLElement).closest<HTMLButtonElement>('.segment-action');
+    if (action) {
+      if (hit?.row.kind === 'item') mountAction(hit.row, action.dataset.action);
+      return;
+    }
     if (hit && !editing) place(hit.row.vline, hit.column);
   });
   // A checkbox on any row: done, a marker's toggle, or a bool cell (spec §4b.1, §4b.6.5). Handled
@@ -1493,7 +1561,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
   });
   table.addEventListener('mouseleave', () => hover(null));
   table.addEventListener('dblclick', (event) => {
-    if ((event.target as HTMLElement).closest('.file-badge, .segment-header')) return;
+    if ((event.target as HTMLElement).closest('.file-badge, .segment-action')) return;
     const hit = cellAt(event);
     if (hit && hit.column !== DONE && hit.column !== WBS) beginEdit(hit.row, hit.column);
   });
@@ -1568,15 +1636,13 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       return lo + 1;
     };
     // Each line of the model's files, with its file, its vline and its mount depth.
-    const placed: ({ node: Node; file: string; vline: number; mount: number } | { segment: Segment })[] = [];
+    const placed: { node: Node; file: string; vline: number; mount: number }[] = [];
     if (!map) {
       for (const node of next.lines) placed.push({ node, file: next.file, vline: node.line, mount: 0 });
     } else {
       // A file's runs come in its own order, so one cursor per file walks its lines once.
       const cursor = new Map<string, number>();
-      for (const [ri, run] of map.runs.entries()) {
-        // A mounted file's header goes above its segment's first line.
-        for (const segment of map.segments) if (segment.first === ri && next.files.has(segment.file)) placed.push({ segment });
+      for (const run of map.runs) {
         const lines = run.joint ? undefined : next.files.get(run.file)?.lines;
         if (!lines) continue;
         let i = cursor.get(run.file) ?? 0;
@@ -1587,6 +1653,15 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
         cursor.set(run.file, i);
       }
     }
+
+    // Each segment's border runs from its mount row's vline to its last row's.
+    const borders: [number, number][] = [];
+    for (const s of map?.segments ?? []) {
+      const mountRow = placed.find((p) => p.file === s.mount.file && p.node.line === s.mount.line);
+      const range = map!.range(s);
+      if (mountRow && next.files.has(s.file) && range.to > range.from) borders.push([mountRow.vline, vlineAt(range.to - 1)]);
+    }
+    const bordered = (vline: number) => borders.some(([from, to]) => vline >= from && vline <= to);
 
     const level = new Map<string, Map<number, { shown: number; indent: number }>>();
     const levelOf = (file: string) => level.get(file) ?? (level.set(file, levels(next, file)), level.get(file)!);
@@ -1610,6 +1685,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
         file,
         line: nodes[0].line,
         mount: block.mount,
+        border: bordered(block.vline),
         span,
         text: fileText(file).slice(span.from, span.to).split('\n').join(' '),
       };
@@ -1619,12 +1695,6 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       block = null;
     };
     for (const entry of placed) {
-      if ('segment' in entry) {
-        closeBlock();
-        const { file, mount, depth } = entry.segment;
-        shown.push({ kind: 'header', file, mountRow: mount, depth });
-        continue;
-      }
       const { node, file, vline, mount } = entry;
       if (node.kind === 'front-matter') {
         if (block && block.file !== file) closeBlock();
@@ -1633,7 +1703,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
         continue;
       }
       closeBlock();
-      const where = { vline, file, line: node.line, mount };
+      const where = { vline, file, line: node.line, mount, border: bordered(vline) };
       let row: Row;
       if (node.kind === 'item') {
         const lv = levelOf(file).get(node.line);
@@ -1697,11 +1767,11 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     },
     showUnsaved(files) {
       unsaved = files;
-      // Only the headers show it: each is drawn again, and redraws only if its marker changed.
+      // Only segments' mount rows show it: each is drawn again, and its title cell redraws only if its marker changed.
       if (!model) return;
-      for (const row of shown) {
-        const tr = row.kind === 'header' ? keptHeaders.get(row.file) : undefined;
-        if (tr && row.kind === 'header') drawRow(tr, headerSpec(row));
+      for (const row of rows) {
+        const tr = row.kind === 'item' && row.node.composes !== undefined ? trs.get(row.vline) : undefined;
+        if (tr && row.kind === 'item') drawRow(tr, itemSpec(row));
       }
     },
     setCursorLine({ file, line }) {

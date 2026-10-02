@@ -83,18 +83,45 @@ describe('the composed text editor', () => {
     expect(text()).toBe(composedText());
   });
 
-  it('numbers each file’s lines as its own, and heads each segment with its path and an Open button', () => {
+  it('numbers each file’s lines as its own, and makes each segment’s mount line its header, with Open and Unmount (Task 37)', () => {
     const numbers = [...document.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].map((e) => e.textContent).filter((t) => t !== '');
     // jsdom draws every line: the master's 1–6, alpha's 1–7, the master's 7, beta's 1–8, the master's 8, and the empty last line.
     expect(numbers.slice(1)).toEqual(['1', '2', '3', '4', '5', '6', '1', '2', '3', '4', '5', '6', '7', '7', '1', '2', '3', '4', '5', '6', '7', '8', '8', '9']);
-    const headers = [...document.querySelectorAll('.cm-segment-header')];
-    expect(headers.map((h) => h.querySelector('.cm-segment-path')!.textContent)).toEqual(['teams/alpha.plan', 'teams/beta.plan']);
-    expect(headers.map((h) => h.querySelector('.cm-segment-unsaved'))).toEqual([null, null]);
-    expect(headers.map((h) => h.querySelector('button')!.textContent)).toEqual(['Open', 'Open']);
+    // No block above a segment: the mount line is its header, and its controls end the line.
+    expect(document.querySelectorAll('.cm-segment-header')).toHaveLength(0);
+    const mounts = [...document.querySelectorAll('.cm-line.cm-segment-mount')];
+    expect(mounts.map((l) => l.textContent!.slice(0, 9))).toEqual(['Product A', 'Product B']);
+    expect(mounts.map((l) => l.querySelector('.cm-segment-unsaved'))).toEqual([null, null]);
+    expect(mounts.map((l) => [...l.querySelectorAll<HTMLButtonElement>('.cm-segment-controls button')].map((b) => [b.textContent, b.tabIndex]))).toEqual([
+      [['Open', -1], ['Unmount', -1]],
+      [['Open', -1], ['Unmount', -1]],
+    ]);
     // The segments' lines are shaded, at mount depth 1, and padded under their mount rows.
     const shaded = [...document.querySelectorAll<HTMLElement>('.cm-line.cm-segment-depth-1')];
     expect(shaded).toHaveLength(15);
     expect(shaded[0].style.paddingLeft).toBe('calc(4ch + 6px)');
+  });
+
+  it('the mount line’s Unmount clears its cell, and one Ctrl+Z brings the segment back; its Open makes the file active (Task 37)', async () => {
+    const control = (title: string, label: string) =>
+      [...[...document.querySelectorAll('.cm-line.cm-segment-mount')].find((l) => l.textContent!.startsWith(title))!.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => b.textContent === label,
+      )!;
+    control('Product B', 'Unmount').click();
+    await settle();
+    const m = lines(portfolioPlan.replace('Product B {#b}  | mount=teams/beta.plan  | deps', 'Product B {#b}  | deps'));
+    expect(text()).toBe([...m.slice(0, 6), alpha, ...m.slice(6)].join(''));
+    expect(panelFile('teams/beta.plan').textContent).not.toContain('●');
+    ctrlZ();
+    await settle();
+    expect(text()).toBe(composedText());
+    control('Product A', 'Open').click();
+    await settle();
+    expect(document.title).toBe('teams/alpha.plan — Plan');
+    panelFile('portfolio.plan').click();
+    await settle();
+    findView();
+    expect(text()).toBe(composedText());
   });
 
   it('highlights each line with its own file’s syntax: beta’s work column is a duration', () => {
@@ -115,7 +142,8 @@ describe('the composed text editor', () => {
     expect(shown['Product B']).toEqual(['Thu 15 Oct', 'Tue 20 Oct']);
     expect(folder.writes).toEqual([]);
     expect(document.title).toBe('portfolio.plan — Plan');
-    expect(document.querySelector('.cm-segment-header .cm-segment-unsaved')?.textContent).toBe('●');
+    // Alpha's mount line, Product A's, marks it unsaved.
+    expect(document.querySelector('.cm-segment-mount .cm-segment-unsaved')?.textContent).toBe('●');
     // The panel marks alpha unsaved, and not the master.
     expect(panelFile('teams/alpha.plan').textContent).toContain('●');
     expect(panelFile('portfolio.plan').textContent).not.toContain('●');

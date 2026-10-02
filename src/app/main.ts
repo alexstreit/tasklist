@@ -8,7 +8,7 @@
 import { CodeMirrorBuffer } from '../buffer';
 import { ComposedBuffer } from '../buffer/composed';
 import type { Mount } from '../buffer/pieces';
-import { mountsOf, Notice, unmetReason } from '../core';
+import { mountsOf, Notice, readMounts, unmetReason } from '../core';
 import type { Exporter, FileLine, ItemNode, Model, Renderer, Workspace } from '../core';
 import { mountTextEditor } from '../editor';
 import { mountGrid } from '../grid';
@@ -367,6 +367,28 @@ function editorBuffer(file: OpenFile<CodeMirrorBuffer>): CodeMirrorBuffer {
   return view;
 }
 
+/**
+ * The folder's plan files for the grid's Mount plan… (spec §4b.7), each with the files it mounts,
+ * resolved: an open file's current text, any other read from disk; one that can't be read mounts nothing.
+ */
+async function listPlans(): Promise<{ path: string; mounts: string[] }[]> {
+  const { workspace } = files;
+  const paths = (await workspace.list()).filter((path) => path.endsWith('.plan'));
+  return Promise.all(
+    paths.map(async (path) => {
+      const text = openText(path) ?? (await workspace.read(path).catch(() => ''));
+      const mounts = readMounts(text, path).flatMap((ref) => {
+        try {
+          return [workspace.resolve(path, ref)];
+        } catch {
+          return [];
+        }
+      });
+      return { path, mounts };
+    }),
+  );
+}
+
 /** Reports what a save did; true when nothing is left unsaved by it. */
 function reportSave(file: OpenFile, result: SaveResult): boolean {
   if (result.outcome === 'cancelled') return false;
@@ -474,7 +496,13 @@ const editors = [
     label: 'Grid',
     // In a folder the grid shows the composed view, every file in it, and edits each in its own file (spec §4b.1).
     mount: (): PlanEditor =>
-      mountGrid(editorBuffer(files.active()), editorHost, { onCursorLine, onOpenFile: (path) => openFile(path), status: (message) => (status.textContent = message) }),
+      mountGrid(editorBuffer(files.active()), editorHost, {
+        onCursorLine,
+        onOpenFile: (path) => openFile(path),
+        status: (message) => (status.textContent = message),
+        // Only a workspace that can list files has plans to mount.
+        ...(files.workspace.can.list ? { plans: listPlans } : {}),
+      }),
   },
 ];
 // Which editor was last used. A per-viewer convenience: it may be unavailable

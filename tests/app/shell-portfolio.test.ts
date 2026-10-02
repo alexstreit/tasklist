@@ -62,6 +62,12 @@ describe('a mount row in the single-file workspace', () => {
     const problems = [...document.querySelectorAll('.problems li .message')].map((m) => m.textContent);
     expect(problems).toContain('Open the folder to see mounted plans.');
     expect(document.querySelectorAll('#host .file-badge')).toHaveLength(0);
+    // Nothing can be mounted from here (Task 37): Mount plan… is disabled, and says why, on a selected row too.
+    const mount = button('#editor .sheet-toolbar button', 'Mount plan…');
+    expect([mount.disabled, mount.title]).toEqual([true, 'Open the folder to mount plans.']);
+    const wbs = document.querySelector<HTMLTableCellElement>('#editor tbody tr.item td[data-column="-1"]')!;
+    wbs.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect([mount.disabled, mount.title]).toEqual([true, 'Open the folder to mount plans.']);
     editorTab('Text').click();
     findView();
     view.dispatch({ changes: { from: view.state.doc.length - 'Team | mount=teams/alpha.plan\n'.length, to: view.state.doc.length } });

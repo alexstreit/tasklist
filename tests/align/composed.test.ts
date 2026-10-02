@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // Task 36: the Gantt following the composed text editor on the portfolio. The editor's rows are
 // keyed by file and line, so the Gantt draws all seven rows of the three plans, each where its line
-// is; a segment header is no row. Measurements are injected (tests/support/layout.ts): 20px a
-// line, 24px a header.
+// is: a segment comes right under its mount line, its header (Task 37). Measurements are injected
+// (tests/support/layout.ts): 20px a line.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { connectPanes, followerChannel } from '../../src/app/align';
@@ -59,29 +59,29 @@ afterAll(() => {
 });
 
 describe('the Gantt following the composed text editor', () => {
-  it('publishes rows keyed by file and line, with a header’s height above each segment', () => {
+  it('publishes rows keyed by file and line, each segment right under its mount line (Task 37: no header block)', () => {
     const rows = latest!.rows.map((r) => [r.at?.file, r.at?.line, r.top, r.height]);
-    // The master's line 6, then alpha's line 1 below its 24px header, and so on.
+    // The master's line 6, Product A, is alpha's header; alpha's line 1 is right below it.
     expect(rows.slice(5, 8)).toEqual([
       ['portfolio.plan', 6, 100, 20],
-      ['teams/alpha.plan', 1, 144, 20],
-      ['teams/alpha.plan', 2, 164, 20],
+      ['teams/alpha.plan', 1, 120, 20],
+      ['teams/alpha.plan', 2, 140, 20],
     ]);
-    // Alpha's seven lines end at 284, where the master's line 7 is; beta's header follows it.
-    expect(rows.find((r) => r[0] === 'portfolio.plan' && r[1] === 7)).toEqual(['portfolio.plan', 7, 284, 20]);
-    expect(rows.find((r) => r[0] === 'teams/beta.plan' && r[1] === 1)).toEqual(['teams/beta.plan', 1, 328, 20]);
+    // Alpha's seven lines end at 260, where the master's line 7 is; beta follows it directly.
+    expect(rows.find((r) => r[0] === 'portfolio.plan' && r[1] === 7)).toEqual(['portfolio.plan', 7, 260, 20]);
+    expect(rows.find((r) => r[0] === 'teams/beta.plan' && r[1] === 1)).toEqual(['teams/beta.plan', 1, 280, 20]);
   });
 
   it('draws all seven rows, each at its line', () => {
     const marks = [...host.querySelectorAll<HTMLElement>('.gantt-row')].map((r) => [r.dataset.file, Number(r.dataset.line), r.style.top]);
     expect(marks).toEqual([
       ['portfolio.plan', 6, '100px'],
-      ['teams/alpha.plan', 6, '244px'],
-      ['teams/alpha.plan', 7, '264px'],
-      ['portfolio.plan', 7, '284px'],
-      ['teams/beta.plan', 7, '448px'],
-      ['teams/beta.plan', 8, '468px'],
-      ['portfolio.plan', 8, '488px'],
+      ['teams/alpha.plan', 6, '220px'],
+      ['teams/alpha.plan', 7, '240px'],
+      ['portfolio.plan', 7, '260px'],
+      ['teams/beta.plan', 7, '400px'],
+      ['teams/beta.plan', 8, '420px'],
+      ['portfolio.plan', 8, '440px'],
     ]);
   });
 });

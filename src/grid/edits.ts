@@ -114,6 +114,14 @@ export function unmount(model: Model, node: ItemNode): EditResult {
   return column && node.row.mount ? setCell(doc, node.row, column, null) : NOTHING;
 }
 
+/** Write a row's `mount=` cell: `path` is relative to the row's own file (spec §4b.7). */
+export function mountOn(model: Model, node: ItemNode, path: string): EditResult {
+  const doc = docOf(model, node);
+  const column = doc.schema.mount?.column;
+  if (!column) return { refused: `file ${fileLabel(model, node.file)} has no mount column` };
+  return node.row.mount?.path === path ? NOTHING : setCell(doc, node.row, column, path);
+}
+
 /** A new item with this title, before a line or at the end of `file`, at `indent` spaces. Nothing when no title was typed. */
 export function insertItem(model: Model, at: { beforeLine: number } | 'end', indent: number, typed: string, file = model.file): EditResult {
   const title = written(typed);

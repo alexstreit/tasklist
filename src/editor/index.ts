@@ -5,8 +5,8 @@ import { foldGutter, indentUnit } from '@codemirror/language';
 import { search, searchKeymap } from '@codemirror/search';
 import { Compartment, EditorState } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
-import { BlockType, EditorView, keymap, lineNumbers } from '@codemirror/view';
-import type { BlockInfo } from '@codemirror/view';
+import { setCell } from 'rows';
+import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import type { CodeMirrorBuffer } from '../buffer';
 import { ComposedBuffer } from '../buffer/composed';
 import type { FileLine, Model } from '../core';
@@ -47,7 +47,7 @@ export interface TextEditor extends Leader {
   update(model: Model): void;
   /** Put the cursor on a line of a file; reported back through `onCursorLine` as not editor-driven. */
   setCursorLine(at: FileLine): void;
-  /** The files with unsaved changes, for the segment headers. */
+  /** The files with unsaved changes, for the segments' mount lines. */
   showUnsaved(files: ReadonlySet<string>): void;
   destroy(): void;
 }
@@ -58,13 +58,8 @@ export interface TextEditorHooks {
   onSave(): void;
   /** The path of the file a plain buffer holds, until a model names it; '' for a new document. */
   root?: string;
-  /** A segment header's Open: make the file active. */
+  /** A segment's mount line's Open: make the file active. */
   onOpenFile?(path: string): void;
-}
-
-/** A line block's own line, without the header widgets above it. */
-function textBlock(block: BlockInfo): BlockInfo {
-  return Array.isArray(block.type) ? (block.type.find((b) => b.type === BlockType.Text) ?? block) : block;
 }
 
 /** CodeMirror's own .cm-content top padding, kept unless setMinBodyTop asks for more. */
@@ -77,7 +72,7 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
 
   /**
    * Line blocks cover wrapped lines; a folded line's block covers it and its folded lines, which
-   * have none. Each row is keyed by its file and its line in it; a segment header is no row.
+   * have none. Each row is keyed by its file and its line in it.
    */
   function measure(): RowLayout {
     const scrollTop = view.scrollDOM.scrollTop;
@@ -87,10 +82,7 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
       bodyTop: view.documentTop - parent.getBoundingClientRect().top + scrollTop,
       contentHeight: view.contentHeight - view.documentPadding.top,
       scrollTop,
-      rows: view.viewportLineBlocks.map((block) => {
-        const line = textBlock(block);
-        return { at: fileLineAt(state, block.from), top: line.top, height: line.height };
-      }),
+      rows: view.viewportLineBlocks.map((block) => ({ at: fileLineAt(state, block.from), top: block.top, height: block.height })),
     };
   }
   const layout = layoutPublisher(measure);
@@ -120,7 +112,7 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
       { key: 'Mod-Shift-z', run: () => (buffer.redo(), true) },
     ]),
     planEditor(),
-    composed ? segments((path) => hooks.onOpenFile?.(path)) : [],
+    composed ? segments({ open: (path) => hooks.onOpenFile?.(path), unmount: (at) => unmount(at) }) : [],
     // CodeMirror's own search and replace, over the whole text, composed or not (spec §4.5).
     search({ top: true }),
     keymap.of(searchKeymap),
@@ -135,6 +127,24 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
     }),
   ]);
   if (!composed) view.dispatch({ effects: setRootFile.of(hooks.root ?? '') });
+
+  // The last model, for Unmount: it clears the mount row's `mount=` cell through rows, in the row's own file.
+  let latest: Model | null = null;
+  /** Unmount on a segment's mount line (spec §4.5): one undo step; nothing while the model trails the file's text. */
+  function unmount(at: FileLine): void {
+    const read = latest?.files.get(at.file);
+    const node = read?.lines[at.line - 1];
+    const column = read?.doc.schema.mount?.column;
+    if (!composed || !read || node?.kind !== 'item' || !column) return;
+    const pieces = composed.pieces();
+    const text = pieces.runs
+      .filter((r) => !r.joint && r.file === at.file)
+      .map((r) => view.state.doc.sliceString(r.at, r.at + r.to - r.from))
+      .join('');
+    if (text !== read.doc.text) return;
+    const result = setCell(read.doc, node.row, column, null);
+    if ('edits' in result) composed.applyFile(at.file, result.edits, 'text-editor');
+  }
   cursorLine = fileLineAt(view.state, view.state.selection.main.head);
   hooks.onCursorLine(cursorLine, true);
   view.scrollDOM.addEventListener('scroll', layout.publish);
@@ -152,6 +162,7 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
       view.focus();
     },
     update(model) {
+      latest = model;
       showSyntax(view, model);
       // Every file's diagnostics, each in its own segment, and their fixes go to their files.
       if (composed) showModelDiagnostics(view, model, (file, edits) => composed.applyFile(file, edits, 'text-editor'));

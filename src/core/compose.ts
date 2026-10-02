@@ -41,6 +41,12 @@ export interface Composed {
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** Why a mount can't show its file (spec §2.12), as the mount diagnostics and the grid's mount picker both say it. */
+export const mountWhy = {
+  loop: (path: string) => `${path} mounts this file, directly or through other files`,
+  overlap: (path: string) => `${path} is already mounted elsewhere in the plan`,
+};
+
 /**
  * Joins the root file with what it mounts, depth first in document order. Every item node is a
  * fresh copy for this analysis, so a cached read is never changed and a model never changes
@@ -85,8 +91,8 @@ export function compose(rootPath: string, root: FileRead, mounts: Mounts, readFi
       return say('error', 'mount-outside', message(e));
     }
     node.mount = path;
-    if (chain.includes(path)) return say('error', 'mount-loop', `${path} mounts this file, directly or through other files; this mount shows nothing`);
-    if (files.has(path)) return say('warning', 'mount-overlap', `${path} is already mounted elsewhere in the plan; this mount shows nothing`);
+    if (chain.includes(path)) return say('error', 'mount-loop', `${mountWhy.loop(path)}; this mount shows nothing`);
+    if (files.has(path)) return say('warning', 'mount-overlap', `${mountWhy.overlap(path)}; this mount shows nothing`);
     const text = mounts.files.get(path);
     // Not gathered yet: it shows once it is, with nothing to report meanwhile.
     if (text === undefined) return;

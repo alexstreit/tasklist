@@ -320,7 +320,8 @@ Each plugin is a folder, and every modularity rule in VISION §3.1 is checked by
 src/
   core/                 parsePlan, readTree (with hours and done), compose (mounts), mountsOf, bindVocabulary, vocabulary,
                         fields and Pinnable, registry, stage runner, createAnalyzer,
-                        Workspace and Calendar interfaces, naive calendar, mintId (IDs for grid references)
+                        Workspace and Calendar interfaces, naive calendar, mintId (IDs for grid references),
+                        relativePath and mountRefusal (mounting from the grid, mounting.ts)
   plugins/
     estimate/           the roll-up stages and their fields; tree, table and TSV move here
     schedule/           the forward and backward passes and their fields; the schedule table and the Gantt, in renderers/
