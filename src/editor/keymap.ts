@@ -14,7 +14,7 @@ import type { KeyBinding } from '@codemirror/view';
 import { indent, moveDown, moveUp, outdent, toggleComment } from '../editing';
 import type { LineRange } from '../editing';
 import type { TextEdit } from '../buffer';
-import { piecesOf, refuse } from '../buffer/composed';
+import { piecesOf, placeInFile, refuse } from '../buffer/composed';
 import { commentOf } from './language';
 import { indentOf, lineKind } from './lines';
 import { subtreeEnd } from './subtree';
@@ -26,63 +26,82 @@ function selectedLines(state: EditorState): LineRange {
 }
 
 /**
- * In a composed text (spec §4.5), true when lines `fromLine` to `toLine` are in more than one
- * piece: a line operation over them would cross from one file into another, so it is refused,
- * and the status line says so.
+ * In a composed text (spec §4.5), the file the lines `range` covers are all in, with its own text
+ * and the range in its own lines: line operations act on that file's lines, not on composed
+ * lines. Null when the lines are in more than one file: the operation would cross from one file
+ * into another, so it is refused, and the status line says so. Undefined for a plain text.
  */
-function crosses(state: EditorState, fromLine: number, toLine: number): boolean {
+function inFile(state: EditorState, range: LineRange): { file: string; text: string; range: LineRange } | null | undefined {
   const pieces = piecesOf(state);
-  if (!pieces) return false;
-  const first = pieces.runFor(state.doc.line(fromLine).from);
-  for (let n = fromLine + 1; n <= toLine; n++) {
-    if (pieces.runFor(state.doc.line(n).from) === first) continue;
+  if (!pieces) return undefined;
+  const at = (n: number) => pieces.toFile(state.doc.line(n).from);
+  const first = at(range.fromLine);
+  for (let n = range.fromLine + 1; n <= range.toLine; n++) {
+    if (at(n).file === first.file) continue;
     refuse(state);
-    return true;
+    return null;
   }
-  return false;
-}
-
-/**
- * Runs a line operation on the text of the piece the lines are in (the whole document when it
- * isn't composed), so its edits stay inside that file's text and never touch a joint.
- */
-function onPiece(state: EditorState, range: LineRange, op: (text: string, range: LineRange) => TextEdit[]): TextEdit[] {
-  const pieces = piecesOf(state);
-  if (!pieces) return op(state.doc.toString(), range);
-  const r = pieces.runs[pieces.runFor(state.doc.line(range.fromLine).from)];
-  const from = r.at;
-  const to = r.at + (r.to - r.from);
-  const skip = state.doc.lineAt(from).number - 1;
-  return op(state.doc.sliceString(from, to), { fromLine: range.fromLine - skip, toLine: range.toLine - skip }).map((e) => ({ from: e.from + from, to: e.to + from, insert: e.insert }));
+  const doc = state.doc;
+  const text = pieces.runs
+    .filter((r) => !r.joint && r.file === first.file)
+    .map((r) => doc.sliceString(r.at, r.at + r.to - r.from))
+    .join('');
+  const lineIn = (offset: number) => {
+    let line = 1;
+    for (let i = text.indexOf('\n'); i !== -1 && i < offset; i = text.indexOf('\n', i + 1)) line++;
+    return line;
+  };
+  return { file: first.file, text, range: { fromLine: lineIn(first.offset), toLine: lineIn(at(range.toLine).offset) } };
 }
 
 function lineCommand(op: (text: string, range: LineRange, state: EditorState) => TextEdit[], userEvent: string): StateCommand {
   return ({ state, dispatch }) => {
     const range = selectedLines(state);
-    if (crosses(state, range.fromLine, range.toLine)) return true;
-    const edits = onPiece(state, range, (text, local) => op(text, local, state));
-    if (edits.length > 0) dispatch(state.update({ changes: edits, userEvent }));
+    const own = inFile(state, range);
+    if (own === null) return true;
+    if (own === undefined) {
+      const edits = op(state.doc.toString(), range, state);
+      if (edits.length > 0) dispatch(state.update({ changes: edits, userEvent }));
+      return true;
+    }
+    const edits = op(own.text, own.range, state);
+    if (edits.length > 0) dispatch(state.update({ ...placeInFile(state, own.file, edits), userEvent }));
     return true;
   };
 }
 
 /**
- * Moving lines leaves the selection's own text untouched, so the selection
- * has to be shifted past the line that jumped over it. In a composed text the
- * line jumped over must be in the same piece.
+ * Moving lines leaves the selection's own text untouched, so the selection has to be shifted past
+ * the line that jumped over it. In a composed text the move swaps with the previous or next line
+ * of the same file, wherever it is shown, and the segments recompose after it; at a file's first
+ * or last line it does nothing, as at the edge of a single file.
  */
 function moveCommand(direction: -1 | 1): StateCommand {
   return ({ state, dispatch }) => {
     const range = selectedLines(state);
-    const swappedLine = direction < 0 ? range.fromLine - 1 : range.toLine + 1;
-    if (swappedLine < 1 || swappedLine > state.doc.lines) return true;
-    if (crosses(state, Math.min(range.fromLine, swappedLine), Math.max(range.toLine, swappedLine))) return true;
-    const edits = onPiece(state, range, direction < 0 ? moveUp : moveDown);
+    const own = inFile(state, range);
+    if (own === null) return true;
+    if (own === undefined) {
+      const swappedLine = direction < 0 ? range.fromLine - 1 : range.toLine + 1;
+      if (swappedLine < 1 || swappedLine > state.doc.lines) return true;
+      const edits = (direction < 0 ? moveUp : moveDown)(state.doc.toString(), range);
+      if (edits.length === 0) return true;
+      const swapped = state.doc.line(swappedLine);
+      const shift = (swapped.text.length + 1) * direction;
+      const { anchor, head } = state.selection.main;
+      dispatch(state.update({ changes: edits, selection: { anchor: anchor + shift, head: head + shift }, userEvent: 'move.line' }));
+      return true;
+    }
+    // The empty text after a file's final newline is no line of it (spec §3.2): its last line has none below.
+    const last = own.text.split('\n').length - (own.text.endsWith('\n') ? 1 : 0);
+    if (direction > 0 && own.range.toLine >= last) return true;
+    const edits = (direction < 0 ? moveUp : moveDown)(own.text, own.range);
     if (edits.length === 0) return true;
-    const swapped = state.doc.line(direction < 0 ? range.fromLine - 1 : range.toLine + 1);
-    const shift = (swapped.text.length + 1) * direction;
+    const { changes, annotations } = placeInFile(state, own.file, edits);
+    const set = state.changes(changes);
+    // The selection's text stays; mapped so it stays on the lines that moved, not on those they jumped.
     const { anchor, head } = state.selection.main;
-    dispatch(state.update({ changes: edits, selection: { anchor: anchor + shift, head: head + shift }, userEvent: 'move.line' }));
+    dispatch(state.update({ changes: set, selection: { anchor: set.mapPos(anchor, direction), head: set.mapPos(head, direction) }, annotations, userEvent: 'move.line' }));
     return true;
   };
 }

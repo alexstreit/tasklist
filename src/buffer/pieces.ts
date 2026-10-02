@@ -291,7 +291,10 @@ export class PieceMap {
    * Places changes made to one file in its own offsets (sorted): each goes in the run it falls in,
    * and a change that spans pieces of the file is split around the segments between them.
    * `composed` gives each change's composed coordinates, before any of them. With `charAt`, the
-   * composed text, changes are moved off the boundaries as `settle` moves them.
+   * composed text, changes are moved off the boundaries as `settle` moves them, and a deletion that
+   * starts on the newline ending a piece, when another piece of the file follows the segment after
+   * it (`\nline`, as rows deletes a line), is moved one character on (`line\n`): the text it makes
+   * is the same, but it lands in the next piece, and no piece is left ending inside a line.
    */
   place(file: string, edits: readonly TextEdit[], charAt?: (pos: number) => string): { edits: FileEdit[]; composed: TextEdit[] } {
     const list = this.pieces().get(file);
@@ -311,7 +314,8 @@ export class PieceMap {
       out.push({ file, run, from, to, insert });
       composed.push(at);
     };
-    for (const { from, to, insert } of edits) {
+    for (const edit of edits) {
+      const { from, to, insert } = charAt ? this.rotate(list, edit, charAt) : edit;
       if (from === to) {
         const run = list.find((i) => this.runs[i].from <= from && from < this.runs[i].to) ?? list[list.length - 1];
         push(run, from, from, insert);
@@ -328,6 +332,20 @@ export class PieceMap {
       }
     }
     return { edits: out, composed };
+  }
+
+  /** A deletion in one file moved one character on, as `place` describes, or as it was. */
+  private rotate(list: readonly number[], edit: TextEdit, charAt: (pos: number) => string): TextEdit {
+    const { from, to, insert } = edit;
+    if (insert !== '' || to === from) return edit;
+    const i = list.findIndex((k) => this.runs[k].to === from + 1);
+    const next = this.runs[list[i + 1]];
+    if (i < 0 || !next || to >= next.to) return edit;
+    const at = (offset: number): string => {
+      const r = this.runs[list.find((k) => this.runs[k].from <= offset && offset < this.runs[k].to)!];
+      return charAt(r.at + offset - r.from);
+    };
+    return at(from) === '\n' && at(to) === '\n' ? { from: from + 1, to: to + 1, insert } : edit;
   }
 
   /**
@@ -382,7 +400,10 @@ export class PieceMap {
 /**
  * The change from one composed text to another, line by line, matching the lines that start at
  * the same place in the same file with the same text: segments come and go, and every line kept
- * stays untouched. In `before`'s coordinates.
+ * stays untouched. The root file's lines are matched first, and the rest only between them, so a
+ * segment that changes place moves around the root's lines rather than taking them with it: an
+ * undo entry on a root line (a mount row moved in the grid) then still maps to where it was. In
+ * `before`'s coordinates.
  */
 export function recomposition(before: { map: PieceMap; text: string }, after: { map: PieceMap; text: string }): TextEdit[] {
   const a = before.map.labels(before.text);
@@ -393,10 +414,31 @@ export function recomposition(before: { map: PieceMap; text: string }, after: { 
   const edits: TextEdit[] = [];
   let i = 0;
   let j = 0;
-  for (const [mi, mj] of [...matches(a, b), [a.length, b.length]]) {
+  for (const [mi, mj] of [...rootFirst(before.map.runs[0]?.file ?? '', a, b), [a.length, b.length]]) {
     if (mi > i || mj > j) edits.push({ from: starts[i], to: starts[mi], insert: lines.slice(j, mj).join('') });
     i = mi + 1;
     j = mj + 1;
   }
   return edits;
+}
+
+/** `matches` of two label lists, with the root file's lines matched first and the rest only in the gaps between them. */
+function rootFirst(root: string, a: readonly string[], b: readonly string[]): [number, number][] {
+  const prefix = `${root}\0`;
+  const ai = a.flatMap((label, i) => (label.startsWith(prefix) ? [i] : []));
+  const bi = b.flatMap((label, j) => (label.startsWith(prefix) ? [j] : []));
+  const anchors = matches(
+    ai.map((i) => a[i]),
+    bi.map((j) => b[j]),
+  ).map(([x, y]): [number, number] => [ai[x], bi[y]]);
+  const out: [number, number][] = [];
+  let i = 0;
+  let j = 0;
+  for (const [mi, mj] of [...anchors, [a.length, b.length] as [number, number]]) {
+    for (const [x, y] of matches(a.slice(i, mi), b.slice(j, mj))) out.push([i + x, j + y]);
+    if (mi < a.length) out.push([mi, mj]);
+    i = mi + 1;
+    j = mj + 1;
+  }
+  return out;
 }

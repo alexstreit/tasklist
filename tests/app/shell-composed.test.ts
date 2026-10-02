@@ -134,22 +134,86 @@ describe('the composed text editor', () => {
     expect(status()).toBe("Edits can't cross from one plan file into another.");
   });
 
-  it('refuses Alt+Down on a segment’s last row and on a mount row; inside a segment it works', async () => {
-    $('status').textContent = '';
-    cursorOn('Code    | 4d');
-    altDown();
-    expect(text()).toBe(composedText());
-    expect(status()).toBe("Edits can't cross from one plan file into another.");
-    cursorOn('Product A {#a}');
-    altDown();
-    expect(text()).toBe(composedText());
-    cursorOn('Spec    | 1d');
-    altDown();
-    await settle();
-    expect(text()).toBe(composedText(portfolioPlan, alpha, beta.replace('Spec    | 1d\nCode    | 4d\n', 'Code    | 4d\nSpec    | 1d\n')));
-    ctrlZ();
-    await settle();
-    expect(text()).toBe(composedText());
+  describe('line operations act on the lines of the cursor’s file (Task 37)', () => {
+    const master = lines(portfolioPlan);
+    /** The master with Product A and Product B swapped: beta's segment then follows B, and alpha's A. */
+    const swapped = () => [...master.slice(0, 5), master[6], beta, master[5], alpha, ...master.slice(7)].join('');
+    const altUp = () => key('ArrowUp', 38, { altKey: true });
+
+    it('Alt+Down on Product A swaps it with Product B, and the segments follow; one Ctrl+Z restores it', async () => {
+      cursorOn('Product A {#a}');
+      altDown();
+      await settle();
+      expect(text()).toBe(swapped());
+      // The cursor stays on the line it moved.
+      expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe(master[5].trimEnd());
+      ctrlZ();
+      await settle();
+      expect(text()).toBe(composedText());
+    });
+
+    it('Alt+Up on Product B gives the same', async () => {
+      cursorOn('Product B {#b}');
+      altUp();
+      await settle();
+      expect(text()).toBe(swapped());
+      ctrlZ();
+      await settle();
+      expect(text()).toBe(composedText());
+    });
+
+    it('a move inside a segment is as before', async () => {
+      cursorOn('Spec    | 1d');
+      altDown();
+      await settle();
+      expect(text()).toBe(composedText(portfolioPlan, alpha, beta.replace('Spec    | 1d\nCode    | 4d\n', 'Code    | 4d\nSpec    | 1d\n')));
+      ctrlZ();
+      await settle();
+      expect(text()).toBe(composedText());
+    });
+
+    it('Alt+Down on a segment’s last row does nothing, as on a single file’s last line', async () => {
+      $('status').textContent = '';
+      cursorOn('Code    | 4d');
+      altDown();
+      await settle();
+      expect(text()).toBe(composedText());
+      expect(status()).toBe('');
+    });
+
+    it('a selection spanning the master and a segment is refused, and says why', async () => {
+      $('status').textContent = '';
+      const from = text().indexOf('Product A {#a}');
+      view.dispatch({ selection: { anchor: from, head: text().indexOf('Design {#design}') } });
+      altDown();
+      expect(status()).toBe("Edits can't cross from one plan file into another.");
+      $('status').textContent = '';
+      key('Tab', 9);
+      await settle();
+      expect(text()).toBe(composedText());
+      expect(status()).toBe("Edits can't cross from one plan file into another.");
+    });
+
+    it('a mount row with its own master children moves without them, as in a single file', async () => {
+      // Kickoff becomes Product A's own child in the master; alpha's segment follows it.
+      const end = text().indexOf('due=2026-10-16') + 'due=2026-10-16'.length;
+      view.dispatch({ changes: { from: end, insert: '\n    Kickoff' } });
+      await settle();
+      const withChild = portfolioPlan.replace('due=2026-10-16\n', 'due=2026-10-16\n    Kickoff\n');
+      const m = lines(withChild);
+      expect(text()).toBe([...m.slice(0, 7), alpha, m[7], beta, ...m.slice(8)].join(''));
+      cursorOn('Product A {#a}');
+      altDown();
+      await settle();
+      // The raw line moves: Kickoff now comes first, and Product A, which has no children, is followed by alpha's segment.
+      expect(text()).toBe([...m.slice(0, 5), m[6], m[5], alpha, m[7], beta, ...m.slice(8)].join(''));
+      ctrlZ();
+      await settle();
+      expect(text()).toBe([...m.slice(0, 7), alpha, m[7], beta, ...m.slice(8)].join(''));
+      ctrlZ();
+      await settle();
+      expect(text()).toBe(composedText());
+    });
   });
 
   it('search finds Code in beta; replace-all changes only beta, and one undo restores it', async () => {

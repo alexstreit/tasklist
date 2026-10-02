@@ -17,6 +17,10 @@ const MESSAGES: [RegExp, (m: RegExpExecArray) => string][] = [
   [/^no task (.+)$/, (m) => `There's no task ${m[1]}.`],
   [/^column (.+) holds one reference$/, (m) => `The "${m[1]}" column holds only one task.`],
   [/^column (.+) takes no qualifier$/, (m) => `The "${m[1]}" column takes only task numbers, with nothing after them.`],
+  [/^file (.+) has no column (.+)$/, (m) => `${m[1]} has no column for ${m[2]}.`],
+  [/^file (.+) has no marker (.+)$/, (m) => `${m[1]} has no ${m[2]} marker.`],
+  [/^it would leave file (.+)$/, (m) => `That would move it out of ${m[1]}.`],
+  [/^the task is in another file$/, () => 'Dependencies between plan files come later.'],
   [/^the grid is still reading/, () => 'Still catching up with the last change. Try again in a moment.'],
 ];
 

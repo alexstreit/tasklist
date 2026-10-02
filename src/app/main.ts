@@ -6,8 +6,7 @@
 // as segments (spec §4.5); the file's own buffer is the record of its text.
 
 import { CodeMirrorBuffer } from '../buffer';
-import type { PlanBuffer } from '../buffer';
-import { ComposedBuffer, fileBuffer } from '../buffer/composed';
+import { ComposedBuffer } from '../buffer/composed';
 import type { Mount } from '../buffer/pieces';
 import { mountsOf, Notice, unmetReason } from '../core';
 import type { Exporter, FileLine, ItemNode, Model, Renderer, Workspace } from '../core';
@@ -368,12 +367,6 @@ function editorBuffer(file: OpenFile<CodeMirrorBuffer>): CodeMirrorBuffer {
   return view;
 }
 
-/** The grid edits the root file's rows: through the composed view's history, in a folder. */
-function gridBuffer(file: OpenFile<CodeMirrorBuffer>): PlanBuffer {
-  const view = editorBuffer(file);
-  return view instanceof ComposedBuffer ? fileBuffer(view, view.root, file.buffer) : view;
-}
-
 /** Reports what a save did; true when nothing is left unsaved by it. */
 function reportSave(file: OpenFile, result: SaveResult): boolean {
   if (result.outcome === 'cancelled') return false;
@@ -476,7 +469,13 @@ const editors = [
     mount: (): PlanEditor =>
       mountTextEditor(editorBuffer(files.active()), editorHost, { onCursorLine, onSave: () => void save(), root: files.active().path ?? '', onOpenFile: (path) => openFile(path) }),
   },
-  { id: 'grid', label: 'Grid', mount: (): PlanEditor => mountGrid(gridBuffer(files.active()), editorHost, { onCursorLine, onOpenFile: openFile }) },
+  {
+    id: 'grid',
+    label: 'Grid',
+    // In a folder the grid shows the composed view, every file in it, and edits each in its own file (spec §4b.1).
+    mount: (): PlanEditor =>
+      mountGrid(editorBuffer(files.active()), editorHost, { onCursorLine, onOpenFile: (path) => openFile(path), status: (message) => (status.textContent = message) }),
+  },
 ];
 // Which editor was last used. A per-viewer convenience: it may be unavailable
 // (private browsing), and nothing depends on it.
@@ -523,6 +522,8 @@ function mountEditor(kind: (typeof editors)[number]): void {
   if (!dirty) editor.update(model);
   connect();
   renderEditorTabs();
+  // The new editor marks the files with unsaved changes too (the segments' headers).
+  updateTitle();
 }
 
 // The toolbar's file buttons: the original three, and those this shell adds beside them.

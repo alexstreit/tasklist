@@ -131,7 +131,7 @@ describe('the portfolio', () => {
     expect((folder.tree.teams as Record<string, string>)['alpha.plan']).toBe(alpha);
   });
 
-  it('the problems list names each file; a mounted file’s problem offers no fix and opens its file', async () => {
+  it('the problems list names each file; a mounted file’s problem focuses its row in the grid (Task 37)', async () => {
     // A row with an invalid estimate in the master, and one in alpha's unsaved text: each has the
     // invalid value, and no duration to schedule.
     view.dispatch({ changes: { from: view.state.doc.length, insert: 'Extra | 1x\n' } });
@@ -154,12 +154,11 @@ describe('the portfolio', () => {
     ]);
     const mounted = list[4];
     expect(mounted.dataset.file).toBe('teams/alpha.plan');
-    expect(mounted.querySelectorAll('button.fix')).toHaveLength(0);
     mounted.querySelector<HTMLButtonElement>('button.problem')!.click();
     await settle();
-    expect(document.title).toBe('● teams/alpha.plan — Plan');
-    // The grid's own list now shows alpha's problem, with the root file's group only.
-    expect([...document.querySelectorAll('.problems li .where')].map((w) => w.textContent)).toEqual(['Test', 'Test']);
-    expect(document.querySelectorAll('.problems li.problem-file')).toHaveLength(0);
+    // The master stays active, and the grid's place is on Test, in alpha's segment.
+    expect(document.title).toBe('● portfolio.plan — Plan');
+    const focused = document.activeElement!.closest('tr')!;
+    expect([focused.dataset.file, focused.querySelector('td.title')!.textContent]).toEqual(['teams/alpha.plan', 'Test']);
   });
 });

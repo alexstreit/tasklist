@@ -1524,7 +1524,7 @@ Expected, in work hours, with the displayed dates:
 
 - **`deleteRow` without the option is unchanged.** The task said "today's refusal stands" and that Task 24's message "goes", but `deleteRow` never refused a referenced row: it deleted it and left an `unresolved-ref`. Its one nearby refusal (the last anchor while other rows set `id=` by name) stays in both modes, and its message is reworded to say what it is. The grid confirms whenever other rows refer to the row, so a grid delete never leaves a dangling reference. The deliverables above are corrected.
 - **A third `setAnchor` refusal, mirroring `deleteRow`'s:** the file's first anchor, in a file without `key`, while a row has a cell written `id=…`. Without identity that cell reads as text (`owner` = `id=x`); with it, it becomes the row's key, changing another row's meaning. The generators contain `id=a`, so the "every other row unchanged" property found it, and it keeps that property with no exemption. In the grid, a ref edit needing such an anchor is refused as a whole: "Another task has a cell written as id=…, which would start to mean a task ID. Change that cell first." It counts the target row's own `id=` cell too, since that would also change.
-- **The confirm names the column,** since ref cells are generic: "Delete Review? API and UI refer to it in deps; those references will be removed.", and "… API and Docs in deps, UI and Docs in related refer to it …" across columns. One reference reads "UI refers to it in deps; that reference will be removed."
+- **The confirm names the column,** since ref cells are generic: "Delete Review? API and UI refer to it in deps; those references will be removed.", and "… API and Docs in deps, UI and Docs in related refer to it …" across columns. One reference reads "UI refers to it in deps; that reference will be removed." (Changed by Task 37: on a mounted row the question names its file, "Delete API from alpha.plan? UI refers to it in deps; …", and a mounted task deleted at once is reported on the status line, "Deleted API from alpha.plan."; a mount row always asks, "Delete Product A? teams/alpha.plan stays as it is; it just won't be shown here.", followed by the references when there are any. An outline number typed in a ref cell that belongs to another plan file is refused: "Dependencies between plan files come later.")
 
 **Decisions taken** (by me, within the task):
 
@@ -1930,7 +1930,7 @@ Where the numbers come from:
 - The mount diagnostics.
 - Portfolio totals and schedule: the tree, table, schedule table, pin review and TSV export show the whole composed tree, and the totals, including the grid's total row and a mount row's roll-up in the grid, include mounted plans.
 - A dependency on a parent row is scheduled (it waits for the whole subtree) instead of being ignored with a warning. A row that depends on its own ancestor now gets `schedule-dep-cycle`.
-- The grid's problems list groups by file, each group headed by its path when more than one file has problems; a mounted file's entry has no fix buttons and opens its file.
+- The grid's problems list groups by file, each group headed by its path when more than one file has problems; a mounted file's entry has no fix buttons and opens its file. (Changed by Task 37: its fixes are offered and apply in place, and clicking it focuses its row in the grid.)
 - **Temporary, until Task 36:** following an editor, the Gantt shows only the root file's rows; a mount row's bracket spans its whole plan. Standalone (no leader), it shows every row. (Ended by Task 36.)
 - Mounted files are read again on window focus and Refresh.
 - Every plan and schedule file has an implicit `mount` column, from the profiles. A file that declares its own column named `mount` with another type now gets rows' `invalid-mount-column` (A13).
@@ -1948,7 +1948,7 @@ Where the numbers come from:
 1. **Cells through an accessor.** `ItemNode.fields` stays in its own file's column order, with its own spans. Core adds `model.field(node, i)`: the node's field for root column `i` through the mapping, or null; for a root row it is the identity. Estimate, schedule's `spanOf` and every view use it. A lint rule (`no-restricted-syntax` on `.fields`, not a call) holds plugins, their renderers and exporters, `src/views/` and `src/ui/` to it, with probes in `tests/plugins/lint.test.ts`. PLUGINS.md §4.
 2. **Two passes, one owner per column.** By role first: each root column with a role takes the mounted column bound to that role. Then by name, among the mounted columns not taken. A mounted column maps to at most one root column, so no total counts a value twice; a blank root column has no diagnostic. Tested with the example (root `est` effort and `work` without a role; the team's `work` is its effort: root `work` is blank). PLUGINS.md §6.
 3. **`ctx.diagnose(node, d)`.** Core sets `d.file` from the node; null is a document-level diagnostic on the root file. A diagnostic's line and spans are in its node's own file. Every call site in estimate and schedule changed. Tested: a milestone with an estimate in a mounted file is reported on its line in that file, with its file, and nothing lands on the root's line of the same number. PLUGINS.md §5.
-4. **Mounted problems open their file.** An entry from a mounted file names its file, shows no fix buttons, and clicking it makes that file active with the cursor on the row, where its fixes work as usual. The root's problems come first, then each mounted file's in composed order. **Task 37** will offer these fixes in place, once mounted rows can be edited in the grid.
+4. **Mounted problems open their file.** An entry from a mounted file names its file, shows no fix buttons, and clicking it makes that file active with the cursor on the row, where its fixes work as usual. The root's problems come first, then each mounted file's in composed order. **Task 37** will offer these fixes in place, once mounted rows can be edited in the grid. (Changed by Task 37: fixes in place, and clicking an entry focuses its row in the grid.)
 
 **Decisions taken** (by me; settled by the nearest existing rule, and stated before coding with no objection):
 
@@ -1958,7 +1958,7 @@ Where the numbers come from:
 - **What `analyze` is told.** `files` (text by resolved path, null when unreadable) and the workspace's `resolve`. The shell passes them only when the workspace can list files; without `files`, every mount gets `mount-needs-folder`. A path not gathered yet shows nothing and has no diagnostic, so `mount-missing` doesn't flash while files are read.
 - **Order.** "Document order" is composed order: within each file, and a mount row's own children before what it mounts. The mount that closes a loop is the first, in that walk, whose target is already on its own path. A `#part` mount gets only `mount-part-unsupported`; in the single-file workspace any other gets only `mount-needs-folder`.
 - **Gathering also runs on focus and Refresh** (VISION §6). A file is read once while it stays mounted, even when other mounts come and go, which is stronger than "while its path set is unchanged".
-- **Editors index only the root file's rows** (the grid, its levels and ref cells, the text editor's done lines, the cursor), since a mounted row's line is in another file. So `2.1` typed in a ref cell for a mounted row is "There's no task 2.1."; and the text editor and the grid's inline marks and settings banner show only the root's diagnostics. (Changed by Task 36: the text editor shows every file's rows and diagnostics, and its cursor names its file; the grid is as it was.)
+- **Editors index only the root file's rows** (the grid, its levels and ref cells, the text editor's done lines, the cursor), since a mounted row's line is in another file. So `2.1` typed in a ref cell for a mounted row is "There's no task 2.1."; and the text editor and the grid's inline marks and settings banner show only the root's diagnostics. (Changed by Task 36: the text editor shows every file's rows and diagnostics, and its cursor names its file; the grid is as it was. Changed by Task 37: the grid shows and edits every composed file's rows, its inline marks show every file's diagnostics, ref cells resolve outline numbers within the row's own file, and one in another file is refused with "Dependencies between plan files come later."; the settings banner stays the root's.)
 - **The Gantt's natural layout** gives a mounted row's file as `at.file`, which the `RowLayout` comment anticipated ("can gain a file"); a leader's rows have none and mean the root file. (Changed by Task 36: `file` is always present.)
 - **Severities follow the task.** VISION §6 said "a missing file or a mount loop is an error"; it now says what the task does: a missing file is a warning (`mount-missing`), and a loop or a path outside the folder is an error.
 
@@ -2033,6 +2033,7 @@ Also within the task, not asked:
   - an edit on a joint is refused.
 
   — `tests/app/shell-composed.test.ts` (the first two, with the status line, and Alt+Down on a mount row); the joint in `tests/buffer/composed.test.ts` and `tests/buffer/pieces.test.ts`.
+
 - [x] Search finds `Code` in beta. Replace-all `Code` with `Coding` changes only beta, and one undo restores it. — `tests/app/shell-composed.test.ts`, through `@codemirror/search`'s commands; also a match opening a folded segment.
 - [x] An unsaved edit made in alpha's own buffer shows in the composed view. An edit made in the composed view reaches alpha's own buffer without entering its undo history. — `tests/app/shell-composed.test.ts`: made in alpha's own view (its history), and Ctrl+Z in alpha's view leaving the master's edit; on the buffers alone in `tests/buffer/composed.test.ts`.
 - [x] Typing `mount=teams/beta.plan` on a new master row composes beta in. Undo removes the segment and the cell together. — `tests/app/shell-composed.test.ts`. Beta is already mounted by Product B, where it would be an overlap, so the test first deletes Product B's mount (its segment goes), then types the new row.
@@ -2044,7 +2045,7 @@ Also within the task, not asked:
 - [x] Clicking Code in the schedule table moves the cursor to Code in beta's segment. — `tests/app/shell-composed.test.ts`; Design in the tree in `tests/app/shell-portfolio.test.ts`.
 - [x] Ctrl+S saves the master and beta after an edit in each, each with the on-disk check, and leaves alpha alone if alpha wasn't changed. — `tests/app/shell-composed.test.ts`: with beta changed on disk, saving asks for beta, and Keep writes only the master; then both are written.
 - [x] Every existing test passes. In particular, a file without mounts behaves exactly as before. Rewritten tests are listed in the notes. — 3865 tests (2133 before; 1305 of the new ones are seeded property cases); typecheck, lint and `vite build` clean.
-- [ ] **Browser pass in Edge on `examples/portfolio/`** and a real folder: pending review (there is no browser here). Also check there: the header's Open button, the search panel's look in both themes and in a single file, and that segment padding lines up under the mount row in the editor's font.
+- [x] **Browser pass in Edge on `examples/portfolio/`** and a real folder: pending review (there is no browser here). Also check there: the header's Open button, the search panel's look in both themes and in a single file, and that segment padding lines up under the mount row in the editor's font.
   - typing in segments;
   - a refused edit across a boundary;
   - search and replace across files;
@@ -2066,7 +2067,7 @@ Also within the task, not asked:
 
 1. **Every file shown in a folder goes through its own composed view.** It has no segments when the file mounts nothing, and it holds the file's one undo history. The file's own buffer is the store's record of its text, and gets every change as `remote`. The single-file workspace is unchanged. Task 34's notes say so.
 2. **A segment goes after the mount row's subtree extent as §4.2 defines it** (`subtreeEndLine`, now in `src/editing/lines.ts`, which folding uses too), so a comment indented under the last child stays with it.
-3. **Line operations act on composed lines.** Alt+Down on a mount row is refused, since its next line is its segment's. Reordering projects is done in the grid (Task 37) or by cut and paste.
+3. **Line operations act on composed lines.** Alt+Down on a mount row is refused, since its next line is its segment's. Reordering projects is done in the grid (Task 37) or by cut and paste. (Changed by Task 37, after its browser pass: line operations act on the lines of the file the cursor is in. A move swaps with the previous or next line in that file and the segments recompose; on a file's first or last line it does nothing; only a selection spanning two files is refused.)
 4. **Segment lines are padded to the mount row's own indent plus one level** (4 characters); a nested segment adds its mount row's padding.
 5. **Ctrl+S saves the root and every file in the composed text with unsaved changes**, wherever the change was made.
 6. **Core records the segment on the row:** `ItemNode.composes`, set only when the file is composed under it. The shell never repeats core's rules.
@@ -2078,12 +2079,15 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
 
 **Decisions taken** (by me, within the task; please check):
 
+- **Changed by Task 37**, found when the grid moved a mount row with Alt+Down and one Ctrl+Z didn't bring it back:
+  - **`PieceMap.place`:** a deletion that starts on the newline ending a piece, when another piece of the same file follows the segment after it (`\nline`, as rows deletes a line), is moved one character on (`line\n`). Before, it was split around the segment and left the piece ending inside a line, and its undo entry was lost. Tested by hand and over 200 seeds in `tests/buffer/pieces.test.ts`.
+  - **`recomposition`:** the root file's lines are matched first, and the other lines only between them, so a segment that changes place moves around the root's lines. Before, the line diff could carry a root line (the moved mount row) with a segment, and an undo entry on it collapsed. Tested in `tests/buffer/pieces.test.ts`.
 - **Settling changes off the boundaries** (`PieceMap.settle`). This was found by the shell test, not foreseen. Alt+Down on a segment's second-last line deletes the last line up to the master's next line start; its undo then re-inserts that line exactly on the boundary, where position alone gives it to the master. Undo and redo skip transaction filters, so the fix comes earlier: a change that ends where another file's piece starts, taking or adding whole lines at its piece's end, is moved back one character before it enters the history. That's in a transaction filter for typed edits, and in `place` for `applyFile`. The text is the same, but the undo then lands inside the piece. Seeded tests check that the text and the file stay the same. Selecting a segment's last line and deleting it, then undoing, is covered by the same rule. An undo of an edit that emptied a segment's file entirely can still go astray; that is written up with the known limitation.
 - **The refusal is a change filter**, which drops a transaction's changes and maps its selection back, so nothing at all happens.
 - **Line operations run on the piece's own text** (`onPiece` in the keymap), after the crossing check. Their edits never reach past the piece, so moving the last line of a file without a final newline works, instead of touching the joint.
 - **A file a composed view shows is opened in the store** (`OpenFiles.adopt`) with the text the analysis read, so its edits have a buffer. It stays open after it's unmounted, like any file opened this session; the panel marks it unsaved when it is.
 - **Search is in every text editor**, composed or not, so it behaves the same everywhere (asked for after review). The single-file workspace's Ctrl+F now opens CodeMirror's panel instead of the browser's find: a visible change there, the one exception to "a file without mounts behaves exactly as before".
-- **The grid edits through the composed view** (`fileBuffer`): its text and changes are the root file's own buffer's, its edits go through `applyFile`, and its undo is the composed history. So in a folder both editors share one history, as the task's `applyFile` line implies. The grid ignores a cursor or hover line of another file until Task 37.
+- **The grid edits through the composed view** (`fileBuffer`): its text and changes are the root file's own buffer's, its edits go through `applyFile`, and its undo is the composed history. So in a folder both editors share one history, as the task's `applyFile` line implies. The grid ignores a cursor or hover line of another file until Task 37. (Changed by Task 37: the grid shows the composed view itself, every file's rows, and writes each row with `applyFile` in its own file; `fileBuffer` is gone.)
 - **A file's own change that would join two files' lines** (possible only from another view with different segments) rebuilds the composition line by line instead of being placed.
 - **Each recompose installs the freshly built map**, even when the text doesn't change, so a mount row's padding follows its indentation.
 - **Small API additions:** `FileLine` in `src/core/types.ts`; `PlanEditor.showUnsaved?(files)` for the headers, called whenever the title updates; `TextEditorHooks.root` (a plain buffer's file until a model names it) and `onOpenFile`. The `CodeMirrorBuffer` constructor takes extensions, and its `state`, `as` and `dispatch` are protected, for the composed buffer, which extends it.
@@ -2160,12 +2164,231 @@ Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption 
 
 ---
 
-## Task 37 — Composed grid _(placeholder)_
+## Task 37 — Composed grid
 
-**Serves:** M3b. Mounted rows can be edited in the grid, through the rows edit API against each file's own parse.
+**Serves:** M3b (VISION §6). The grid shows and edits the whole composed plan. Mounted rows are edited where they appear, and every edit goes through the rows edit API against the row's own file, written with `applyFile`. After this task a PMO can run the portfolio from the grid alone. M3b is then complete, apart from Gantt zoom (Task 38).
 
-- The mount row has a file badge and an Unmount action, which clears the `mount=` cell.
-- Delete confirms name the file: deleting a mount row says the file stays as it is, and deleting a mounted task says which file it's removed from.
+**Deliverables**
+
+- **Rows.** In a folder workspace, the grid shows the composed lines in composed order, from the piece map:
+  - the root's rows;
+  - each mounted file's rows, including its comment and blank lines;
+  - a mounted file's frontmatter as one collapsed, read-only row, like the root's.
+
+  Each row carries its `{ file, line }`.
+  - **Look:** mounted rows are shaded by mount depth, as in the text editor. Titles are indented at the row's composed tree depth, and outline numbers run across the whole plan, as in the views.
+  - **Alignment:** the grid publishes its layout keyed `{ file, line }`, so a following Gantt draws every row.
+  - **One file:** with no mounts, or in the single-file workspace, the grid behaves exactly as it does today.
+
+- **Cell edits on mounted rows.** Each edit calls the rows edit API against the row's own file's document (`model.files`), with `withRepairs` for that file, and is written with `applyFile`.
+  - The grid's columns are the root's. A cell writes to the column in the row's own file that the root column maps to, by role and then by name (`model.field`).
+  - A root column that maps to nothing in that file shows blank. Typing into it is refused: "_alpha.plan_ has no column for **owner**." Adding columns comes with the settings editor.
+  - **Markers.** A toggle writes the marker by name in the row's file. A file that doesn't declare the marker refuses it: "_beta.plan_ has no milestone marker."
+  - **Dependencies on mounted rows** resolve outline numbers within the row's own file. Missing IDs are minted in that file. An outline number that belongs to another file is refused: "Dependencies between plan files come later."
+  - **Comment and blank rows** of a mounted file are edited as raw lines, as today, written with `applyFile`.
+  - Every refusal leaves the cell as it was and shows its plain note, as today.
+- **Structure operations.** They work within the row's own file, through the rows edit API: insert above, delete, indent, outdent, move up, move down.
+  - **Insert above** a mounted row inserts into that row's file, at its level.
+  - **Outdent** of a mounted root is refused: "That would move it out of _alpha.plan_."
+  - **Move up and down** swap with a sibling in the same file only. They are disabled when the only neighbour is in another file, or is the segment's edge.
+  - **The new-task row** at the end of the grid adds to the root file, as now.
+  - The toolbar's enabled states follow these rules.
+  - **Moving a mount row** with Alt+Up/Down swaps it with its sibling in the root, and the segments recompose. This is how projects are reordered in the master.
+- **Mount rows:**
+  - The file badge's **Open** makes that file active, as in Task 35.
+  - **Unmount** is an action on the mount row (a toolbar button, and a menu on the badge). It clears the `mount=` cell, so the segment goes and the file on disk is untouched. It is one undo step, with no confirm.
+  - **Deleting a mount row** asks first: "Delete _Product A_? `teams/alpha.plan` stays as it is; it just won't be shown here." Its own children are promoted, as with any delete.
+- **Deleting a mounted task** needs no confirm, as with any delete without references, and is one undo step. The status line names the file: "Deleted _API_ from _alpha.plan_." Task 31's reference confirm also names the file when the row is mounted.
+- **Problems list and settings banner:**
+  - **Fixes in place.** Fix buttons now appear on entries from mounted files and apply with `applyFile`. Clicking an entry focuses its row in the grid, replacing Task 35's switch to the file. The grouping by file stays.
+  - **Banner.** The settings banner stays the root's. A mounted file's settings diagnostics appear in its group in the problems list, with their fixes.
+- **Speed.** Measure a committed cell edit on a ten-file, 5,000-line composition, in jsdom, the median of a few runs. If a full rebuild of the grid takes more than 150 ms there, stop and report the numbers with options (reusing unchanged rows, or virtualising) before choosing. Below that, note the figure and continue.
+- **Spec and docs:** plan-format-spec §4b (composed rows, the refusals, Unmount, the delete wording) and §3.7 if `applyFile` changes. Add "changed by Task 37" lines to the notes of Tasks 31 and 35.
+
+**Acceptance criteria** (on `examples/portfolio/`)
+
+- [x] The grid shows the master's rows, then alpha's and beta's rows in composed order, with outline numbers 1 to 3 and their children as in Task 35's table, and shading on mounted rows. With no mounts the grid is unchanged (existing tests). — `tests/app/shell-grid-composed.test.ts`, the first case: every body row by file, line and outline number, the `mounted` and `segment-depth-1` classes, titles indented at their composed depth, alpha's and beta's settings rows and the badge. Every existing grid test passes unchanged.
+- [x] Editing Build's estimate to `4d` in the grid writes `alpha.plan`'s text only. Product B moves to 64–96, which is Task 35's hand-worked value. One Ctrl+Z restores it. — the second case: Build reads Fri 9 – Wed 14 Oct and Product B Thu 15 – Tue 20 Oct in the schedule table, alpha alone is marked unsaved, nothing is written, the composed text differs only in alpha's line, and one Ctrl+Z gives back Wed 14 – Mon 19 Oct and the original text.
+- [x] Beta's `est` cell writes beta's `work` column, which is matched by role. Beta's `owner` cell writes beta's `owner`, which is matched by name. Typing into beta's `notes` cell is refused with "_beta.plan_ has no column for **notes**", since beta declares no notes column. — the third case: `Spec    | 2d | sam` in beta; a double-click and a printable key on the notes cell both open no editor and show "beta.plan has no column for notes.".
+- [x] The milestone toggle on a beta row is disabled with its tooltip, and Space gives the note, because beta uses the plan profile. Toggling done on a beta row writes `~` in `beta.plan`. _(Reworded after review: "is refused" became "is disabled with its tooltip, and Space gives the note".)_ — the fourth case: "beta.plan has no milestone marker." as the cell's tooltip and as Space's note; alpha's toggle is enabled; done writes `~Spec`.
+- [x] Dependencies: retyping Build's `deps` as `1.1` writes `#design` in alpha, reusing the anchor that's already there. Typing `2.1` there (Spec, which is in beta) is refused. — the fifth case. The cell already shows `1.1`, and committing it unchanged writes nothing (§4b.2), so the test clears the cell first, then types `1.1`: alpha's text is exactly as it was, `deps=#design` with no new anchor. `2.1` gives "Dependencies between plan files come later.", and so does `1.1` typed in Tradeshow's deps, a root row.
+- [x] Structure:
+  - insert above Spec inserts into beta;
+  - outdenting Design is disabled with its tooltip, and its key gives the note; _(reworded after review: it was "is refused")_
+  - Move up on Code swaps it with Spec within beta;
+  - Move up on Spec is disabled;
+  - Alt+Down on Product A swaps it with Product B in the master, and the segments follow.
+
+  — cases six to nine: `Review` before Spec in beta, then undone; Outdent disabled with "That would move it out of alpha.plan." as its tooltip and as Alt+Shift+Left's note; Code above Spec in beta, undone; Move up disabled on Spec with no tooltip; Alt+Down gives the master Product B then Product A, beta's segment after Product B and alpha's after Product A, outline numbers 1 Product B … 2.2 Build, and one Ctrl+Z restores the text exactly (this needed the two fixes to Task 36's buffer below).
+- [x] Unmount on Product B clears its cell: beta's rows leave the grid, and `beta.plan` is unchanged. One undo brings them back. — the Unmount case, from the toolbar; after the browser pass, a later case does it from alpha's header, and another opens the file from the header and from the badge.
+- [x] Deleting Product A asks with the wording above. Cancel changes nothing. Apply removes the row only. — the twelfth case. Product A is referred to by Product B's `deps=#a`, so the question goes on as Task 31's does: "Delete Product A? teams/alpha.plan stays as it is; it just won't be shown here. Product B refers to it in deps; that reference will be removed." Apply removes the row and that reference (decision 2 below), and alpha's file is untouched.
+- [x] A diagnostic in `beta.plan` (for example `4 hours` typed into a work cell) shows on that cell. Its entry in the problems list sits under beta's group and focuses the row, and its fix applies to `beta.plan`. — the fourteenth case. `4 hours` is typed in the text editor, since the grid normalises it to `4h`. Beta's work column also loses its units there, which gives a settings diagnostic with a fix. The cell has the warning, every entry names beta (it is the only group, so it has no heading, as in Task 35), clicking the warning focuses the cell, the settings banner stays hidden (it is the root's), and "Add unit=h hpd=8 dpw=5" puts beta's settings back.
+- [x] The Gantt, following the grid, draws all rows aligned, using injected measurements as in Task 29. — `tests/align/grid-composed.test.ts`: the grid's layout has all fourteen body rows in composed order, keyed by file and line, and the Gantt draws the seven item rows at their tops.
+- [x] The speed figure is recorded, or the task stopped to ask. — It stopped and asked (4,457 ms for a full rebuild); reusing rows was chosen. Figures under Timing below.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 4,090 tests (3,866 before); typecheck, lint and `vite build` clean.
+- [ ] **Browser pass in Edge, on `examples/portfolio/` and a real folder:** pending review (there is no browser here). Also check there: the headers' look in both themes, and the shading's left border on mounted rows.
+  - edit cells in two team files from the master;
+  - reorder two projects;
+  - Unmount, then undo;
+  - delete a mount row;
+  - apply a fix to a team file from the problems list;
+  - check grid and Gantt alignment;
+  - save.
+
+**Visible changes:**
+
+- In a folder, the grid shows every file the active file mounts, in composed order:
+  - mounted rows shaded, with a border on the left;
+  - each mounted file's settings as one collapsed row;
+  - titles indented at their depth in the whole plan, and outline numbers across it.
+- **Editing in place.** Mounted rows' cells, markers, dependencies and structure operations edit their own file, and the file panel marks it unsaved.
+- **Refusals and disabled controls** that name the file:
+  - "beta.plan has no column for notes.";
+  - the milestone toggle disabled with "beta.plan has no milestone marker.";
+  - Outdent disabled on a mounted file's root with "That would move it out of alpha.plan.";
+  - the keys give the same notes.
+- "Dependencies between plan files come later." for an outline number in another file, from any row; it was "There's no task 2.1." before.
+- **The file badge** on a mount row's title, with a menu: Open and Unmount. Unmount is also a toolbar button. _(Changed after the browser pass: the menu moved to the header below, and the badge opens its file, as in the views.)_
+- **Headers for mounted files** _(added after the browser pass)_:
+  - A header row above each mounted file's rows spans every column. It has the file's name (as messages name it), ● when the file has unsaved changes, and Open and Unmount buttons.
+  - It is not focusable or editable, the keyboard's moves skip it, and the row layout publishes it as `at: null`, so a following Gantt leaves its row empty.
+  - Mounted rows are shaded with the text editor's segment tokens, `--mounted-row-bg` and `--segment-border` from `theme.css`, at every depth.
+  - The hover and cursor bands now show over that shading; before, the shading hid them on mounted rows.
+  - Switching editors now marks unsaved files at once: the shell tells a newly mounted editor which files are unsaved.
+- **Deletes:**
+  - a mount row asks first;
+  - a mounted task's delete names its file on the status line;
+  - the reference question names the file of a mounted row.
+- **The problems list:** fixes for mounted files' problems in place, and a click focuses the row instead of opening the file. Inline marks show every file's diagnostics.
+- **The Gantt** following the grid draws every row of every plan.
+- **Moving a mount row** reorders projects, and one undo puts them back.
+- **Line operations in the composed text editor** _(added after the browser pass; this replaces Task 36's decision 3)_:
+  - Alt+Up/Down, and Tab and Ctrl+/ on a selection, act on the lines of the file the cursor is in, not on composed lines.
+  - A move swaps with the previous or next line in that file, and the segments recompose: Alt+Down on Product A gives Product B, beta's segment, Product A, alpha's segment.
+  - Moves stay raw: the line, not its subtree.
+  - On a file's first or last line a move does nothing, without a message; before, Alt+Down on a segment's last row or on a mount row was refused with "Edits can't cross from one plan file into another."
+  - Only a selection spanning two files is refused.
+  - When a segment comes in at the start of the cursor's line, the cursor stays on that line, after the segment.
+- **The single-file grid** rebuilds much faster: a 5,000-line file took about 3.3 s per rebuild in jsdom, and a commit is now under 150 ms.
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **The column mapping is visible to editors.** Core adds `Model.column(node, index)`: the row's own declared column for a root column, or null. `field` stays as it was. Plan spec §3.2, PLUGINS.md §4 and §6.
+2. **Deleting a mount row others refer to** asks one combined question, the mount-row sentence and then Task 31's, and Apply removes the row and those references. "Apply removes the row only" means it leaves the file alone.
+3. **Wording.**
+   - A file is named by its last path segment, unless two files in the composed plan share it; those are named by their path in the folder (`tests/grid/file-names.test.ts`, with two `plan.plan` files).
+   - The mount-row confirm names the mount's path.
+   - Messages are plain text; the task's italics and bold were emphasis.
+   - A mounted row's reference question: "Delete API from alpha.plan? UI refers to it in deps; that reference will be removed."
+4. **The status line** is a `GridHooks.status` hook. Only a mounted task's delete reports: "Deleted API from alpha.plan.". A root task's delete stays silent, as before.
+5. **The badge and Unmount.** _(Changed after the browser pass: the badge's menu moved to a header row above each mounted file's rows, with Open and Unmount; the badge now opens its file, as in the views; the toolbar's Unmount stays.)_
+   - The grid's mount rows get the file badge. Clicking it opens a menu with Open and Unmount.
+   - The toolbar's Unmount is enabled on any row with a `mount=` cell: a mount that shows nothing, and a nested mount row in a team file, which is cleared in its own file.
+   - Unmount is `setCell(doc, row, mountColumn, null)`, so rows doesn't change.
+6. **An outline number in another file is refused from any row**, root rows included.
+7. **Controls follow §4b.5** _(changed after review)_: no control is enabled so that its refusal can show.
+   - Outdent on a mounted root and a milestone toggle on a file without the marker are disabled, with a tooltip saying why.
+   - Their keys give the same note.
+   - A mounted file without a done marker gets the same treatment for done.
+8. **The grid shows the composed view itself.** It builds its rows from the piece map and writes every edit with `applyFile(file, …)`, line operations on comment and blank rows included, on that file's own text. Before writing, it checks that the model read the file's current text. `fileBuffer` is removed, as nothing uses it. The single-file workspace is unchanged.
+9. **Speed: reuse rows** _(chosen after the stop)_.
+   - Each row element is kept by its `{ file, line }`, followed through the edits since the last build. That way, a row inserted above a row doesn't make it new.
+   - Every cell is described as a spec, and only cells whose spec changed are redrawn.
+   - Checkbox and badge handling moved to the table (the checkbox's `change` in the capture phase), so a kept cell acts on the current model's row.
+   - Safety net: `tests/grid/reuse.test.ts`. Over 40 seeded sequences of 12 edits on the portfolio, and 20 each on `example.plan` and `schedule.plan`, the kept grid's DOM equals a freshly mounted grid's after every step. The edits are commits, inserts, deletes, moves, indent and outdent, done, unmount, undo and redo. The comparison sorts attributes and leaves out the place and hover.
+   - More than half the steps change the text (417 of 720 and 493 of 720 when measured), and the test asserts that.
+   - A planted bug (the total row not updated after the first build) fails both cases at seed 1.
+
+**Decisions taken** (by me, within the task; please check):
+
+- **The live row list** _(accepted after the stop)_. The grid walked `table.tBodies[0].rows` (hover, layout) and built with `insertRow` and `insertCell`. In jsdom every read of that live collection scans it, so each rebuild was quadratic. It now keeps its body rows in an array, and creates rows and cells directly.
+- **Two fixes to Task 36's buffer** _(accepted after the stop)_: see Task 36's notes, "Changed by Task 37".
+- **Opening a draft** places only the draft row among the kept rows, instead of rebuilding the grid.
+- **`lineAt`** in the grid finds newlines with `indexOf` instead of reading every character.
+- **What the grid keeps across a rebuild.**
+  - Notices and the badge menu go on each build, as they did when the table was rebuilt.
+  - An open cell editor whose cell is unchanged stays open; before, a rebuild removed it.
+  - The header and total rows are built afresh each time.
+- **Small API changes:**
+  - `GridHooks.onOpenFile(path)` (the badge's Open) has no line now;
+  - `GridHooks.status`;
+  - `mountGrid` takes `PlanBuffer & Partial<ComposedSource>`;
+  - `ProblemsHooks.write(host, file, make)` returns whether the edit was made, and `open` is gone;
+  - `Problems.run(host, fix, file, { onCancel, onApply })`.
+  - In `src/grid/edits.ts`: `docIn`, `docOf`, `fileLabel`, `cellColumn`, `noColumn`, `hasMarker`, `unmount`; `levels`, `canMarkDone` and `insertItem` take an optional file; `isRefColumn` takes the node.
+- **New CSS** in `src/grid/grid.css` for mounted rows, the badge and its menu, using existing theme tokens.
+- **Line operations on a file's lines** _(after the browser pass)_:
+  - The keymap finds the file the selected lines are in, runs the line operation on that file's text, and dispatches the edits placed through the piece map with `placeInFile` (new in `src/buffer/composed.ts`). That is the same placement and annotation as `applyFile`, so routing, settling and undo are the same.
+  - Two details found by the tests:
+    - A recompose maps the selection with the segment before the cursor: Alt+Down with the cursor at the start of Product A's line had left it on beta's `---`.
+    - A file's last line has no line below, even when the file ends with a newline.
+  - A single file keeps its exact old path.
+
+**Timing** (jsdom, Vitest, ten files with 5,009 composed lines and 4,979 grid rows, medians of 20 commits and 10 inserts; no timing test):
+
+| Measurement | Edit | Analysis | Rebuild | Total |
+| --- | --- | --- | --- | --- |
+| Before reuse: full rebuild, as stopped | | | 4,457 ms | |
+| Committing a cell (Task 30.3's estimate in team 5) | 60 ms | 22 ms | 56 ms | 138 ms |
+| Inserting a row near the top (above team 1's Task 0.1) | 41 ms | 21 ms | 74 ms | 136 ms |
+
+- Each total is under 150 ms in three runs, the highest 144 ms.
+- **First opening the portfolio:** analysis 145 ms, and the first build of the grid about 1,030 ms. The first build creates every row.
+- **For comparison:** before this task, one rebuild of a single 5,000-line file took about 3.3 s.
+
+**Rewritten tests:**
+
+- `tests/app/shell-portfolio.test.ts`: "the problems list names each file; a mounted file's problem offers no fix and opens its file" became "the problems list names each file; a mounted file's problem focuses its row in the grid (Task 37)". The master stays active, and the place is on Test in alpha's segment.
+
+- After the browser pass, for the headers:
+  - `tests/app/shell-grid-composed.test.ts`:
+    - the first case lists the two header rows;
+    - the Unmount case counts beta's header among its rows;
+    - "the badge's menu opens the file, or unmounts it" became four cases: the header (its place, its marker after an edit in beta and gone after the undo, nothing focusable), ArrowDown from Product A skipping it to alpha's first row, its Unmount undone with one Ctrl+Z, and its Open and the badge each making the file active.
+  - `tests/align/grid-composed.test.ts`: each header is a layout row with no line, and the Gantt draws nothing beside it and stays aligned.
+  - `tests/grid/reuse.test.ts` is unchanged and still holds with the headers.
+- `tests/app/shell-composed.test.ts` _(after the browser pass)_: "refuses Alt+Down on a segment's last row and on a mount row; inside a segment it works" became the group "line operations act on the lines of the cursor's file (Task 37)", with six cases, each undone with one Ctrl+Z:
+  - Alt+Down on Product A gives Product B, beta's segment, Product A, alpha's segment, with the cursor still on Product A;
+  - Alt+Up on Product B gives the same;
+  - a move inside a segment is as before;
+  - Alt+Down on a segment's last row does nothing, with no message;
+  - a selection spanning the master and a segment is refused, for Alt+Down and for Tab;
+  - a mount row with its own master child moves without it.
+
+No other existing test changed.
+
+**New tests:**
+
+- `tests/app/shell-grid-composed.test.ts`: the acceptance criteria through the shell, plus the badge menu and saving the master and beta.
+- `tests/align/grid-composed.test.ts`: the Gantt following the composed grid.
+- `tests/grid/reuse.test.ts`: the reuse property.
+- `tests/grid/file-names.test.ts`: two `plan.plan` files.
+- In `tests/buffer/pieces.test.ts`:
+  - the deletion moved one character on, by hand and over 200 seeds;
+  - recomposing that keeps the root's lines.
+
+**Spec and docs:**
+
+- plan-format-spec:
+  - §2.12: the grid's inline diagnostics;
+  - §3.2: `Model.column`;
+  - §3.3: a click on a mounted row moves the grid's place;
+  - §3.4: the grid over the composed buffer, its rows keyed by file and line;
+  - §3.7: `place` moving a line's deletion, recomposing root lines first, and the grid writing every row;
+  - §4b.1: composed rows, and the new-task row in the root;
+  - §4b.4 and §4b.5: Unmount, mount rows, disabled controls with tooltips;
+  - §4b.6.3: fixes in place;
+  - the new §4b.7, mounted rows: columns, markers, dependencies, structure, mount rows, deletes, file names, rebuilding;
+  - §5.5: the Gantt following the grid;
+  - after the browser pass, §4.3 (line operations on the lines of the cursor's file, and the cursor across a recompose) and §4b.6.4 (text-editor keys in a composed text);
+  - after the browser pass, §3.4 (headers as `at: null`), §4b.1 (shading) and §4b.7 (headers, and the badge opening its file).
+- PLUGINS.md §4 and §6: `Model.column`, and the grid reading cells through `field`.
+- VISION §6: no change; nothing here departs from it.
+- No rows change.
+- Tasks 31, 35 and 36's notes say what this task changed.
+- The plan spec has no draft version, so none was bumped.
+
+**Human review:** the routing of cell edits through column mapping first. It decides which file and which column every portfolio edit lands in.
 
 ## Task 38 — Gantt zoom _(placeholder)_
 

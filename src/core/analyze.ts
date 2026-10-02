@@ -125,9 +125,13 @@ export function createAnalyzer(registry: Registry): (text: string, options?: Ana
     // The root's columns are the model's; each mounted file's map onto them.
     const maps = new Map<string, number[]>();
     for (const [path, file] of composed.files) if (path !== rootPath) maps.set(path, mapColumns(root, file.read));
-    const field = (node: ItemNode, index: number) => {
+    const column = (node: ItemNode, index: number) => {
       const own = maps.get(node.file)?.[index] ?? index;
-      return own < 0 ? null : (node.fields[own] ?? null);
+      return own < 0 ? null : own;
+    };
+    const field = (node: ItemNode, index: number) => {
+      const own = column(node, index);
+      return own === null ? null : (node.fields[own] ?? null);
     };
 
     const diagnostics: Diagnostic[] = [...root.diagnostics, ...composed.diagnostics];
@@ -155,6 +159,7 @@ export function createAnalyzer(registry: Registry): (text: string, options?: Ana
       version,
       fields: () => [...written],
       field,
+      column,
       get: <T>(node: ItemNode, key: FieldKey<T>) => nodeFields.get(key)?.[place.get(node) ?? -1] as T | undefined,
       value: <T>(key: FieldKey<T>) => documentFields.get(key) as T | undefined,
     };

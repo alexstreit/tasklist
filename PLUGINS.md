@@ -114,6 +114,7 @@ interface Model {
   roots: ItemNode[]; // the composed tree; each item has its file
   columns: Column[]; // the root file's
   field(node: ItemNode, index: number): Field | null; // the node's cell for root column index (§6)
+  column(node: ItemNode, index: number): number | null; // the node's own column for root column index (§6), for editors
   bindings: Bindings; // the root file's roles, keys and markers, after profile and file merge
   calendar?: Calendar; // present when project-start is set; renderers use it for dates
   diagnostics: Diagnostic[];
@@ -137,7 +138,7 @@ export const rollup = definePinnableByColumn<Hours>("estimate", "rollup");
 - **The pin review** lists pins that override something: for every node field whose key is pinnable, single or by column, each value with both a `pin` and a `derived`, shown side by side. It knows no plugin, and leaf estimates never appear in it. It finds the keys through `model.fields()`. A single pinnable key carries a `label` and a `kind` for it; a by-column key carries neither, since its entries are named by their column and formatted by the column's type (a duration column as a duration, a number column as the plain number).
 - **Pin diagnostics are the owning plugin's.** Schedule's "pin has no effect" is `pin !== undefined && effective > pin`, and "pin equals derived" applies in `pinned` mode only, since in `additive` mode an equal pin doubles rather than repeats. Estimate keeps exactly today's diagnostics.
 - **What moves and what stays.** Each column's `effective`, `childSum` and `mode` become the `rollup` map's `Pinnable` (`childSum` is its `derived`; `childrenHaveValue` is `derived !== undefined`). `hasValue` and `doneSum` become estimate fields beside it. `done`, own and inherited, stays in core on `ItemNode`, because plan spec §2.8's inheritance is structure, not arithmetic.
-- **Cells are read through `model.field(node, index)`**, never `node.fields[index]`. A row keeps its own file's fields, in its own file's column order and with its own spans; `field` maps a root column to the row's own column (§6), or gives null. For a root row it is the identity. Plugins, their renderers and exporters, `src/views/` and `src/ui/` are held to it by lint; the grid, which shows only the root file's rows, reads `node.fields` directly.
+- **Cells are read through `model.field(node, index)`**, never `node.fields[index]`. A row keeps its own file's fields, in its own file's column order and with its own spans; `field` maps a root column to the row's own column (§6), or gives null. For a root row it is the identity. Plugins, their renderers and exporters, `src/views/` and `src/ui/` are held to it by lint; the grid reads cells through it too. To write a mounted row's cell, which may be empty, an editor asks `model.column(node, index)` for the row's own column: an index into its own file's declared columns, or null when the root column maps to nothing there.
 - **Storage** is an array per field, indexed by each node's place in the composed tree, which is fine for a portfolio of ten 500-line files. The interface hides it, so it can change.
 
 ## 5. Compute stages
@@ -238,7 +239,7 @@ Markers are resolved before this step: rows turns each glyph into its marker nam
 
 Includes (`include:` in the frontmatter) are table imports, which come with resource and calendar tables (VISION §6); nothing gathers them yet.
 
-**Columns across files.** The model's columns are the root file's. For each mounted file, core maps each root column to one of the file's own columns in two passes. First by role: a root column bound to a role takes the mounted column bound to the same role. Then by name, among the mounted columns not already taken. A mounted column maps to at most one root column, so no total counts a value twice; a root column that maps to nothing is blank on that file's rows, with no diagnostic. `model.field`, `hours` and every view read cells through this mapping, so plugins never see it. A summable cell keeps the hours its own column read, with its own `hpd` and `dpw`.
+**Columns across files.** The model's columns are the root file's. For each mounted file, core maps each root column to one of the file's own columns in two passes. First by role: a root column bound to a role takes the mounted column bound to the same role. Then by name, among the mounted columns not already taken. A mounted column maps to at most one root column, so no total counts a value twice; a root column that maps to nothing is blank on that file's rows, with no diagnostic. `model.field`, `hours` and every view read cells through this mapping, so plugins never see it; `model.column` gives the mapping itself, for the grid's writes (plan spec §4b.7). A summable cell keeps the hours its own column read, with its own `hpd` and `dpw`.
 
 ## 7. Workspace and calendar
 

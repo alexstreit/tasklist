@@ -54,6 +54,16 @@ export function piecesOf(state: EditorState): PieceMap | null {
   return state.field(pieceField, false) ?? null;
 }
 
+/**
+ * Edits given in one file's own offsets, as a transaction's changes and annotation for an editor
+ * state over a composed text: placed through its piece map as `applyFile` places them, so they
+ * are routed, settled and undone the same way. The text editor's line operations use it.
+ */
+export function placeInFile(state: EditorState, file: string, edits: readonly TextEdit[]): { changes: TextEdit[]; annotations: ReturnType<typeof placed.of> } {
+  const { edits: fileEdits, composed } = state.field(pieceField).place(file, [...edits].sort((a, b) => a.from - b.from), charIn(state.doc));
+  return { changes: composed, annotations: placed.of(fileEdits) };
+}
+
 /** Tell whoever listens that an edit was refused: the text editor's line operations use it too. */
 export function refuse(state: EditorState): void {
   for (const cb of state.facet(refusals)) cb();
@@ -191,8 +201,13 @@ export class ComposedBuffer extends CodeMirrorBuffer {
     const edits = recomposition({ map, text: current }, built);
     const same = JSON.stringify([built.map.runs, built.map.segments]) === JSON.stringify([map.runs, map.segments]);
     if (edits.length === 0 && same) return false;
+    // A segment comes in at a line start, before that line: a cursor there stays on the line, after the segment.
+    const changes = this.state.changes(edits);
+    const selection = change ? undefined : this.state.selection.map(changes, 1);
     this.as(change ? 'remote' : 'compose', (dispatch) =>
-      dispatch(this.state.update({ changes: edits, effects: setPieces.of(built.map), annotations: [fromFiles.of(true), Transaction.addToHistory.of(false)], filter: false })),
+      dispatch(
+        this.state.update({ changes, selection, effects: setPieces.of(built.map), annotations: [fromFiles.of(true), Transaction.addToHistory.of(false)], filter: false }),
+      ),
     );
     this.follow();
     return edits.length > 0;
@@ -218,19 +233,4 @@ export class ComposedBuffer extends CodeMirrorBuffer {
       );
     }
   }
-}
-
-/**
- * One file of a composed buffer, as a PlanBuffer: its own text and changes, with edits made through
- * the composed buffer's history. The grid edits the root file's rows through it.
- */
-export function fileBuffer(composed: ComposedBuffer, file: string, own: PlanBuffer): PlanBuffer {
-  return {
-    text: () => own.text(),
-    version: () => composed.version(),
-    apply: (edits, origin) => composed.applyFile(file, edits, origin),
-    undo: () => composed.undo(),
-    redo: () => composed.redo(),
-    onChange: (listener) => own.onChange(listener),
-  };
 }

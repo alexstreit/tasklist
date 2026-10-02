@@ -1,23 +1,23 @@
 // Ref cells in the grid (spec §4b.2). The file holds references by ID; the grid shows and takes
 // outline numbers, which are what a grid user sees, and translates both ways. It is the same for
-// any ref column, so nothing here knows about scheduling.
+// any ref column, so nothing here knows about scheduling. A mounted row's references are its own
+// file's (spec §2.12): they resolve, and are minted, there; a task in another file is refused.
 
 import { setAnchor, setCell } from 'rows';
 import type { EditResult, Row } from 'rows';
 import { mintId } from '../core';
 import type { ItemNode, Model } from '../core';
 import type { TextEdit } from '../buffer';
-import { columnOf } from './edits';
+import { cellColumn, docOf } from './edits';
 import { normaliseDuration } from './typed';
 
-/** Each item by its rows row, per model. */
+/** Each item of the composed tree by its rows row, per model: a row belongs to one file's document. */
 const itemsOf = new WeakMap<Model, Map<Row, ItemNode>>();
 function items(model: Model): Map<Row, ItemNode> {
   let map = itemsOf.get(model);
   if (!map) {
     map = new Map();
-    // Only the file's own rows: references never cross files.
-    const visit = (node: ItemNode): void => void (node.file === model.file && (map!.set(node.row, node), node.children.forEach(visit)));
+    const visit = (node: ItemNode): void => void (map!.set(node.row, node), node.children.forEach(visit));
     model.roots.forEach(visit);
     itemsOf.set(model, map);
   }
@@ -34,9 +34,9 @@ const OUTLINE = /^\d+(?:\.\d+)*$/;
  * A cell that doesn't read as references shows its text.
  */
 export function refText(model: Model, node: ItemNode, index: number): string {
-  const field = node.fields[index];
+  const field = model.field(node, index);
   if (!field) return '';
-  const value = node.row.cells[columnOf(model, index).index]?.value;
+  const value = node.row.cells[cellColumn(model, node, index)!.index]?.value;
   if (value?.type !== 'ref') return field.text;
   const byRow = items(model);
   return field.text
@@ -50,8 +50,9 @@ export function refText(model: Model, node: ItemNode, index: number): string {
     .join(', ');
 }
 
-export function isRefColumn(model: Model, index: number): boolean {
-  return columnOf(model, index)?.kind === 'ref';
+/** Whether the node's cell for root column `index` is a ref cell: its own file's column is a ref column. */
+export function isRefColumn(model: Model, node: ItemNode, index: number): boolean {
+  return cellColumn(model, node, index)?.kind === 'ref';
 }
 
 /**
@@ -59,11 +60,12 @@ export function isRefColumn(model: Model, index: number): boolean {
  * `#id`, with an optional qualifier (a duration qualifier is normalised as a typed duration is). An
  * outline number becomes its row's ID; a row without one gets an anchor from mintId, in the same
  * change. Refused only when it can't be written: a number that matches no row, several targets in
- * a column without `many`, or a qualifier the column doesn't declare. `touched` is every row the
- * change writes to, for its repairs.
+ * a column without `many`, a qualifier the column doesn't declare, or a task in another file.
+ * `touched` is every row the change writes to, for its repairs.
  */
 export function setRefs(model: Model, node: ItemNode, index: number, typed: string): { result: EditResult; touched: ItemNode[] } {
-  const column = columnOf(model, index);
+  const column = cellColumn(model, node, index)!;
+  const doc = docOf(model, node);
   const nothing = { result: { edits: [] }, touched: [] };
   const value = typed.replace(/\t/g, ' ').trim();
   if (value === refText(model, node, index)) return nothing;
@@ -81,7 +83,8 @@ export function setRefs(model: Model, node: ItemNode, index: number, typed: stri
     if (OUTLINE.test(target)) {
       const row = byOutline.get(target);
       if (!row) return refused(`no task ${target}`);
-      const id = row.row.id ?? minted.get(row) ?? mintId(model.doc, row.title, minted.values());
+      if (row.file !== node.file) return refused('the task is in another file');
+      const id = row.row.id ?? minted.get(row) ?? mintId(doc, row.title, minted.values());
       if (row.row.id === null) minted.set(row, id);
       locator = `#${id}`;
     }
@@ -90,15 +93,15 @@ export function setRefs(model: Model, node: ItemNode, index: number, typed: stri
   }
 
   const text = written.join(', ');
-  if (text === (node.fields[index]?.text ?? '')) return nothing;
+  if (text === (model.field(node, index)?.text ?? '')) return nothing;
   // The anchors first, so an anchor and the cell written at one place come out in that order.
   const edits: TextEdit[] = [];
   for (const [row, id] of minted) {
-    const result = setAnchor(model.doc, row.row, id);
+    const result = setAnchor(doc, row.row, id);
     if ('refused' in result) return refused(result.refused);
     edits.push(...result.edits);
   }
-  const cell = setCell(model.doc, node.row, column, text === '' ? null : text);
+  const cell = setCell(doc, node.row, column, text === '' ? null : text);
   if ('refused' in cell) return refused(cell.refused);
   edits.push(...cell.edits);
   return { result: { edits: joinInserts(edits) }, touched: [node, ...minted.keys()] };

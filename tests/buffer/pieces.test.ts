@@ -238,3 +238,60 @@ describe('settling changes off the boundaries', () => {
     }
   });
 });
+
+describe('a line deleted with the newline before it (Task 37)', () => {
+  it('stays in one piece: "\\nB" before a segment becomes "B\\n" after it', () => {
+    const root = 'A | mount=x\nB\nC\n';
+    const { map, text } = PieceMap.build({ root: 'r', text: (f) => (f === 'r' ? root : 'X\n'), mounts: [{ file: 'r', line: 1, target: 'x' }], comment: () => '//' });
+    const at = (p: number) => text[p];
+    // rows deletes B's line from the newline that ends A's, which is the last character of the piece before x.
+    const placed = map.place('r', [{ from: root.indexOf('\nB'), to: root.indexOf('\nC'), insert: '' }], at);
+    expect(placed.edits).toEqual([{ file: 'r', run: 2, from: root.indexOf('B'), to: root.indexOf('C'), insert: '' }]);
+    expect(apply(text, placed.composed)).toBe('A | mount=x\nX\nC\n');
+    expect(map.apply(placed.edits).aligned((f) => (f === 'r' ? 'A | mount=x\nC\n' : 'X\n'))).toBe(true);
+  });
+
+  it.each(SEEDS.slice(0, 200))('makes the file’s text, and leaves every piece ending a line (seed %i)', (seed) => {
+    const c = composition(seed);
+    const { map, text } = PieceMap.build(c);
+    const at = (p: number) => text[p];
+    for (const file of map.files()) {
+      const own = c.text(file);
+      // Every place a piece of the file ends on a newline and another of its pieces follows.
+      const runs = map.runs.filter((r) => !r.joint && r.file === file);
+      for (let i = 0; i + 1 < runs.length; i++) {
+        const from = runs[i].to - 1;
+        if (from < 0 || own[from] !== '\n') continue;
+        const end = own.indexOf('\n', runs[i + 1].from);
+        if (end < 0 || end >= runs[i + 1].to) continue;
+        const edit = { from, to: end, insert: '' };
+        const placed = map.place(file, [edit], at);
+        const after = cut(map.apply(placed.edits), apply(text, placed.composed));
+        expect(after.get(file)).toBe(apply(own, [edit]));
+        const texts = new Map([...after].map(([f, t]) => [f, t]));
+        expect(map.apply(placed.edits).aligned((f) => texts.get(f) ?? c.text(f))).toBe(true);
+      }
+    }
+  });
+});
+
+describe('recomposing keeps the root file’s lines (Task 37)', () => {
+  it('moves segments around the root’s lines, not a root line with a segment', () => {
+    const root = 'A\nB\nC\n';
+    const texts = new Map([
+      ['r', root],
+      ['x', 'X1\nX2\nX3\n'],
+      ['y', 'Y\n'],
+    ]);
+    const base = { root: 'r', text: (f: string) => texts.get(f)!, comment: () => '//' };
+    // As after A and B swap their mounts: x moves from under A to under B, and y the other way.
+    const before = PieceMap.build({ ...base, mounts: [{ file: 'r', line: 1, target: 'x' }, { file: 'r', line: 2, target: 'y' }] });
+    const after = PieceMap.build({ ...base, mounts: [{ file: 'r', line: 2, target: 'x' }, { file: 'r', line: 1, target: 'y' }] });
+    const edits = recomposition(before, after);
+    expect(apply(before.text, edits)).toBe(after.text);
+    // No edit touches a root line: B's line stays where it was, and an undo entry on it with it.
+    for (const run of before.map.runs.filter((r) => r.file === 'r')) {
+      for (const e of edits) expect(e.from >= run.at + run.to - run.from || e.to <= run.at).toBe(true);
+    }
+  });
+});

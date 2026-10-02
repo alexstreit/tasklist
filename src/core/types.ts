@@ -153,6 +153,12 @@ export interface Model extends ModelReader {
   /** Every file in the composed tree, the root first, then each mounted file in composed order, with its rows document and lines. */
   files: ReadonlyMap<string, { doc: RowsDocument; lines: readonly Node[] }>;
   columns: Column[];
+  /**
+   * The node's own declared column for root column `index` (PLUGINS.md §6): an index into its own
+   * file's columns, and into `node.fields`; null when the root column maps to nothing in that file.
+   * For a root row it is `index`. Editors use it to write a mounted row's cell, which may be empty.
+   */
+  column(node: ItemNode, index: number): number | null;
   roots: ItemNode[];
   /** Every line of the root file in order, as parsed. Lossless, like the tree: an
    *  editor showing the file needs the comment, blank and front matter lines
