@@ -1,0 +1,24 @@
+{
+  "spec": [
+    "ext §12.1, §10: a declared mount column with options is a structural error on the mount line; the column is read as declared, so unique applies (A13, by analogy with Q16)"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-mount-column",
+      "line": 2
+    },
+    {
+      "class": "validation",
+      "code": "not-unique",
+      "line": 5
+    },
+    {
+      "class": "validation",
+      "code": "not-unique",
+      "line": 6
+    }
+  ]
+}

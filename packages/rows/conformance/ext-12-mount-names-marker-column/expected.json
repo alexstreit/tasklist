@@ -1,0 +1,41 @@
+{
+  "spec": [
+    "ext §12.1: mount naming a marker column, which is a bool, is a mount column that is not text (A14, by analogy with A13)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-mount-column",
+      "line": 3
+    }
+  ],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "done",
+      "type": "bool",
+      "implicit": true
+    }
+  ],
+  "rows": [
+    {
+      "line": 5,
+      "lead": "A",
+      "markers": [
+        "done"
+      ]
+    },
+    {
+      "line": 6,
+      "lead": "B",
+      "values": {
+        "done": "true"
+      }
+    }
+  ]
+}

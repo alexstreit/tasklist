@@ -109,6 +109,7 @@ export interface Schema {
   markers: { name: string; char: string; column: Column }[];
   order: 'position' | 'none' | { column: Column; descending: boolean };
   includes: { path: string; table: string }[];
+  mount: { column: Column; valid: boolean } | null; // valid: read as text, without options, and not the lead or the key column's name (ext §12.1, Q44)
   // ext §11: the profile's and the file's merged per role (profile order, then the file's new roles). Spans, of the role name and of the column name, when written unquoted in this file.
   roles: { name: string; column: Column; from?: number; to?: number; columnFrom?: number; columnTo?: number }[];
 }
@@ -128,6 +129,8 @@ export interface Row {
   parent: Row | null;
   children: Row[];
   depth: number;
+  // ext §12: a valid mount target. The spans are the path, and the `#ID`, in the cell's value.
+  mount?: { path: string; part?: string; pathFrom: number; pathTo: number; partFrom?: number; partTo?: number };
   errors: RowsError[];
 }
 

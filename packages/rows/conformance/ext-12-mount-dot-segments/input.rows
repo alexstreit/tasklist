@@ -1,0 +1,6 @@
+---
+mount: mount
+---
+Shared | mount=../shared/platform.plan
+Here   | mount=./alpha.plan
+Around | mount=../../x/./y/../z.plan#core

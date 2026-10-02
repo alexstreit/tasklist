@@ -1,0 +1,14 @@
+---
+mount: mount
+---
+Absolute | mount=/teams/alpha.plan
+Drive | mount=C:/teams/alpha.plan
+Drive relative | mount=c:alpha.plan
+Trailing slash | mount=teams/
+Empty segment | mount=teams//alpha.plan
+No path | mount=#backend
+Two parts | mount=a.plan#x#y
+Bad ID | mount=a.plan#-x
+Empty ID | mount=a.plan#
+Empty string | mount=""
+Control | mount="a\tb.plan"

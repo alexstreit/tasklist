@@ -1,0 +1,13 @@
+---
+nest: parent
+mount: mount
+---
+Portfolio
+Product A {#a} | mount=teams/alpha.plan
+    Kickoff
+Programme
+    Stream
+        Team
+            Product B | mount=teams/beta.plan
+Product C | mount=teams/gamma.plan
+    Review

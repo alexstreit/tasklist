@@ -1,0 +1,143 @@
+{
+  "spec": [
+    "ext §12.2: invalid targets are validation errors (invalid-value), the text is kept, and the row has no mount"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 4
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 5
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 6
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 7
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 8
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 9
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 10
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 11
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 12
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 13
+    },
+    {
+      "class": "validation",
+      "code": "invalid-value",
+      "line": 14
+    }
+  ],
+  "rows": [
+    {
+      "line": 4,
+      "lead": "Absolute",
+      "values": {
+        "mount": "/teams/alpha.plan"
+      }
+    },
+    {
+      "line": 5,
+      "lead": "Drive",
+      "values": {
+        "mount": "C:/teams/alpha.plan"
+      }
+    },
+    {
+      "line": 6,
+      "lead": "Drive relative",
+      "values": {
+        "mount": "c:alpha.plan"
+      }
+    },
+    {
+      "line": 7,
+      "lead": "Trailing slash",
+      "values": {
+        "mount": "teams/"
+      }
+    },
+    {
+      "line": 8,
+      "lead": "Empty segment",
+      "values": {
+        "mount": "teams//alpha.plan"
+      }
+    },
+    {
+      "line": 9,
+      "lead": "No path",
+      "values": {
+        "mount": "#backend"
+      }
+    },
+    {
+      "line": 10,
+      "lead": "Two parts",
+      "values": {
+        "mount": "a.plan#x#y"
+      }
+    },
+    {
+      "line": 11,
+      "lead": "Bad ID",
+      "values": {
+        "mount": "a.plan#-x"
+      }
+    },
+    {
+      "line": 12,
+      "lead": "Empty ID",
+      "values": {
+        "mount": "a.plan#"
+      }
+    },
+    {
+      "line": 13,
+      "lead": "Empty string",
+      "values": {
+        "mount": ""
+      }
+    },
+    {
+      "line": 14,
+      "lead": "Control",
+      "values": {
+        "mount": "a\tb.plan"
+      }
+    }
+  ]
+}

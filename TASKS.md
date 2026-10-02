@@ -1624,3 +1624,81 @@ Expected, in work hours, with the displayed dates:
 **New tests:** `tests/schedule/demo.test.ts` (6, above); `tests/grid/demo-polish.test.ts` (7: the row order, the keys, the current-row band, the grid's hover both ways); `tests/align/end-of-scroll.test.ts` (1); `tests/renderers/hover.test.ts` (one per non-following view: tree, table, schedule, pins); four in `tests/schedule/gantt.test.ts` (draw order, bands on empty rows, reporting hover, showing a relayed hover); and "hover across panes" in `tests/app/shell.test.ts`.
 
 **Spec:** plan-format-spec §3.3 (hover on `RenderContext`; the `RowLayout` comment names the new-task row), §3.4 (hover on `PlanEditor` and the grid's part; the new-task row as `at: null`; `contentHeight` includes the pinned total row), §4b.1 (the new-task row, then the pinned total row; the current-row band) and §5.5 (`bands`, the layers, and hover both ways). PLUGINS.md, VISION and rows are unchanged. There were no spec questions, so no version changes.
+
+---
+
+## Task 33 — rows: mount rows
+
+**Serves:** M3b (VISION §6). A row can name another file to mount beneath it. This task is rows only: the syntax, the parsed result and the errors. rows reads no files. Resolving mounts, composing the plan and editing segments are the plan tool's work, in later tasks. As in Task 25, it's spec first, but small enough to implement in the same task.
+
+**Deliverables**
+
+- **Extensions spec, new section "Mounts":**
+  - A new key, `mount: NAME`, names the mount column, following the same pattern as `nest: parent`.
+    - When the named column isn't declared, an implicit column is created, as `nest:` does for a missing parent column. Record this as settled by analogy, with the question that settled `nest:`.
+    - The column is never positional. It is written by name: `Product A {#a} | mount=teams/alpha.plan`.
+    - An empty `mount:` declares nothing (A1).
+  - **The value** is a **mount target**, read after rows' usual decoding, so a quoted value may hold spaces (`mount="Team Alpha/alpha.plan"`). It is a relative path, optionally followed by `#ID`:
+    - The path is segments separated by `/`. Each segment is non-empty and holds no `#` and no control character. `.` and `..` segments are allowed syntactically. Whether a path stays inside the workspace is for the host to decide, and the spec says so.
+    - Absolute paths are invalid: a leading `/`, or a drive prefix such as `C:`.
+    - A trailing `/`, an empty segment (`a//b`), an empty path before `#`, more than one `#`, and an ID not valid under Text Anchors are all invalid.
+    - `#ID` names a part, the subtree under the row with that anchor in the target file. rows parses it and resolves nothing. The spec says hosts may support whole-file mounts first.
+  - **An invalid target** is a validation error (`invalid-value`), and the row has no mount.
+  - **A mount row** is any row with a valid mount cell, at any depth. It may also have children of its own.
+  - **What the spec leaves to the host:** what a mount means, where its rows go, and how files are read. The spec also says that two mounts naming the same file are not an error in rows.
+- **DESIGN §4:** `Schema.mount` (the column, as `Schema.nest` gives its column) and `Row.mount` (`{ path, part?, span }`, absent when there's no valid mount), with spans for the path and the part.
+- **`tokenizeLine`:** a mount cell's value tokenises as a path, with the `#ID` part as an anchor-like token. The tokenizer and the parser still agree, by the existing property.
+- **Edit API:** nothing new. Writing and clearing a mount uses `setCell` on the mount column, and clearing it is how a host unmounts. Add `setCell` examples for both to DESIGN §6, and confirm a property test covers the implicit mount column.
+- **Errors:** settle each by analogy wherever an existing rule fits. Record these in `QUESTIONS.md` under Resolved, and list them in your end-of-task summary:
+  - a declared mount column with the wrong type;
+  - `mount:` naming the same column as `nest:` or a marker;
+  - a profile's `mount:` conflicting with the file's own declarations (Q42).
+
+  Open a question only for a genuinely new rule.
+
+- **Versions:** bump extensions and DESIGN, and update the version references in the conformance README and plan-format-spec, as before.
+
+**Acceptance criteria**
+
+- [x] Conformance cases, written by hand from the spec:
+  - a mount row at the top level, at depth 3, and with children of its own;
+  - a quoted path with spaces;
+  - a part (`#backend`);
+  - `..` segments;
+  - each invalid form above;
+  - an implicit mount column;
+  - a mount cell on a row in a file without `mount:`, which is an ordinary undeclared name, as today;
+  - each settled analogy.
+
+  Every case with a syntax or structural error has its strict variant. — 17 new cases, 11 of them with a strict variant (28 directories), listed in the notes. Expected rows gained an optional `mount` field, `{ path, part? }`, default `null`.
+
+- [x] Every conformance case passes, with no stage skipped. — the 18 cases that need mounts failed before the parser change; the four `undeclared` and `empty` ones passed already, since they describe today's behaviour. No case was changed to make it pass.
+- [x] The property generators produce mount columns and mount cells, valid and broken, and every existing property still holds. — a new property checks that every mount lies in its cell, and counts over 100 valid and over 100 broken mounts.
+- [x] No app code changes, and the app's tests pass unchanged.
+- [x] `npm test` is green at the root. — 2013 tests; typecheck and lint clean.
+
+**Not in this task:**
+
+- Reading files or resolving mounts.
+- The plan profiles gaining `mount: mount` (that comes with composition).
+- Loops and missing files, which are the host's to report.
+
+**Notes**
+
+- Base 0.12: `mount` joins the keys reserved in base §9. `base-9-reserved-base-only` (+ `--strict`) gained a `mount: mount` line, so its later line numbers moved down by one, edited by hand.
+- Extensions 0.10: a new §12 Mounts (§12.1 declaration, §12.2 targets, §12.3 mount rows), so §1–§11 and the case names citing them keep their numbers. The intro, §1 (canonical-form keys), §2 (implicit column order), §8 and §10 also changed. Base and extensions version references updated in DESIGN, the conformance README and `plan-format-spec.md`.
+- **Reading of "never positional":** the implicit mount column is never positional, as for every implicit column (ext §2). A *declared* mount column is filled like any other declared column, by position or by name, so that canonical form (implicit columns declared) still reads back the same (`ext-12-mount-declared-column`). Making a declared column unfillable by position would be a new rule.
+- **Settled by analogy** (QUESTIONS.md A11–A15):
+  - A11, implicit `MOUNT:text`: by analogy with ext §6.1's `nest:`. No question settled `nest:`'s implicit column; it has been in the spec since the first draft. Q16 settled what a wrong nest column is.
+  - A12, empty `mount:` declares nothing: A1.
+  - A13, wrong type or options → `invalid-mount-column` (structural) on the `mount` line; `mount` ignored, column read as declared: Q16 (the nest column). "Without options" comes from the nest rule too, and keeps `unique` from making two mounts of one file an error.
+  - A14, `mount:` naming the nest column or a marker column: A13, since those columns are a `ref` and a `bool` and the implicit columns come first.
+  - A15, a profile's `mount:` against the file's declaration → on the file's declaration: Q42.
+- An invalid target is `invalid-value` (validation), raw text kept, no mount, as the task said; not an analogy. `""` is invalid (an empty path). A drive prefix is one ASCII letter then `:` at the start (`C:/x`, `c:x`). Control characters are U+0000–U+001F and U+007F–U+009F.
+- New error code `invalid-mount-column`. `mount` joins `KNOWN_KEYS`, so the plan's `unknown-key` info no longer fires on `mount:` (no app test covers it).
+- API: `Schema.mount: { column, valid } | null`; `Row.mount?: { path, part?, pathFrom, pathTo, partFrom?, partTo? }`. Path spans are inside any quotes, and the part span is the `#ID`, as an anchor's is. `LineContext.mount` (the column name) makes `tokenizeLine` split a cell named for it into `path` and `part` tokens. A declared mount column filled by position tokenises as a plain `value` (DESIGN §7).
+- **New cases:** `ext-12-mount-rows` (top level, depth 3, with children; implicit columns key, nest, mount), `ext-12-mount-quoted-path`, `ext-12-mount-part`, `ext-12-mount-dot-segments`, `ext-12-mount-invalid-targets` (leading `/`, `C:/`, `c:`, trailing `/`, `a//b`, `#backend`, two `#`, `#-x`, empty ID, `""`, a tab), `ext-12-mount-implicit-column` (+ `--strict`), `ext-12-mount-declared-column`, `ext-12-mount-undeclared` (+ `--strict`), `ext-12-mount-empty` (+ `--strict`), `ext-12-mount-column-not-text` (+ `--strict`), `ext-12-mount-column-with-options` (+ `--strict`), `ext-12-mount-names-nest-column` (+ `--strict`), `ext-12-mount-names-marker-column` (+ `--strict`), `ext-12-mount-column-not-text-from-profile` (+ `--strict`), `ext-12-mount-names-lead` (+ `--strict`), `ext-12-mount-names-key-column` (+ `--strict`), `ext-12-mount-names-key-column-without-identity` (+ `--strict`).
+- **Rewritten tests:** `conformance.test.ts` compares the new `mount` row field. In `properties.test.ts`, the token-boundary property takes a cell's value as its `value` token or its `path` and `part` tokens together, and the highlighter context passes `mount`. **New tests:** the mount-token check in that property; the mount-span property; a `tokenizeLine` test for mount cells; a `setCell` test that mounts and unmounts; and the `setCell` property now counts at least 20 writes to an implicit mount column. Generators gained `mount:` lines, mount-column declarations and mount cells, valid and broken. **Rewritten case:** `base-9-reserved-base-only` (+ `--strict`), for its new `mount:` line.
+- **Q44 (spec owner):** `mount:` naming the lead, or the key column's name whether or not identity applies (`key`'s value, or `id` when `key` is unset), is `invalid-mount-column`, always on the `mount` line, and `mount` is ignored, as in A13 and A14. The lead is a row's title and the key column its identity, so neither can also be a mount target. In its first version the key part applied only with identity. The `setAnchor` property then failed on `mount: id` with no `key:`: the file's first anchor turned identity on and added the error, so every mount was lost. A rule that changes when the first anchor appears would make anchor edits add or remove errors in other rows, so the name counts whether or not identity applies. The edit API is unchanged. Generators gained `mount: name` and `mount: id`.
+
+**Human review:** read the new spec section and the `expected.json` files first. Each one is a claim about what a mount means.

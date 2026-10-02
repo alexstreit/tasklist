@@ -1,6 +1,6 @@
 // Task 17's properties, over generated files and every conformance input:
 // lines reproduce the text, value spans decode to the cell text, strict mode never throws,
-// and tokenizeLine agrees with parseRows on every token boundary.
+// tokenizeLine agrees with parseRows on every token boundary, and mount spans fit their cells.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,6 +78,30 @@ describe('parseRows properties', () => {
     }
   });
 
+  it('every mount lies in its cell, and an unquoted one slices to its path and part (ext §12)', () => {
+    let valid = 0;
+    let broken = 0;
+    for (const { text, options } of inputs) {
+      const doc = parseRows(text, options);
+      if (!doc.schema.mount?.valid) continue;
+      for (const row of doc.rows) {
+        const cell = row.cells[doc.schema.mount.column.index];
+        if (!row.mount) {
+          if (cell?.text != null) broken++;
+          continue;
+        }
+        valid++;
+        const m = row.mount;
+        expect(cell!.valueFrom <= m.pathFrom && m.pathFrom < m.pathTo && m.pathTo <= (m.partFrom ?? m.pathTo)).toBe(true);
+        expect((m.partTo ?? m.pathTo) <= cell!.valueTo).toBe(true);
+        if (!cell!.quoted) expect(doc.text.slice(m.pathFrom, m.partTo ?? m.pathTo)).toBe(cell!.text);
+        expect(m.path + (m.part === undefined ? '' : `#${m.part}`)).toBe(cell!.text);
+      }
+    }
+    expect(valid).toBeGreaterThan(100);
+    expect(broken).toBeGreaterThan(100);
+  });
+
   it('strict mode never throws, and fails exactly on syntax and structural errors', () => {
     for (const { text, options } of inputs) {
       const doc = parseRows(text, { ...options, mode: 'strict' });
@@ -94,6 +118,7 @@ describe('tokenizeLine agrees with parseRows', () => {
     sep: doc.schema.sep,
     comment: doc.schema.comment,
     markers: new Map(doc.schema.markers.map((m) => [m.char, m.name])),
+    mount: doc.schema.mount?.valid ? doc.schema.mount.column.name : undefined,
     extensions: options.extensions,
   });
 
@@ -168,7 +193,9 @@ describe('tokenizeLine agrees with parseRows', () => {
           const g = nonEmpty[i];
           expect([g[0].from, g[g.length - 1].to]).toEqual([cell.from, cell.to]);
           const name = g.find((t) => t.type === 'name');
-          const value = g.find((t) => t.type === 'value');
+          // A mount cell's value is a path token and a part token, together spanning the value (ext §12.2).
+          const pieces = g.filter((t) => ['value', 'path', 'part'].includes(t.type));
+          const value = pieces.length > 0 ? { from: pieces[0].from, to: pieces[pieces.length - 1].to, quoted: pieces[0].quoted } : undefined;
           if (cell.name) expect(name && span(name)).toEqual(span(cell.name));
           // A named cell read as unnamed (invalid-cell-name) keeps the tokenizer's name token.
           if (cell.name || !name) {
@@ -176,6 +203,24 @@ describe('tokenizeLine agrees with parseRows', () => {
             expect(value?.quoted ?? false).toBe(cell.quoted);
           }
         });
+
+        // A mount written by name is a path token, and a part token for its #ID, holding the parser's spans
+        // and nothing else but quotes.
+        const mountCell = doc.schema.mount && row.cells[doc.schema.mount.column.index];
+        if (row.mount && mountCell?.name) {
+          const m = row.mount;
+          const around = (type: string, from: number, to: number) => {
+            const t = tokens.find((x) => x.type === type && x.from <= from && to <= x.to);
+            expect(t, JSON.stringify(text)).toBeDefined();
+            expect(doc.text.slice(t!.from, from) + doc.text.slice(to, t!.to)).toMatch(/^"?"?$/);
+          };
+          around('path', m.pathFrom, m.pathTo);
+          expect(tokens.some((t) => t.type === 'part')).toBe(m.partFrom !== undefined);
+          if (m.partFrom !== undefined) {
+            around('part', m.partFrom, m.partTo!);
+            expect(doc.text.slice(m.partFrom, m.partTo)).toBe(`#${m.part}`);
+          }
+        }
       }
     }
   });

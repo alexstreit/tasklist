@@ -1,5 +1,5 @@
 // The row-level extensions, after every row is built: markers (ext §5), identity (§3),
-// references (§4.2–4.3), nesting (§6) and order (§7). Recovery follows base §6: every rule is
+// references (§4.2–4.3), nesting (§6), order (§7) and mounts (§12). Recovery follows base §6: every rule is
 // checked on the recovered rows, and symmetric errors go on every row involved.
 import { rowsError, type ErrorCode } from './errors';
 import type { Cell, Row, RowsError, Schema, Value } from './types';
@@ -7,7 +7,7 @@ import { compareValues, readValue } from './values';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
-export function applyExtensions(schema: Schema, rows: Row[]): RowsError[] {
+export function applyExtensions(schema: Schema, rows: Row[], text: string): RowsError[] {
   const errors: RowsError[] = [];
   const report = (row: Row, code: ErrorCode, message: string, span?: { from: number; to: number }) => {
     const error = rowsError(code, row.line, message, span?.from, span?.to);
@@ -20,6 +20,7 @@ export function applyExtensions(schema: Schema, rows: Row[]): RowsError[] {
   references(schema, rows, ids, report);
   nesting(schema, rows, report);
   order(schema, rows, report);
+  mounts(schema, rows, text, report);
   return errors;
 }
 
@@ -236,5 +237,45 @@ function order(schema: Schema, rows: Row[], report: Report): void {
       }
     }
     previous.set(siblings, cell);
+  }
+}
+
+// A path segment holds no `/`, `#` or control character (ext §12.2).
+const SEGMENT = /^[^/#\u0000-\u001f\u007f-\u009f]+$/;
+
+/** ext §12.2: a mount target's path and part, or null when it is invalid. */
+function readMountTarget(text: string): { path: string; part?: string } | null {
+  const [path, part, ...more] = text.split('#');
+  if (more.length > 0 || (part !== undefined && !ID.test(part))) return null;
+  // A drive prefix makes a path absolute; a leading `/` is an empty first segment.
+  if (/^[A-Za-z]:/.test(path) || !path.split('/').every((s) => SEGMENT.test(s))) return null;
+  return part === undefined ? { path } : { path, part };
+}
+
+/** ext §12: each row's mount target, when the mount column is valid. */
+function mounts(schema: Schema, rows: Row[], text: string, report: Report): void {
+  if (!schema.mount?.valid) return;
+  const index = schema.mount.column.index;
+  for (const row of rows) {
+    const cell = row.cells[index];
+    if (!cell || cell.text === null) continue;
+    const target = readMountTarget(cell.text);
+    if (!target) {
+      report(row, 'invalid-value', `${JSON.stringify(cell.text)} is not a mount target: a relative path, optionally followed by #ID.`, { from: cell.valueFrom, to: cell.valueTo });
+      continue;
+    }
+    // Spans in the source, inside any quotes. Escapes never write a `#`, so the first `#` written is the part's.
+    let close = -1;
+    for (let k = cell.valueFrom + 1; cell.quoted && k < cell.valueTo; k++) {
+      if (text[k] === '\\') k++;
+      else if (text[k] === '"') {
+        close = k;
+        break;
+      }
+    }
+    const from = cell.valueFrom + (cell.quoted ? 1 : 0);
+    const to = close === cell.valueTo - 1 ? close : cell.valueTo;
+    const hash = target.part === undefined ? -1 : text.indexOf('#', from);
+    row.mount = hash === -1 ? { ...target, pathFrom: from, pathTo: to } : { ...target, pathFrom: from, pathTo: hash, partFrom: hash, partTo: to };
   }
 }

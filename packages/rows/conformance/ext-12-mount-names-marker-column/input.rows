@@ -1,0 +1,6 @@
+---
+markers: done=~
+mount: done
+---
+~A
+B | done=true

@@ -1,0 +1,6 @@
+---
+mount: mount
+---
+Alpha | mount="Team Alpha/alpha.plan"
+Beta  | mount=Team Beta/beta.plan
+Gamma | mount="a | b/gamma.plan"

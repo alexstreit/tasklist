@@ -1,13 +1,13 @@
 # rows — Library Design
 
-Lives at `packages/rows/DESIGN.md`. Implements rows base 0.11 and rows extensions 0.9 (which binds Text Anchors 0.2). The specs sit beside it in `packages/rows/spec/`.
+Lives at `packages/rows/DESIGN.md`. Implements rows base 0.12 and rows extensions 0.10 (which binds Text Anchors 0.2). The specs sit beside it in `packages/rows/spec/`.
 
 ## 1. Scope
 
 **v1**
 
-- Base 0.11 in full: frontmatter grammar, profiles, column declarations, every type, quoting, named cells, overflow, both error tables, strict and tolerant modes.
-- Extensions: implicit columns, key and anchors (including aliases), markers, nesting, `ref` columns within the file (`many`, `qualifier`), `order`, `roles`.
+- Base 0.12 in full: frontmatter grammar, profiles, column declarations, every type, quoting, named cells, overflow, both error tables, strict and tolerant modes.
+- Extensions: implicit columns, key and anchors (including aliases), markers, nesting, `ref` columns within the file (`many`, `qualifier`), `order`, `roles`, `mount` (parsed only: rows reads no mounted file).
 - Format-preserving edits (§6).
 - A language-neutral conformance suite (§8).
 
@@ -97,6 +97,12 @@ interface Row {
   parent: Row | null;
   children: Row[];
   depth: number;
+  mount?: {             // ext §12: absent when the row has no valid mount target
+    path: string;
+    part?: string;      // the ID after `#`
+    pathFrom: number; pathTo: number;    // the path in the cell's value, inside any quotes
+    partFrom?: number; partTo?: number;  // the `#ID`, as an anchor's span is
+  };
   errors: RowsError[];
 }
 
@@ -136,6 +142,7 @@ type Value =
 
 interface Schema {
   // …resolved sep, comment, lead, columns, key, nest, markers, order, includes
+  mount: { column: Column; valid: boolean } | null; // ext §12.1, as nest gives its column; valid: read as text, without options, not the lead or the key column's name
   keys: Record<string, string>; // every key, the file's then the profile's; qualified keys as written
   roles: {                       // ext §11: the profile's and the file's merged per role, the file's winning;
                                  // profile order, rebinds in place, then the file's new roles
@@ -223,6 +230,7 @@ Details the rules above leave open:
 
 - **Edits don't validate.** A value that fails validation is written, and reads back as exactly the text given. `formatValue` quotes a value when base §3 requires it, and a lead when it would otherwise read as a marker, an anchor, a heading, a comment or a `---` delimiter (base §7: "quotes any value that would otherwise be misread").
 - **Implicit columns** are only ever written as named cells.
+- **Mounting and unmounting** are `setCell` on the mount column; there is no mount function. With an implicit column, `setCell(doc, row, mountColumn, 'teams/alpha.plan')` turns `Product A {#a} | 2w` into `Product A {#a} | 2w | mount=teams/alpha.plan`, and `setCell(doc, row, mountColumn, null)` removes the cell again. A host unmounts that way; it never touches the mounted file. A target that isn't valid is written all the same, as any value is, and reads back as an `invalid-value`.
 - **`setCell` on the lead** is `setLead`, with `null` written as the empty string: a row always has a lead cell.
 - **Appending after an unterminated quote** first closes the quote where its text ends, so that cell's text is unchanged and the new cell isn't swallowed by it. `setAnchor` does the same for an unterminated lead.
 - **`setAnchor` on a document read without extensions** throws, since it has no anchors: that's a mistake in the host.
@@ -256,6 +264,8 @@ The only refusals:
 
 `tokenizeLine` returns token spans: indent, marker, lead, anchor, delimiter, cell name, `=`, quoted value, escape, plain value, and comment. In frontmatter it returns the key, the colon and the value; a qualified key is one key token. An unquoted `markers:` or `roles:` value is split into its entries instead, each as name, `=` and value, like a named cell, with `schema.roles` spans matching them. It also returns a frontmatter-state transition, so a line-at-a-time highlighter (CodeMirror's `StreamLanguage`) can carry state across lines. Value types come from the schema, which the tokenizer doesn't need. A highlighter that wants per-type colours (durations, signs) reads the columns from the latest parsed document. It resolves cells with the parser's rules, because tokens are syntactic: a `name` token whose name no settable column has is read by the parser as part of an unnamed cell (base §6), and an unnamed cell after a named one, or past the declared columns, is overflow with no type. The tokenizer can't know that a frontmatter block is never closed, so carried on its own it shows such a file as frontmatter to the end. A highlighter with a parsed document takes the frontmatter extent from the document's lines instead.
 
+Given the mount column's name (`LineContext.mount`, when `schema.mount` is valid), a cell named for it has its value split at the first `#` into a `path` token and a `part` token, instead of one `value` token; any quotes stay in the token that holds them. A declared mount column filled by position tokenises as a plain `value`, since the tokenizer doesn't track positions; a highlighter takes those spans from `Row.mount`.
+
 ## 8. Conformance suite
 
 `packages/rows/conformance/` holds one case per directory:
@@ -265,7 +275,7 @@ case-name/
   input.rows
   options.json      // optional: mode, filename, profiles, extensions
   expected.json     // failed, errors (class, code, line), rows (line, indent, lead,
-                    //   values by column as raw text, overflow, markers, id, aliases, parent line)
+                    //   values by column as raw text, overflow, markers, id, aliases, parent line, mount)
 ```
 
 The suite is language-neutral on purpose. A C# or Python implementation can run it unchanged. It is written first, from the specs, before any implementation code, and it covers:

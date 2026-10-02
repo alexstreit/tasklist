@@ -1,10 +1,10 @@
 # rows — Extensions
 
-**Version 0.9 (draft)**
+**Version 0.10 (draft)**
 
-This document defines identity, references, includes, markers, nesting, row order, and roles for rows files. It uses the keys and forms reserved by the base format (base §9), and binds the Text Anchors specification to rows. Error classes, recovery, and modes are as in base §6. §10 lists every error this document defines.
+This document defines identity, references, includes, markers, nesting, row order, roles, and mounts for rows files. It uses the keys and forms reserved by the base format (base §9), and binds the Text Anchors specification to rows. Error classes, recovery, and modes are as in base §6. §10 lists every error this document defines.
 
-The base rule for keys with a default (base §6) applies to the keys here. An empty `order:` is a structural error, and its default, `position`, applies. An empty `key:` is a structural error, and `key` is treated as unset, so it doesn't make identity apply (§3.1). An empty `nest:`, `markers:`, `include:` or `roles:` declares nothing, and is not an error.
+The base rule for keys with a default (base §6) applies to the keys here. An empty `order:` is a structural error, and its default, `position`, applies. An empty `key:` is a structural error, and `key` is treated as unset, so it doesn't make identity apply (§3.1). An empty `nest:`, `markers:`, `include:`, `roles:` or `mount:` declares nothing, and is not an error.
 
 A file that uses these extensions MUST be read by a parser that implements them. A base-only parser will tokenise it, but in strict mode may reject it, for example because `id=auth` names a column only an extension declares.
 
@@ -12,13 +12,13 @@ The key words MUST, MUST NOT, SHOULD, and MAY follow RFC 2119.
 
 ## 1. Canonical form
 
-Every extension in this document is sugar. A file using it can be rewritten mechanically into **canonical form**: a set of rows files that use only base syntax, the `key`, `include`, `nest`, `order`, and `roles` keys, and single-valued `ref` columns without qualifiers. Every row has zero indent. `key` is written explicitly, profiles are resolved, and their keys written out. Each section below states its canonical form.
+Every extension in this document is sugar. A file using it can be rewritten mechanically into **canonical form**: a set of rows files that use only base syntax, the `key`, `include`, `nest`, `order`, `roles`, and `mount` keys, and single-valued `ref` columns without qualifiers. Every row has zero indent. `key` is written explicitly, profiles are resolved, and their keys written out. Each section below states its canonical form.
 
 A conforming tool MUST be able to produce canonical form, and MUST read it back to the same data. Import and export to other stores SHOULD go through canonical form.
 
 ## 2. Implicit columns
 
-Some extensions add a column when the file does not declare it. Implicit columns follow all declared columns, in the order key, nest, markers. They can be set only by named cells; unnamed cells never fill them. In canonical form they are declared explicitly.
+Some extensions add a column when the file does not declare it. Implicit columns follow all declared columns, in the order key, nest, markers, mount. They can be set only by named cells; unnamed cells never fill them. In canonical form they are declared explicitly.
 
 ## 3. Identity
 
@@ -202,6 +202,7 @@ A parser implementing these extensions, beyond base conformance:
 - resolves every reference and exposes its target table, target row, and qualifier;
 - builds the parent relation when `nest` is set, applying tolerant recovery in tolerant mode;
 - exposes each role binding, with its role name and column;
+- exposes each mount row's path and part;
 - reports the errors listed in §10 with their classes.
 
 A writer, beyond base conformance:
@@ -302,6 +303,8 @@ Every error this document defines. Recovery follows base §6: recovery comes fir
 | Row out of order (§7)                                                  | Validation | Row kept where it is.                                                                                |
 | Invalid `roles` entry, or a role bound twice (§11)                     | Structural | Entry ignored. One error per entry.                                                                  |
 | Role bound to no column (§11)                                          | Structural | Reported on the `roles` line. Entry ignored. A profile's role on a column the file's `columns` or `lead` replaced is dropped, with no error. |
+| Mount column not `text`, with options, the lead, or the key column's name, whether or not identity applies (§12) | Structural | Reported on the `mount` line, or, for a wrong type or options, on the file's declaration when `mount` comes from a profile. `mount` ignored; the column is read as declared. |
+| Invalid mount target (§12)                                             | Validation | Raw text kept. The row has no mount.                                                                 |
 
 ## 11. Roles
 
@@ -328,3 +331,51 @@ roles: title=name effort=est assignee=owner propricer.labour-category=owner up=p
 `title` is on the lead, `up` on the implicit `parent` column, and `owner` carries two roles.
 
 **Canonical form.** `roles` is kept, with the merged bindings written out.
+
+## 12. Mounts
+
+`mount` names the column in which a row can name another file to **mount** beneath it:
+
+```
+---
+nest: parent
+mount: mount
+---
+Portfolio
+    Product A {#a}  | mount=teams/alpha.plan
+        Kickoff
+    Product B       | mount="Team Beta/beta.plan#backend"
+```
+
+### 12.1 Declaration
+
+- If not declared, the column is implicitly `MOUNT:text`. Like every implicit column it is set only by name (§2), as in `mount=teams/alpha.plan`. A declared mount column is filled like any other declared column.
+- A declared mount column MUST be read as `text` (base §5) and have no options. Otherwise it is a structural error, on the `mount` line, or on the file's declaration of the column when `mount` comes from a profile (base §2.3). `mount` is then ignored, and the column is read as declared, so no row has a mount.
+- The nest column and the marker columns are a `ref` and `bool`s, whether declared or implicit, and implicit columns come before the mount column (§2). So a `mount` naming the nest column or a marker column is the same error.
+- The mount column MUST NOT be the lead column, or have the key column's name (§3.1), whether or not identity applies: `key`'s value, or `id` when `key` is unset. The lead is a row's title and the key its identity, so neither can also be a mount target. The rule doesn't depend on identity because identity can begin with a file's first anchor, and a rule that changed then would make anchor edits add or remove errors in other rows. A `mount` naming either is the same error, always on the `mount` line, and `mount` is ignored.
+
+### 12.2 Mount targets
+
+A non-null value in the mount column is a **mount target**: a relative path, optionally followed by `#` and an ID. It is read from the cell's decoded text (base §3), so a quoted value may hold the delimiter and leading or trailing spaces, and an unquoted one interior spaces.
+
+```
+target  = path [ "#" ID ]
+path    = segment *( "/" segment )
+segment = 1*( any character except "/", "#" and control characters )
+```
+
+- `ID` is the Text Anchors ID grammar (Text Anchors §1). Control characters are U+0000 to U+001F and U+007F to U+009F.
+- So a trailing `/`, an empty segment (`a//b`), an empty path before the `#` (`#backend`), more than one `#`, an empty or invalid ID (`a.plan#`, `a.plan#-x`), and the empty string are all invalid.
+- An absolute path is invalid: one with a leading `/`, which the grammar already excludes, or whose first segment begins with one ASCII letter followed by `:`, a drive prefix such as `C:` in `C:/plans/a.plan` or `c:a.plan`.
+- `.` and `..` are ordinary segments. Whether a path stays inside the host's workspace, or names a file at all, is for the host to decide.
+- `#ID` names a **part**: the subtree under the row with that anchor in the target file. This specification parses it and resolves nothing. A host MAY support whole-file mounts first.
+
+An invalid target is a validation error, and the row has no mount.
+
+### 12.3 Mount rows
+
+A **mount row** is any row with a valid mount target, at any depth. It may also have children of its own.
+
+This specification gives a mount no meaning beyond its target. What a mount means, where the target's rows go, and how files are read are for the host. Paths are not resolved, so two mounts naming the same file, or the same part, are not an error here, and neither is a target that cannot be read.
+
+**Canonical form.** `mount` is kept, and its column declared.

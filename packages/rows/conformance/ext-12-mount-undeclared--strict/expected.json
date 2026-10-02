@@ -1,0 +1,24 @@
+{
+  "spec": [
+    "ext §12, base §6: without mount:, a mount= cell is an ordinary undeclared name, read as an unnamed cell"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-cell-name",
+      "line": 4
+    },
+    {
+      "class": "structural",
+      "code": "invalid-cell-name",
+      "line": 5
+    },
+    {
+      "class": "structural",
+      "code": "too-many-cells",
+      "line": 5
+    }
+  ]
+}

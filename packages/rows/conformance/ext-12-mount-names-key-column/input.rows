@@ -1,0 +1,6 @@
+---
+key: id
+mount: id
+---
+A {#a}
+B | id=b

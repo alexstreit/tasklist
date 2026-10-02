@@ -12,7 +12,7 @@ const DEFAULT_COMMENT = '//';
 const DEFAULT_LEAD = 'name:text';
 const FORBIDDEN_IN_PROFILE = new Set(['format', 'table', 'profile', 'sep', 'comment', 'include']);
 /** The keys rows reads: the base keys (base §2.2), then the extension keys. Any other key is ignored. */
-export const KNOWN_KEYS = ['format', 'table', 'profile', 'sep', 'comment', 'lead', 'columns', 'key', 'include', 'markers', 'nest', 'order', 'roles'] as const;
+export const KNOWN_KEYS = ['format', 'table', 'profile', 'sep', 'comment', 'lead', 'columns', 'key', 'include', 'markers', 'nest', 'order', 'roles', 'mount'] as const;
 
 /** Where a key's value came from: an entry in this file, or the profile. */
 type Source = { entry: FrontmatterEntry } | { profile: true };
@@ -313,6 +313,7 @@ export function resolveSchema(
     order: 'position',
     includes: [],
     roles: [],
+    mount: null,
   };
   if (options.extensions !== false) readExtensionKeys(schema, keys, profileKeys, declaredBy, report, anyAnchors);
 
@@ -339,7 +340,7 @@ function spanOf(key: Key, piece: Piece): { from: number; to: number } | undefine
   return { from: key.source.entry.valueFrom + piece.from, to: key.source.entry.valueFrom + piece.to };
 }
 
-/** The extension keys (ext §3–§7) and the implicit columns (ext §2). */
+/** The extension keys (ext §3–§7, §11, §12) and the implicit columns (ext §2). */
 function readExtensionKeys(
   schema: Schema,
   keys: Map<string, Key>,
@@ -429,7 +430,7 @@ function readExtensionKeys(
 
   schema.identity = keyKey !== undefined || anyAnchors(sep, comment, { markers: new Map(pending.map((p) => [p.char, p.name])) });
 
-  // Implicit columns follow the declared ones, in the order key, nest, markers (ext §2).
+  // Implicit columns follow the declared ones, in the order key, nest, markers, mount (ext §2).
   const implicit = (name: string, key: Key | undefined, type: string, kind: Column['kind'], extra: Partial<Column> = {}): Column => {
     const column: Column = { index: columns.length, name, type, kind, options: [], required: false, unique: false, default: null, settable: NAME.test(name), implicit: true, ...extra };
     if (!column.settable && key) report(key, 'invalid-column-name', `Column name "${name}" is not valid; the column cannot be set by name.`);
@@ -452,6 +453,22 @@ function readExtensionKeys(
   for (const p of pending) {
     const column = p.column ?? implicit(p.name, markersKey, 'bool', 'bool', { default: { type: 'bool', value: false } });
     schema.markers.push({ name: p.name, char: p.char, column });
+  }
+  // mount (ext §12.1), after the other implicit columns, so naming the nest or a marker column finds a ref or a bool.
+  const mountKey = keys.get('mount');
+  if (mountKey && mountKey.value !== '') {
+    const column = byName(mountKey.value) ?? implicit(mountKey.value, mountKey, 'text', 'text');
+    // The lead is a row's title and the key its identity, so neither can be a mount target. The key
+    // column's name counts whether or not identity applies, so no anchor edit can flip it (Q44).
+    const reserved = column.index === 0 || mountKey.value === (keyKey?.value || 'id');
+    const valid = !reserved && column.kind === 'text' && column.options.length === 0;
+    if (reserved) {
+      report(mountKey, 'invalid-mount-column', `Mount column ${mountKey.value} is the ${column.index === 0 ? 'lead' : 'key'} column; mount is ignored.`);
+    } else if (!valid) {
+      const blame = 'profile' in mountKey.source ? fileKey(declaredBy, column) : null;
+      report(blame ?? mountKey, 'invalid-mount-column', `Mount column ${mountKey.value} must be text, without options; mount is ignored.`, blame ? columnSpan(column) : undefined);
+    }
+    schema.mount = { column, valid };
   }
 
   // A key from the profile naming a column the profile declares itself, which the file's lead or

@@ -91,6 +91,19 @@ describe('setCell', () => {
     expect(lastLine(edited(plan, setCell(plan, plan.rows[0], col(plan, 'done'), 'true')).text)).toBe('A | done=true');
   });
 
+  it('mounts a file by writing the mount cell, and unmounts by clearing it (ext §12)', () => {
+    const plan = parseRows('---\nnest: parent\nmount: mount\ncolumns: est\n---\nProduct A {#a} | 2w\n    Kickoff\n');
+    const [a] = plan.rows;
+    const mounted = edited(plan, setCell(plan, a, col(plan, 'mount'), 'teams/alpha.plan'));
+    expect(mounted.text.split('\n')[5]).toBe('Product A {#a} | 2w | mount=teams/alpha.plan');
+    expect(mounted.doc.rows[0].mount).toMatchObject({ path: 'teams/alpha.plan' });
+    const spaced = edited(plan, setCell(plan, a, col(plan, 'mount'), 'Team Alpha/alpha.plan#backend'));
+    expect(spaced.doc.rows[0].mount).toMatchObject({ path: 'Team Alpha/alpha.plan', part: 'backend' });
+    const unmounted = edited(mounted.doc, setCell(mounted.doc, mounted.doc.rows[0], col(mounted.doc, 'mount'), null));
+    expect(unmounted.text).toBe(plan.text);
+    expect(unmounted.doc.rows[0].mount).toBeUndefined();
+  });
+
   it('closes an unterminated quote before appending, keeping its text', () => {
     const open = parseRows('---\ncolumns: a | b\n---\nA | "x \\\n');
     const after = edited(open, setCell(open, open.rows[0], col(open, 'b'), 'y')).doc.rows[0];
@@ -310,6 +323,7 @@ describe('every edit changes only its target, and adds no syntax or structural e
 
   it(`setCell, over ${withRows.length} files`, () => {
     let written = 0;
+    let mounts = 0; // writes to an implicit mount column (ext §12)
     for (const { text, options } of withRows) {
       const doc = parseRows(text, options);
       const row = pick(doc.rows);
@@ -332,6 +346,7 @@ describe('every edit changes only its target, and adds no syntax or structural e
         continue;
       }
       written++;
+      if (column === doc.schema.mount?.column && column.implicit) mounts++;
       if (column.index === 0) target.lead = value ?? '';
       else if (anchored) {
         target.anchors[0] = value!;
@@ -346,6 +361,7 @@ describe('every edit changes only its target, and adds no syntax or structural e
       expect(addedErrors(doc, after.doc), why).toEqual([]);
     }
     expect(written).toBeGreaterThanOrEqual(1000);
+    expect(mounts).toBeGreaterThanOrEqual(20);
   });
 
   it('setMarker, over every file with a marker or bool column', () => {

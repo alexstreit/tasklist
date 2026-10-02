@@ -1,0 +1,33 @@
+{
+  "spec": [
+    "base §2.3, ext §12.1: a profile's mount column that the file declares as not text, reported on the file's declaration (A15, by analogy with Q42)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-mount-column",
+      "line": 3
+    }
+  ],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "mount",
+      "type": "number"
+    }
+  ],
+  "rows": [
+    {
+      "line": 5,
+      "lead": "A",
+      "values": {
+        "mount": "3"
+      }
+    }
+  ]
+}

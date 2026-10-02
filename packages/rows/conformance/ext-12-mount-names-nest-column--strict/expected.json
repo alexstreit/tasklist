@@ -1,0 +1,14 @@
+{
+  "spec": [
+    "ext §12.1: mount naming the nest column, which is a ref, is a mount column that is not text (A14, by analogy with A13)"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-mount-column",
+      "line": 3
+    }
+  ]
+}

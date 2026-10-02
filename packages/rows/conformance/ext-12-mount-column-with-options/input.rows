@@ -1,0 +1,6 @@
+---
+mount: mount
+columns: mount unique
+---
+A | teams/a.plan
+B | teams/a.plan

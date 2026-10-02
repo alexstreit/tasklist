@@ -1,0 +1,51 @@
+{
+  "spec": [
+    "ext §12.2: a target is read from the decoded text, so a quoted one may hold spaces and the delimiter, and an unquoted one interior spaces"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "mount",
+      "type": "text",
+      "implicit": true
+    }
+  ],
+  "rows": [
+    {
+      "line": 4,
+      "lead": "Alpha",
+      "values": {
+        "mount": "Team Alpha/alpha.plan"
+      },
+      "mount": {
+        "path": "Team Alpha/alpha.plan"
+      }
+    },
+    {
+      "line": 5,
+      "lead": "Beta",
+      "values": {
+        "mount": "Team Beta/beta.plan"
+      },
+      "mount": {
+        "path": "Team Beta/beta.plan"
+      }
+    },
+    {
+      "line": 6,
+      "lead": "Gamma",
+      "values": {
+        "mount": "a | b/gamma.plan"
+      },
+      "mount": {
+        "path": "a | b/gamma.plan"
+      }
+    }
+  ]
+}

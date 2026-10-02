@@ -1,6 +1,6 @@
 # rows conformance suite
 
-Language-neutral test cases for rows base 0.11, rows extensions 0.9 and Text Anchors 0.2 (`../spec/`). Every `expected.json` was written by hand from the specs, before any parser existed. Each one is a claim about what the specs mean. If a case and a spec disagree, one of them is wrong, and which one is a spec decision.
+Language-neutral test cases for rows base 0.12, rows extensions 0.10 and Text Anchors 0.2 (`../spec/`). Every `expected.json` was written by hand from the specs, before any parser existed. Each one is a claim about what the specs mean. If a case and a spec disagree, one of them is wrong, and which one is a spec decision.
 
 Cases marked `"disputed": true` rest on a reading the specs don't settle. Each one has an entry in [QUESTIONS.md](QUESTIONS.md).
 
@@ -57,6 +57,7 @@ Each row:
 | `id`       | `null`  | The row's ID.                                                                                   |
 | `aliases`  | `[]`    | Further IDs, in source order.                                                                   |
 | `parent`   | `null`  | Line of the parent row.                                                                         |
+| `mount`    | `null`  | The row's mount target (ext §12), as `{ path, part? }`; `null` when it has no valid one.       |
 
 A field left out asserts its default. `values` holds what the row wrote, not defaults and not marker-set values: `~Login` has `markers: ["done"]` and no `done` in `values`. When two columns share a name, the later ones are keyed `name@N`, with `N` the column's index (lead = 0).
 
@@ -103,6 +104,7 @@ The specs define classes, not codes (DESIGN §4). These codes are the library's;
 | `unknown-order-column`       | structural | ext §7, §10                                                   |
 | `invalid-role`               | structural | ext §11, §10: an invalid `roles` entry, or a role bound twice |
 | `unknown-role-column`        | structural | ext §11, §10: a role bound to no column                       |
+| `invalid-mount-column`       | structural | ext §12.1, §10: a mount column not `text`, with options, the lead, or the key column's name |
 | `unknown-type`               | validation | base §6                                                       |
 | `invalid-value`              | validation | base §6: value does not match its column                      |
 | `required`                   | validation | base §4                                                       |

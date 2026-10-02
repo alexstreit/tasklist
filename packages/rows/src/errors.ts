@@ -42,6 +42,7 @@ export const ERROR_CODES = {
   'unknown-order-column': 'structural',
   'invalid-role': 'structural',
   'unknown-role-column': 'structural',
+  'invalid-mount-column': 'structural',
   'unknown-type': 'validation',
   'invalid-value': 'validation',
   required: 'validation',

@@ -1,0 +1,41 @@
+{
+  "spec": [
+    "ext §12.2: . and .. are ordinary segments; whether a path stays in the workspace is for the host"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "rows": [
+    {
+      "line": 4,
+      "lead": "Shared",
+      "values": {
+        "mount": "../shared/platform.plan"
+      },
+      "mount": {
+        "path": "../shared/platform.plan"
+      }
+    },
+    {
+      "line": 5,
+      "lead": "Here",
+      "values": {
+        "mount": "./alpha.plan"
+      },
+      "mount": {
+        "path": "./alpha.plan"
+      }
+    },
+    {
+      "line": 6,
+      "lead": "Around",
+      "values": {
+        "mount": "../../x/./y/../z.plan#core"
+      },
+      "mount": {
+        "path": "../../x/./y/../z.plan",
+        "part": "core"
+      }
+    }
+  ]
+}

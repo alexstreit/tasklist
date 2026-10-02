@@ -1,0 +1,5 @@
+---
+columns: est
+---
+Product A | mount=teams/alpha.plan
+Product B | 2d | mount=teams/beta.plan
