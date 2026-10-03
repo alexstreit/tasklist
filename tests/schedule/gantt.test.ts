@@ -46,7 +46,7 @@ describe('the Gantt renderer', () => {
   it('reports its scale’s height as its header', () => {
     const { headers, render } = setup();
     render(at(0));
-    expect(headers).toEqual([40]);
+    expect(headers).toEqual([54]);
   });
 
   it('draws its natural layout with nothing leading: a row per item', () => {
@@ -129,8 +129,9 @@ describe('the Gantt renderer', () => {
     expect(left('.gantt-deadline')).toEqual(['144px']);
     expect(left('.gantt-finish')).toEqual(['168px']);
     expect(left('.gantt-today')).toEqual(['48px']);
-    expect([...host.querySelectorAll('.gantt-week')].map((e) => e.textContent)).toEqual(['Mon 5 Oct', 'Mon 12 Oct']);
-    expect([...host.querySelectorAll('.gantt-deadline-label')].map((e) => e.textContent)).toEqual(['Mon 12 Oct']);
+    expect([...host.querySelectorAll('.gantt-scale-top .gantt-top')].map((e) => e.textContent)).toEqual(['Mon 5 Oct', 'Mon 12 Oct']);
+    // Task 39: the deadlines' dates have their own row, above the two tiers.
+    expect([...host.querySelectorAll('.gantt-scale-deadlines .gantt-deadline-label')].map((e) => e.textContent)).toEqual(['Mon 12 Oct']);
   });
 
   it('dims a done row', () => {
@@ -140,14 +141,14 @@ describe('the Gantt renderer', () => {
     expect(host.querySelector('.gantt-row[data-line="7"]')!.classList.contains('done')).toBe(false);
   });
 
-  it('draws, bottom to top, the bands, the week lines, the marks, then the deadline, finish and today lines (Task 32)', () => {
+  it('draws, bottom to top, the bands, the period lines, the marks, then the deadline, finish and today lines (Task 32)', () => {
     const { host, render } = setup();
     render(at(0), { cursorLine: { file: 'schedule.plan', line: 11 }, cursorItem: { file: 'schedule.plan', line: 11, exact: true } });
-    const order = [...host.querySelectorAll<HTMLElement>('.gantt-band, .gantt-week-line, .gantt-row, .gantt-deadline, .gantt-finish, .gantt-today')].map((e) =>
+    const order = [...host.querySelectorAll<HTMLElement>('.gantt-band, .gantt-period-line, .gantt-row, .gantt-deadline, .gantt-finish, .gantt-today')].map((e) =>
       e.classList.contains('gantt-band') ? 'band' : e.classList.contains('gantt-row') ? 'marks' : e.classList[1],
     );
     const runs = order.filter((kind, i) => kind !== order[i - 1]);
-    expect(runs).toEqual(['band', 'gantt-week-line', 'marks', 'gantt-deadline', 'gantt-finish', 'gantt-today']);
+    expect(runs).toEqual(['band', 'gantt-period-line', 'marks', 'gantt-deadline', 'gantt-finish', 'gantt-today']);
     // Nothing positioned is stacked out of document order.
     expect([...host.querySelectorAll<HTMLElement>('.gantt-canvas *')].every((e) => e.style.zIndex === '')).toBe(true);
   });

@@ -52,6 +52,10 @@ const editorHost = document.getElementById('editor')!;
 const editorTabs = document.getElementById('editors')!;
 const tabs = document.getElementById('renderers')!;
 const exportBar = document.getElementById('exporters')!;
+// The active renderer's own controls, beside the exporters (spec §3.3), cleared when another view is chosen.
+const viewTools = document.createElement('div');
+viewTools.id = 'view-tools';
+exportBar.before(viewTools);
 // The last folder opened, for Reopen.
 const memory = createFolderMemory();
 const filename = document.getElementById('filename')!;
@@ -232,6 +236,7 @@ function render(): void {
     if (!fallback) {
       renderTabs();
       host.replaceChildren();
+      viewTools.replaceChildren();
       return;
     }
     activate(fallback);
@@ -247,6 +252,7 @@ function render(): void {
     scrollToCursor,
     setCursorLine,
     openFile: (path) => openFile(path),
+    toolbar: (el) => (viewTools.append(el), () => el.remove()),
     setHoverLine,
     onHoverLine,
     ...(active.follows ? channel.context : {}),
@@ -256,6 +262,7 @@ function render(): void {
 function activate(renderer: Renderer): void {
   if (renderer === active) return;
   active = renderer;
+  viewTools.replaceChildren();
   // The new renderer subscribes when it renders.
   showHover = null;
   channel = followerChannel();

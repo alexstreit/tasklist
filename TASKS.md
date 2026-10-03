@@ -1424,6 +1424,8 @@ Expected, in work hours, with the displayed dates:
 
 **Changed by Task 38:** a milestone's start pin converts at `'end'`, so its pin mark (`pinX`) sits on its diamond when the pin holds. The pin review formats a date pin at its value's own edge (`formatPinnableDate`), so a milestone's pin shows on its date; a task's pin still shows at `'start'`. `formatDate` moved again, from `src/ui/dates.ts` to `src/core/dates.ts`, beside `formatPinnableDate`; `src/ui/dates.ts` is gone. The Gantt tooltip gives a start through `formatPinnableDate`. The geometry table is unchanged.
 
+**Changed by Task 39:** the Gantt has Day, Week, Month and Fit scales; `dayWidth` 24 is Day's. `ganttGeometry(model, layout, scale, today, chartWidth)` takes a named scale or an explicit `{ dayWidth, tiers }`, and this task's table is checked at `{ dayWidth: 1, tiers: 'day' }`, unchanged. Its `weeks` and `days` became the `top` and `bottom` tiers, with `lines` and `ticks`; at 1px a day the labels overlap, so each tier keeps only its first, and the scale test checks the separators at 0 and 5 there and the labels at Day. The scale is 54px, three rows (deadline dates, then the two tiers), and the week lines are `.gantt-period-line`. A bar's minimum 2px is the geometry's `drawn`, no longer a CSS `min-width`.
+
 **Spec:** plan-format-spec §2.11 (the `deadline` field), §3.2 (`fields()`), §3.3 and §3.4 (hosts at different heights, converted by the shell), §5.3 (the preview as a column), and the new §5.5 Gantt and §5.6 Pin review. PLUGINS.md §4 (`label`, `kind` for single keys only, `fields()`, `definePinnable`'s signature) and §8 (the Gantt in `renderers/`, `views/pins/`, dates in `ui/`). CLAUDE.md's non-negotiable 5 lists `deadline` and `projectFinish` among the schedule fields renderers read. No rows spec is touched, and rows is unchanged.
 
 ---
@@ -2555,3 +2557,138 @@ Applying Some task's fix writes `start=2027-11-29` on its row. The row then sits
 - Tasks 28 and 30: "Changed by Task 38" notes.
 
 **Human review:** read `tests/schedule/milestones.test.ts` against the table first, then `forward.ts`'s pin conversion and the two infos.
+
+---
+
+## Task 39 — Gantt zoom
+
+**Serves:** M3b, for the 18-month portfolio view (VISION §6, §7). The Gantt gets Day, Week and Month scales, plus Fit, which makes the whole plan fit the pane. The time axis is unchanged: working days, with weekends taking no space. Only the width of a working day and the scale's labels change. This task completes M3b.
+
+**Deliverables**
+
+- **Scales**, each a `dayWidth` (px per working day) and two tiers of labels. The geometry function returns all of it:
+
+  | Scale | `dayWidth`                                  | Top tier                                                        | Bottom tier                                               |
+  | ----- | ------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------- |
+  | Day   | 24                                          | each week's first working day, `Mon 5 Oct` (today's scale)      | day letters                                               |
+  | Week  | 6                                           | each month, `Oct 2026`, at its first working day                | each week's first working day, its day number (`5`, `12`) |
+  | Month | 1.5                                         | each year, `2027`, at its first working day                     | each month, `Oct`, at its first working day               |
+  | Fit   | the pane's chart width ÷ the extent in days | as Day, Week or Month, whichever `dayWidth` is nearest by ratio | as the chosen tier                                        |
+  - **Where labels go.** A month or year label sits at the first working day on or after its 1st, from `calendar.fromDate(d, 'start')`. The period that holds hour 0 is labelled at x = 0, so the chart always has a label at its left edge.
+  - **Overlap.** A label that would overlap the one before it in its tier is left out, by the geometry function rather than the renderer.
+  - **Header height.** The two-tier header keeps the same height at every scale, so the height reported with `reportHeaderHeight` doesn't change.
+
+- **Marks at small widths:**
+  - A bar is at least 2px wide, so short tasks stay visible.
+  - Milestone diamonds, pin marks and deadline markers keep their size at every scale.
+  - A summary bracket narrower than its end caps draws as a bar.
+  - The vertical lines (deadlines, project finish, today) and the cursor and hover bands are unchanged.
+- **`ganttGeometry(model, layout, scale, today, chartWidth)`.** It stays pure, with scale and width passed in, and the `dayWidth = 1` tests from Task 30 still hold through it. The extent rule from Task 30 is unchanged.
+- **Control:**
+  - **Picker.** A segmented control in the Gantt's header: **Day · Week · Month · Fit**. It's keyboard reachable, and arrow keys move between the options.
+  - **Remembered.** The choice is kept per viewer in `localStorage`, like the last-used editor, and defaults to Fit.
+  - **Switching keeps your place.** The date at the left edge of the view stays at the left edge after the switch. With Fit there's nothing to keep, since everything shows.
+  - **Resizing.** Fit recomputes when the pane is resized, through a `ResizeObserver`.
+- **Alignment:** vertical alignment is untouched, so every Task 29 and Task 37 alignment test passes unchanged. Horizontal scrolling stays the Gantt's own.
+- **Spec:** plan-format-spec §5.5 (scales, tiers, label placement, the minimum width, the control).
+
+**Hand-worked values.** Never take them from output. If one disagrees, stop and report it.
+
+On `examples/schedule.plan` (Task 28), with its extent of 8 days (Task 30):
+
+- **Week:**
+  - Wireframes at x 0, width 6. UI at x 30, width 12. Beta ready's diamond at x 42. The deadline line at x 36.
+  - Top tier: `Oct 2026` at 0.
+  - Bottom tier: `5` at 0, `12` at 30.
+- **Month:**
+  - UI at x 7.5, width 3. Review's 0.5 days is 0.75px, shown at the minimum 2px.
+  - Top tier: `2026` at 0.
+  - Bottom tier: `Oct` at 0.
+- **Fit at a chart width of 480px:** `dayWidth` is 60. By ratio it's nearest Day (2.5× its 24, against 10× Week's 6), so it uses Day's tiers.
+
+On a new fixture, `tests/fixtures/long.plan`, with `profile: schedule`, `project-start: 2026-10-05`, and one row `Long | 400d`:
+
+- The extent is 401 days.
+- **At Month:**
+  - Bottom tier: `Oct` at 0, `Nov` at 30 (2 Nov is day 20), `Dec` at 61.5 (1 Dec is day 41), `Jan` at 96 (1 Jan 2027, a Friday, is day 64).
+  - Top tier: `2026` at 0 and `2027` at 96.
+- **At Week:** the 2 Nov week's label is at x 120.
+- **Fit at a chart width of 802px:** `dayWidth` is 2. By ratio it's nearest Month (1.33× its 1.5, against 3× Week's 6), so it uses Month's tiers.
+
+**Acceptance criteria**
+
+- [x] The geometry tests assert every value above. Task 30's table and Task 38's milestone geometry still pass at `dayWidth` 1. — `tests/schedule/gantt-zoom.test.ts`, written from the values above. The code agreed with every one on the first run. Task 30's table and Task 38's geometry pass at `{ dayWidth: 1, tiers: 'day' }`, checked on `width`, unchanged.
+- [x] Label overlap: at Month with `dayWidth` 0.5, no two labels in a tier overlap, and the dropped ones are the later of each clashing pair. — "label overlap" in `gantt-zoom.test.ts`, at `{ dayWidth: 0.5, tiers: 'month' }` on `long.plan`. It is checked against the same labels at 100px a day, where none are dropped.
+- [x] Switching from Day to Month keeps the left-edge date (the scroll position is checked). Fit recomputes after a simulated resize. — `tests/schedule/gantt-picker.test.ts`: `scrollLeft` 120 at Day (Mon 12 Oct) becomes 7.5 at Month and 30 at Week, the scale's transform follows, and Fit returns to 0. A stubbed `clientWidth` going from 0 to 480 moves UI from 120px (Day) to 300px, width 120.
+- [x] The chosen scale survives a reload, and a missing or unreadable `localStorage` falls back to Fit. — `gantt-picker.test.ts`: a second Gantt opens at Month. With nothing stored, an unknown value, or `getItem` and `setItem` throwing, it opens at Fit, and switching still works.
+- [x] The header height is the same at every scale. The alignment tests pass unchanged. — 54px at all four scales (`gantt-picker.test.ts`). No alignment test changed.
+- [x] The colour-token test passes. — No new tokens. The picker, ticks and as-bar summaries use existing ones.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 4,209 tests (4,172 before); typecheck, lint and `vite build` are clean.
+- [x] **Browser pass in Edge, after a hard reload:** pending review (there is no browser here).
+  - on `examples/portfolio/` and on a real 12–18-month master, each scale reads well and Fit shows the whole plan;
+  - switching scales keeps your place;
+  - row alignment with the grid and the text editor still holds;
+  - check both themes;
+  - at Month and Week on the real master, no two labels touch in the real font. If they do, raise `CHAR_WIDTH` rather than adding measurement.
+
+**Visible changes:** the scale control, the Week, Month and Fit scales, the two-tier header labels, and the minimum bar width.
+
+**Not in this task:**
+
+- Quarter or year scales.
+- Zooming with Ctrl+wheel.
+- Showing weekends as calendar time.
+- Dependency arrows.
+- Printing or exporting the chart.
+
+**Decisions taken** (asked and answered before any code was written):
+
+- **The scale argument** is a named scale (`'day' | 'week' | 'month' | 'fit'`) or an explicit `{ dayWidth, tiers }`. The app passes only names. Tests use the explicit form: `{ dayWidth: 1, tiers: 'day' }` for Task 30's table and Task 38's geometry, and `{ dayWidth: 0.5, tiers: 'month' }` for the overlap test. `chartWidth` is read only for `'fit'`, and it is optional (0 when left out). A test checks that each named scale gives the same chart as its explicit pair.
+- **The 2px minimum is the geometry's.** A bar or summary keeps its true `width` and gains `drawn`, which is `max(width, 2)`. A summary narrower than its two 3px caps gets `asBar: true`. The renderer draws `drawn` and reads `asBar`. `.gantt-bar { min-width: 2px }` is removed from `gantt.css`, so the minimum is enforced once. At Month, Review is `width` 0.75 and `drawn` 2.
+- **Label widths are estimated**: `chars × CHAR_WIDTH + LABEL_PADDING` (7px and 6px), named constants in `geometry.ts` beside the 12px font size they assume. If the browser pass shows labels touching, the constant is raised.
+- **Lines by weight.** Full-height lines run down the chart at each top-tier period (Day: each week, as before; Week: each month; Month: each year), drawn even when the period's label was dropped. Short ticks in the header mark each bottom-tier period. Both come from the geometry, as `lines` and `ticks`. The lines use the existing week-line token, and the ticks use `--gantt-scale-line`.
+- **Task 30's labels at 1px a day overlap.** So at `{ dayWidth: 1, tiers: 'day' }` that test asserts the lines (0, 5), the ticks (0–7) and one label in each tier (`Mon 5 Oct` at 0, `M` at 0). It asserts `Mon 5 Oct` at 0, `Mon 12 Oct` at 120 and the day letters every 24px at Day.
+- **Fit on a tie takes the coarser tiers:** 12px a day is Week, and 3px is Month, since the finer ones would already be dropping labels at that width.
+- **Fit with a chart width of 0 or less is Day** (24px, Day's tiers), and it recomputes when the `ResizeObserver` reports a width.
+- **Deadline dates get their own row** in the header, above the two tiers, each right-aligned to its line as before. They take no part in the tiers' overlap, and two that overlap are both kept. The header is three rows at every scale. (Deadlines taking part in the overlap pass was considered and dropped: on the fixture, the `Mon 12 Oct` label would have dropped `Oct 2026` at Week, `2026` at Month, and both week labels at Day, contradicting the hand values.)
+
+**Decisions taken** (by me, within the task; please check):
+
+- **The header is 54px**: three 18px rows (was 40px, two rows). The Gantt reports 54 as its header height, so with the Gantt showing, the editor's body starts 14px lower than before.
+- **The picker is in the preview toolbar** (changed before commit; it first sat at the right of the deadline row, where it could cover a deadline's date at the chart's right edge). Its buttons are radios in a `radiogroup`. Only the chosen one is a tab stop, and an arrow key both moves and chooses, wrapping at the ends, as a radio group does. The `localStorage` key is `plan.gantt-scale`, beside `plan.editor`.
+- **Keeping your place** converts `scrollLeft` through working days: `scrollLeft / old dayWidth × new dayWidth`. Fit sets it to 0.
+- **The chart is redrawn** when the model, the `dayWidth` or the tiers change, so a resize at Fit that leaves the width the same redraws nothing. A resize at a named scale is ignored.
+- **Week's bottom tier** is the week's first working day's day of the month. Day's week labels keep §5.4's format, with the year when it isn't `project-start`'s.
+- **Months and years are found through the calendar**: each 1st goes through `fromDate(d, 'start')`, starting from the month of hour 0's own day.
+
+**Visible changes:**
+
+- A **Day · Week · Month · Fit** picker in the preview toolbar, beside the exporter buttons, shown only while the Gantt is showing, and keyboard reachable. It defaults to Fit, so the Gantt now opens fitted to its pane, not at 24px a day.
+- Week (6px a day) and Month (1.5px a day) scales, and Fit, which picks Day, Week or Month labels by width.
+- A three-row header (54px, was 40px): deadline dates on top, then the top tier, then the bottom tier. Deadline dates no longer share a row with the week labels.
+- Week lines become period lines (weeks at Day, months at Week, years at Month), and short ticks in the header mark each day, week or month.
+- Labels that would overlap the one before them are left out.
+- Bars are at least 2px wide at every scale, and summaries narrower than their caps draw as a solid bar in the summary colour.
+
+**Rewritten tests:**
+
+- `tests/schedule/gantt-geometry.test.ts`: every call passes `{ dayWidth: 1, tiers: 'day' }` (or `{ dayWidth: 24, tiers: 'day' }`) in place of the bare `dayWidth`. The marks table is unchanged. "has week separators at 0 and 5…" now asserts `lines` [0, 5], `ticks` [0–7], and one label in each tier (`Mon 5 Oct`, `M`), since at 1px a day the others overlap and are dropped. A new test in the same file checks the two week labels at 0 and 120, and the letters every 24px, at Day. "spans a folded parent's bracket…" uses `toMatchObject`, since the mark now also carries `drawn` and `asBar`.
+- `tests/schedule/milestones.test.ts`: "Gantt geometry" passes `{ dayWidth: 1, tiers: 'day' }` and compares the mark's `kind`, `x` and `width`, leaving out the new `drawn`. The table's values are unchanged.
+- `tests/composition/gantt.test.ts`: both calls pass `{ dayWidth: 1, tiers: 'day' }`. No assertion changed.
+- `tests/schedule/gantt.test.ts`: "reports its scale's height as its header" expects 54 (was 40). "draws the marks' kinds and flags, the lines and the scale" reads the week labels as `.gantt-scale-top .gantt-top` (was `.gantt-week`), and checks that the deadline label sits in `.gantt-scale-deadlines`, its own row. The layer test reads `.gantt-period-line` (was `.gantt-week-line`). Its pixel values are unchanged: in jsdom the pane has no width, so Fit is Day.
+
+**New tests:**
+
+- `tests/schedule/gantt-zoom.test.ts`: the hand-worked values at Week, Month and Fit on the schedule fixture and on `long.plan`; the year lines and month ticks at Month; both Fit ties; Fit at 0px; named scales equal to their pairs; `chartWidth` ignored at a named scale; summaries drawn as bars; label overlap.
+- `tests/schedule/gantt-picker.test.ts`: the radio group, clicks and arrow keys; the 2px bar and as-bar summary in the DOM; the tiers' rows and ticks; the header height at every scale; the scale remembered across a reload and the fallbacks to Fit; the place kept across a switch; Fit's resize, and a resize ignored at a named scale.
+- `tests/fixtures/long.plan`: `profile: schedule`, `project-start: 2026-10-05`, and `Long | 400d`.
+
+**Changed before commit — the picker moves to the toolbar.** `RenderContext` gains an optional `toolbar(el): () => void`, which places a renderer's control in the preview toolbar, beside the exporter buttons, and returns its removal. The shell (`src/app/main.ts`) makes a `#view-tools` box just before `#exporters` and appends there. It empties the box when another view is chosen, or when no view can show the document, and names no renderer. The Gantt places its picker once, when the picker isn't already in the document, and removes the old one when it mounts afresh in its host. The scale header now holds only its three rows, so the deadline row is free across its whole width. The header stays 54px. The picker's buttons take the toolbar's button style, joined into one segment, with the chosen one in the active tab's colours (`--accent-bg`, `--accent-border`).
+
+- `tests/schedule/gantt-picker.test.ts` (new in this task) passes a `toolbar` and reads the picker from it. It now also checks that the picker isn't in the chart, that one picker is placed however often the Gantt renders, that a fresh mount replaces it, and that the header holds only its three rows with the deadline row holding only the deadline's label. The keyboard test is unchanged.
+- `tests/app/shell.test.ts`: a new test, "shows the Gantt's scale picker in the toolbar…": no picker on the Table; one in `#view-tools`, just before `#exporters`, on the Gantt, still one after an edit; none on the Schedule; one again on the Gantt; and an empty `#view-tools` on the Table.
+- 4,212 tests; typecheck and lint are clean.
+
+**Spec:** plan-format-spec §3.3: `RenderContext.toolbar`. §5.5: the geometry's signature and scale argument, the scales table, Fit's ties and zero width, label placement and overlap with the width estimate, the three-row header, the deadline row, lines and ticks, the picker, the minimum width and as-bar summaries. Task 30 has a "Changed by Task 39" note. PLUGINS.md and VISION.md are unchanged.
+
+**Human review:** read `tests/schedule/gantt-zoom.test.ts` against the hand-worked values first, then `resolveScale` and the tiers in `geometry.ts`.

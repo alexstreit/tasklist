@@ -28,7 +28,7 @@ describe('the Gantt with a portfolio', () => {
       scrollTop: 0,
       rows: lines.map((at, i) => ({ at, top: i * 20, height: 20 })),
     };
-    const chart = ganttGeometry(model, leader, 1, '2026-10-01');
+    const chart = ganttGeometry(model, leader, { dayWidth: 1, tiers: 'day' }, '2026-10-01');
     expect(chart.rows.map((r) => [r.file, r.line, r.mark.kind, r.mark.x, r.top])).toEqual([
       ['portfolio.plan', 6, 'summary', 2, 100],
       ['teams/alpha.plan', 6, 'bar', 2, 220],
@@ -52,7 +52,7 @@ describe('the Gantt with a portfolio', () => {
       { line: 8, file: 'teams/beta.plan' },
       { line: 8, file: 'portfolio.plan' },
     ]);
-    const chart = ganttGeometry(model, natural, 1, '2026-10-01');
+    const chart = ganttGeometry(model, natural, { dayWidth: 1, tiers: 'day' }, '2026-10-01');
     expect(chart.rows.map((r) => [r.file, r.line, r.mark.kind, r.mark.x])).toEqual([
       ['portfolio.plan', 6, 'summary', 2],
       ['teams/alpha.plan', 6, 'bar', 2],

@@ -1,5 +1,5 @@
 // Task 30: the Gantt geometry on the schedule fixture, written from the task's table (worked out by
-// hand, like Task 28's), never from output. Units are days: dayWidth 1.
+// hand, like Task 28's), never from output. Units are days: dayWidth 1, with Day's tiers (Task 39).
 
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../../src/app/registry';
@@ -12,7 +12,7 @@ import fixture from '../../examples/schedule.plan?raw';
 
 const model = analyze(fixture, { filename: 'schedule.plan' });
 const natural = naturalLayout(model, model.version, { bodyTop: 0, scrollTop: 0, height: 1000, rowHeight: 22 });
-const chart = (today = '2026-10-07') => ganttGeometry(model, natural, 1, today);
+const chart = (today = '2026-10-07') => ganttGeometry(model, natural, { dayWidth: 1, tiers: 'day' }, today);
 
 function titled(m: Model, title: string): ItemNode {
   const found: ItemNode[] = [];
@@ -63,13 +63,22 @@ describe('Gantt geometry on the schedule fixture', () => {
     expect(g.width).toBe(8);
   });
 
-  it('has week separators at 0 and 5, labelled Mon 5 Oct and Mon 12 Oct, and the day letters', () => {
+  // Task 39: at 1px a day the labels overlap, so each tier keeps only its first; the separators stay.
+  it('has week separators at 0 and 5 and a tick each day; one label a tier, as the rest overlap', () => {
     const g = chart();
-    expect(g.weeks).toEqual([
+    expect(g.lines).toEqual([0, 5]);
+    expect(g.ticks).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(g.top).toEqual([{ x: 0, label: 'Mon 5 Oct' }]);
+    expect(g.bottom).toEqual([{ x: 0, label: 'M' }]);
+  });
+
+  it('at Day, labels the weeks Mon 5 Oct and Mon 12 Oct, and the day letters every 24px', () => {
+    const g = ganttGeometry(model, natural, 'day', '2026-10-07');
+    expect(g.top).toEqual([
       { x: 0, label: 'Mon 5 Oct' },
-      { x: 5, label: 'Mon 12 Oct' },
+      { x: 120, label: 'Mon 12 Oct' },
     ]);
-    expect(g.days.map((d) => d.letter).join('')).toBe('MTWTFMTW');
+    expect(g.bottom).toEqual([...'MTWTFMTW'].map((label, d) => ({ x: d * 24, label })));
   });
 
   it('draws today at 2 on 2026-10-07, and not at all outside the chart', () => {
@@ -79,7 +88,7 @@ describe('Gantt geometry on the schedule fixture', () => {
   });
 
   it('scales with dayWidth', () => {
-    const g = ganttGeometry(model, natural, 24, '2026-10-07');
+    const g = ganttGeometry(model, natural, { dayWidth: 24, tiers: 'day' }, '2026-10-07');
     expect(describeRow(g.rows.find((r) => r.line === titled(model, 'UI').line)!)).toEqual({ mark: 'bar, critical, pinned', x: 120, width: 48, pinX: 120 });
     expect([g.width, g.finish, g.today]).toEqual([192, 168, 48]);
   });
@@ -100,14 +109,14 @@ describe('Gantt geometry against a leader’s layout', () => {
       { at: { file: 'schedule.plan', line: 9 }, top: 140, height: 40 },
     ],
   };
-  const g = ganttGeometry(model, layout, 1, '2026-10-07');
+  const g = ganttGeometry(model, layout, { dayWidth: 1, tiers: 'day' }, '2026-10-07');
 
   it('gives comment, front matter and draft rows no mark, nor a folded parent’s children', () => {
     expect(g.rows.map((r) => r.line)).toEqual([6, 9]);
   });
 
   it('spans a folded parent’s bracket over its children’s dates', () => {
-    expect(g.rows[0].mark).toEqual({ kind: 'summary', x: 0, width: 1.5 });
+    expect(g.rows[0].mark).toMatchObject({ kind: 'summary', x: 0, width: 1.5 });
   });
 
   it('takes each mark’s top and height from the layout', () => {

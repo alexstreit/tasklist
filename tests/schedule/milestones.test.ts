@@ -77,8 +77,8 @@ describe('the dated milestones fixture (tests/fixtures/milestones.plan)', () => 
 
   it.each(Object.entries(expected))('%s: Gantt geometry', (title, want) => {
     const layout = naturalLayout(model, model.version, { bodyTop: 0, scrollTop: 0, height: 1000, rowHeight: 22 });
-    const mark = ganttGeometry(model, layout, 1, '2026-10-07').rows.find((r) => r.line === node(title).line)!.mark;
-    expect(mark).toEqual(want.gantt);
+    const mark = ganttGeometry(model, layout, { dayWidth: 1, tiers: 'day' }, '2026-10-07').rows.find((r) => r.line === node(title).line)!.mark;
+    expect({ kind: mark.kind, x: mark.x, ...('width' in mark ? { width: mark.width } : {}) }).toEqual(want.gantt);
   });
 
   it("gives exactly the table's diagnostics, each with its code, row and severity", () => {

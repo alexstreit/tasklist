@@ -352,6 +352,29 @@ describe('renderer switcher', () => {
     expect([...preview.querySelectorAll<HTMLTableRowElement>('tbody tr')].map((r) => r.cells[1].textContent)).toEqual(['UI']);
     tab('Table').click();
   });
+
+  it('shows the Gantt’s scale picker in the toolbar, beside the exporters, only while the Gantt is showing (Task 39)', () => {
+    const picker = () => document.querySelectorAll('#view-tools .gantt-zoom');
+    const text = '---\nprofile: schedule\nproject-start: 2026-10-05\n---\nBuild\n    API | 3d\n';
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    vi.advanceTimersByTime(60);
+    expect(picker()).toHaveLength(0);
+    tab('Gantt').click();
+    vi.advanceTimersByTime(60);
+    expect(picker()).toHaveLength(1);
+    expect(document.getElementById('view-tools')!.nextElementSibling!.id).toBe('exporters');
+    expect(preview.querySelector('#host .gantt-zoom')).toBeNull();
+    // Another edit renders the Gantt again, with the one picker.
+    view.dispatch({ changes: { from: view.state.doc.length, insert: '    UI | 2d\n' } });
+    vi.advanceTimersByTime(60);
+    expect(picker()).toHaveLength(1);
+    tab('Schedule').click();
+    expect(picker()).toHaveLength(0);
+    tab('Gantt').click();
+    expect(picker()).toHaveLength(1);
+    tab('Table').click();
+    expect(document.getElementById('view-tools')!.children).toHaveLength(0);
+  });
 });
 
 describe('exporters', () => {

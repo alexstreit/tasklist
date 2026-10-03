@@ -2,14 +2,29 @@
    scrolls up and down with the leading editor, and sideways on its own. */
 .gantt { position: relative; height: 100%; overflow: hidden; font-size: 12px; }
 .gantt-scale { position: absolute; top: 0; left: 0; right: 0; overflow: hidden; border-bottom: 1px solid var(--gantt-scale-line); }
-.gantt-scale-inner { position: absolute; left: 0; bottom: 0; height: 40px; }
-.gantt-week { position: absolute; top: 2px; padding-left: 3px; white-space: nowrap; color: var(--fg-muted); border-left: 1px solid var(--gantt-scale-line); }
-.gantt-day { position: absolute; bottom: 2px; text-align: center; color: var(--fg-faint); }
-.gantt-deadline-label { position: absolute; top: 2px; transform: translateX(-100%); padding-right: 3px; white-space: nowrap; color: var(--gantt-deadline); }
+/* Three 18px rows, at every scale: deadline dates, the top tier, the bottom tier. Nothing else sits
+   in the header, so a deadline's date is never covered. ganttGeometry
+   estimates a label's width from this 12px text and the 3px paddings. */
+.gantt-scale-inner { position: absolute; left: 0; bottom: 0; height: 54px; }
+.gantt-scale-deadlines, .gantt-scale-top, .gantt-scale-bottom { position: absolute; left: 0; right: 0; height: 18px; line-height: 18px; }
+.gantt-scale-deadlines { top: 0; }
+.gantt-scale-top { top: 18px; }
+.gantt-scale-bottom { top: 36px; }
+.gantt-top { position: absolute; top: 0; padding-left: 3px; white-space: nowrap; color: var(--fg-muted); border-left: 1px solid var(--gantt-scale-line); }
+.gantt-bottom { position: absolute; top: 0; padding-left: 3px; white-space: nowrap; color: var(--fg-faint); }
+.gantt-bottom.centred { padding-left: 0; text-align: center; }
+.gantt-tick { position: absolute; bottom: 0; height: 4px; width: 0; border-left: 1px solid var(--gantt-scale-line); }
+.gantt-deadline-label { position: absolute; top: 0; transform: translateX(-100%); padding-right: 3px; white-space: nowrap; color: var(--gantt-deadline); }
+/* The scale picker, in the preview toolbar: its buttons joined into one segmented control. */
+.gantt-zoom { display: flex; }
+.gantt-zoom button[role='radio'] { border-radius: 0; margin-left: -1px; }
+.gantt-zoom button[role='radio']:first-child { margin-left: 0; border-radius: 4px 0 0 4px; }
+.gantt-zoom button[role='radio']:last-child { border-radius: 0 4px 4px 0; }
+.gantt-zoom button[aria-checked='true'] { background: var(--accent-bg); border-color: var(--accent-border); position: relative; }
 .gantt-body { position: absolute; left: 0; right: 0; bottom: 0; overflow: auto; }
 .gantt-canvas { position: relative; min-width: 100%; }
 .gantt-line { position: absolute; top: 0; bottom: 0; width: 0; pointer-events: none; }
-.gantt-week-line { border-left: 1px solid var(--gantt-scale-line); }
+.gantt-period-line { border-left: 1px solid var(--gantt-scale-line); }
 .gantt-deadline { border-left: 1px dashed var(--gantt-deadline); }
 .gantt-finish { border-left: 1px solid var(--gantt-finish); }
 .gantt-today { border-left: 2px solid var(--gantt-today); }
@@ -23,11 +38,14 @@
 .gantt-row { position: absolute; left: 0; right: 0; cursor: pointer; }
 .gantt-row.done { opacity: 0.45; }
 .gantt-bar, .gantt-summary, .gantt-milestone { position: absolute; box-sizing: border-box; }
-.gantt-bar { top: 25%; height: 50%; background: var(--gantt-bar); border-radius: 2px; min-width: 2px; }
+.gantt-bar { top: 25%; height: 50%; background: var(--gantt-bar); border-radius: 2px; }
 .gantt-bar.critical { background: var(--gantt-critical); }
 /* A bracket: a thin bar with its ends turned down. */
 .gantt-summary { top: 30%; height: 35%; border: 3px solid var(--gantt-summary); border-bottom: none; }
 .gantt-summary.critical { border-color: var(--gantt-critical); }
+/* Narrower than its two caps: a bar, in the summary's colour. */
+.gantt-summary.as-bar { border: none; background: var(--gantt-summary); }
+.gantt-summary.as-bar.critical { background: var(--gantt-critical); }
 .gantt-milestone { top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--gantt-milestone); transform: rotate(45deg); }
 .gantt-milestone.critical { background: var(--gantt-critical); }
 .gantt-bar.late, .gantt-summary.late, .gantt-milestone.late { outline: 2px solid var(--diag-warning); outline-offset: 1px; }

@@ -202,6 +202,9 @@ export interface RenderContext {
   setCursorLine(at: FileLine): void;
   /** Make the file at `path` the active file: a mount row's file badge (Open). */
   openFile?(path: string): void;
+  /** Place a control of the renderer's in the preview toolbar, beside the exporters (spec §3.3). The
+   *  shell removes it when another view is chosen; the returned function removes it sooner. */
+  toolbar?(el: HTMLElement): () => void;
   // Hover across panes (spec §3.3): the shell relays a hovered line between the editor and the view.
   /** The pointer is over the row on `at`; null when it left the rows. */
   setHoverLine?(at: FileLine | null): void;

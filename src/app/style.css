@@ -12,7 +12,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 /* The tab bar stays put; #host fills the rest and is the scroll container. */
 #preview { border-left: 1px solid var(--border); display: flex; flex-direction: column; }
 .preview-bar { flex: none; display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
-#renderers, #exporters, #editors { display: flex; gap: 4px; }
+#renderers, #exporters, #editors, #view-tools { display: flex; gap: 4px; }
+#view-tools { margin-left: auto; margin-right: 8px; }
 #editors { margin-left: 8px; }
 .toolbar button, .preview-bar button { border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 2px 10px; cursor: pointer; }
 #renderers button.active, #editors button.active { background: var(--accent-bg); border-color: var(--accent-border); }
