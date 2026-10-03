@@ -6,14 +6,15 @@ import { search, searchKeymap } from '@codemirror/search';
 import { Compartment, EditorState } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import { setCell } from 'rows';
-import { EditorView, keymap, lineNumbers } from '@codemirror/view';
+import { BlockType, EditorView, keymap, lineNumbers } from '@codemirror/view';
 import type { CodeMirrorBuffer } from '../buffer';
 import { ComposedBuffer } from '../buffer/composed';
-import type { FileLine, Model } from '../core';
+import type { FileLine, Model, Visible } from '../core';
 import { layoutPublisher } from '../ui/row-layout';
 import type { Leader, RowLayout } from '../ui/row-layout';
 import { planDiagnostics, showDiagnostics, showModelDiagnostics } from './diagnostics';
 import { fileLineAt, lineStart, setRootFile } from './files';
+import { hiddenAt, planFilter, setFilter } from './filter';
 import { planFolding } from './folding';
 import { planKeys } from './keymap';
 import { plan, showSyntax } from './language';
@@ -49,6 +50,8 @@ export interface TextEditor extends Leader {
   setCursorLine(at: FileLine): void;
   /** The files with unsaved changes, for the segments' mount lines. */
   showUnsaved(files: ReadonlySet<string>): void;
+  /** Show only the filter's lines (spec §5.7); null shows them all. */
+  setFilter(visible: Visible | null): void;
   destroy(): void;
 }
 
@@ -72,7 +75,8 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
 
   /**
    * Line blocks cover wrapped lines; a folded line's block covers it and its folded lines, which
-   * have none. Each row is keyed by its file and its line in it.
+   * have none, and a filter's hidden lines are a widget's block, which is no row. Each row is keyed
+   * by its file and its line in it.
    */
   function measure(): RowLayout {
     const scrollTop = view.scrollDOM.scrollTop;
@@ -82,7 +86,10 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
       bodyTop: view.documentTop - parent.getBoundingClientRect().top + scrollTop,
       contentHeight: view.contentHeight - view.documentPadding.top,
       scrollTop,
-      rows: view.viewportLineBlocks.map((block) => ({ at: fileLineAt(state, block.from), top: block.top, height: block.height })),
+      rows: view.viewportLineBlocks
+        .flatMap((block) => (Array.isArray(block.type) ? block.type : [block]))
+        .filter((block) => block.type === BlockType.Text)
+        .map((block) => ({ at: fileLineAt(state, block.from), top: block.top, height: block.height })),
     };
   }
   const layout = layoutPublisher(measure);
@@ -116,6 +123,7 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
     // CodeMirror's own search and replace, over the whole text, composed or not (spec §4.5).
     search({ top: true }),
     keymap.of(searchKeymap),
+    planFilter,
     bodyTopPadding.of([]),
     EditorView.updateListener.of((update) => {
       // An edit, a fold, a newly measured height or a resize of the editor.
@@ -171,6 +179,18 @@ export function mountTextEditor(buffer: CodeMirrorBuffer, parent: HTMLElement, h
     },
     showUnsaved(files) {
       if (composed) view.dispatch({ effects: setUnsaved.of(files) });
+    },
+    setFilter(visible) {
+      view.dispatch({ effects: setFilter.of(visible) });
+      // A cursor left on a hidden line goes to the next line shown, or else the one before.
+      const head = view.state.selection.main.head;
+      const hidden = hiddenAt(view.state, head);
+      if (hidden) {
+        fromApi = true;
+        view.dispatch({ selection: { anchor: hidden.to < view.state.doc.length ? hidden.to + 1 : Math.max(0, hidden.from - 1) } });
+        fromApi = false;
+      }
+      layout.publish();
     },
     onRowLayout(cb) {
       const off = layout.onRowLayout(cb);

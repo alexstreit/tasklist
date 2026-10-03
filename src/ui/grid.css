@@ -12,3 +12,5 @@
 .plan-grid td.outline { color: var(--fg-muted); user-select: none; }
 .plan-grid .file-badge { margin-left: 0.6em; padding: 0 6px; font: inherit; font-size: 0.85em; color: var(--badge-fg); background: var(--badge-bg); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; text-decoration: none; }
 .plan-grid .file-badge:disabled { cursor: default; }
+/* An ancestor the filter shows only for context (spec §5.7). */
+.plan-grid tbody tr.filter-context > td { opacity: var(--filter-context-opacity); }

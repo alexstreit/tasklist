@@ -71,3 +71,11 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 .wizard-note { font-size: 13px; color: var(--diag-error); }
 .wizard-mount { font-size: 14px; display: flex; gap: 6px; align-items: center; }
 .dialog-buttons button[hidden] { display: none; }
+/* The filter box (spec §5.7): its query, ✕, and while it's active the count. */
+.toolbar .filter { display: inline-flex; align-items: center; gap: 4px; margin-left: 12px; }
+.toolbar .filter[hidden] { display: none; }
+.toolbar .filter input { font: inherit; width: 14em; padding: 2px 6px; border: 1px solid var(--button-border); border-radius: 4px; background: var(--bg); color: var(--fg); color-scheme: light dark; }
+.toolbar .filter input::-webkit-search-cancel-button { display: none; } /* the ✕ beside it clears it */
+.toolbar .filter.active input { border-color: var(--accent-border); background: var(--accent-bg); }
+.toolbar .filter #filter-clear { padding: 2px 6px; }
+.toolbar .filter .filter-count { color: var(--fg-muted); white-space: nowrap; }

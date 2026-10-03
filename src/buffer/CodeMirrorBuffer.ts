@@ -110,7 +110,7 @@ export class CodeMirrorBuffer implements PlanBuffer {
     const change: BufferChange = {
       text: tr.state.doc.toString(),
       edits,
-      mapPos: (pos) => tr.changes.mapPos(pos),
+      mapPos: (pos, assoc) => tr.changes.mapPos(pos, assoc),
       origin: this.origin,
     };
     for (const listener of [...this.listeners]) listener(change);

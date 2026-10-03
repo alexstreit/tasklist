@@ -14,3 +14,5 @@ export { formatDuration } from './duration';
 export { inputEdit, preview, resolveFix } from './fixes';
 export { mintId } from './ids';
 export { mountRefusal, relativePath } from './mounting';
+export { filterRows } from './filter';
+export type { Found } from './filter';

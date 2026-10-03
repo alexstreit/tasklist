@@ -3,7 +3,7 @@
 // draws from a RowLayout: with nothing leading, it builds its own with `naturalLayout`. The name
 // avoids "rows", which already means the library.
 
-import type { ItemNode, Model, RowLayout } from '../core';
+import type { ItemNode, Model, RowLayout, Visible } from '../core';
 
 export type { RowLayout } from '../core';
 
@@ -27,11 +27,14 @@ export interface Viewport {
   rowHeight: number;
 }
 
-/** A follower's own layout when nothing leads: one row per item of the composed tree, in document order, at `rowHeight`. */
-export function naturalLayout(model: Model, version: number, viewport: Viewport): RowLayout {
+/**
+ * A follower's own layout when nothing leads: one row per item of the composed tree, in document
+ * order, at `rowHeight`; with a filter, one per item it shows (spec §5.7).
+ */
+export function naturalLayout(model: Model, version: number, viewport: Viewport, filter?: Visible | null): RowLayout {
   const { bodyTop, scrollTop, height, rowHeight } = viewport;
   const items: ItemNode[] = [];
-  const collect = (node: ItemNode): void => void (items.push(node), node.children.forEach(collect));
+  const collect = (node: ItemNode): void => void ((!filter || filter.shows(node)) && items.push(node), node.children.forEach(collect));
   model.roots.forEach(collect);
   const first = Math.max(0, Math.floor(scrollTop / rowHeight));
   const last = Math.min(items.length, Math.ceil((scrollTop + height) / rowHeight));

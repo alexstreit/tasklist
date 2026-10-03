@@ -96,3 +96,6 @@
 .sheet-confirm .mount-choice:hover:not(:disabled) { background: var(--hover); }
 .sheet-confirm .mount-choice:disabled { color: var(--fg-faint); cursor: default; }
 .sheet-confirm .fix-input { font: inherit; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--accent-border); border-radius: 2px; padding: 0 4px; }
+/* An ancestor the filter shows only for context (spec §5.7). */
+.plan-sheet tbody tr.filter-context > td { opacity: var(--filter-context-opacity); }
+.problems .filter-hidden { color: var(--fg-muted); font-style: italic; }

@@ -30,6 +30,8 @@
   --segment-gutter-fg: #a8a28c;
   --badge-bg: #f3f4f6;
   --badge-fg: #374151;
+  /* an ancestor the filter shows only for context (spec §5.7) */
+  --filter-context-opacity: 0.5;
 
   /* editor tokens (cm-plan-*) */
   --tok-front-matter: #7c6f64;
@@ -95,6 +97,7 @@
     --segment-gutter-fg: #6b7590;
     --badge-bg: #374151;
     --badge-fg: #e5e7eb;
+    --filter-context-opacity: 0.55;
 
     --tok-front-matter: #a89f91;
     --tok-comment: #8b8b8b;

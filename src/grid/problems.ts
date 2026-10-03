@@ -14,6 +14,8 @@ export interface ProblemsHooks {
   titleOf(line: number): string | null;
   /** Focus the row a diagnostic is on, in its file, or the cell its span falls in; nothing when the line has no row. */
   focus(diagnostic: Diagnostic): void;
+  /** True when the filter hides the row a diagnostic is on (spec §5.7). */
+  hidden?(diagnostic: Diagnostic): boolean;
 }
 
 export interface Problems {
@@ -127,6 +129,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
     const where = (file === undefined ? hooks.titleOf(line) : mountedTitle(file, line)) ?? `Line ${line}`;
     const go = button('problem', '', () => hooks.focus(diagnostic));
     go.append(part('severity', diagnostic.severity), part('where', where), part('message', diagnostic.message));
+    if (hooks.hidden?.(diagnostic)) go.append(part('filter-hidden', 'hidden by filter'));
     li.append(go);
     const target = file ?? model?.file ?? '';
     li.append(...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(li, fix, target))));

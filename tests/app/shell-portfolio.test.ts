@@ -81,6 +81,9 @@ describe('the portfolio', () => {
     $('open-folder').click();
     await settle();
     expect(document.title).toBe('portfolio.plan — Plan');
+    // A schedule file opens on the Gantt, the highest-ranked view (Task 41); the tree is chosen.
+    tab('Tree').click();
+    await settle();
     expect(rows().map((r) => `${own(r.cells[0])} ${own(r.cells[1])}`)).toEqual(['1 Product A', '1.1 Design', '1.2 Build', '2 Product B', '2.1 Spec', '2.2 Code', '3 Tradeshow']);
     expect(rows().map((r) => r.classList.contains('mounted'))).toEqual([false, true, true, false, true, true, false]);
     // 10d of work in all.

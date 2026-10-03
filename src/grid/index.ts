@@ -6,7 +6,7 @@
 import { readFlag } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, EditResult } from 'rows';
 import { formatDuration, mountRefusal, preview, relativePath } from '../core';
-import type { Column, Diagnostic, FileLine, Fix, ItemNode, Model, Node, Pinnable, Span } from '../core';
+import type { Column, Diagnostic, FileLine, Fix, ItemNode, Model, Node, Pinnable, Span, Visible } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
 import type { PieceMap } from '../buffer/pieces';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
@@ -95,6 +95,8 @@ export interface GridHooks {
    * when the workspace can't list files (the single-file workspace).
    */
   plans?(): Promise<{ path: string; mounts: string[] }[]>;
+  /** Clear the filter (spec §5.7): a problem on a hidden row is focused once it is cleared. */
+  clearFilter?(): void;
 }
 
 /** The grid leads (spec §3.4): its rows are its table's body rows. */
@@ -103,6 +105,8 @@ export interface GridEditor extends Leader {
   update(model: Model): void;
   /** The files with unsaved changes: the mount rows of mounted files mark them. */
   showUnsaved(files: ReadonlySet<string>): void;
+  /** Draw only the filter's rows (spec §5.7); null draws them all. */
+  setFilter(visible: Visible | null): void;
   setCursorLine(at: FileLine): void;
   /** Band the row on `line`, hovered in the other pane; null clears it. */
   setHoverLine(at: FileLine | null): void;
@@ -161,16 +165,27 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
   // The settings banner and the problems list, with their fixes (spec §4b.6.3, §4b.6.6).
   const problems = mountProblems({
     write: (host, file, make) => write(host, file, make) !== null,
+    // From the model, not the rows drawn: a row the filter hides still names its problems.
     titleOf: (line) => {
-      const row = byFile.get(keyOf(root(), line));
-      return row?.kind === 'item' && row.node.title !== '' ? row.node.title : null;
+      const node = model?.lines[line - 1];
+      return node?.kind === 'item' && node.title !== '' ? node.title : null;
     },
+    hidden: (diagnostic) => hidden(diagnostic),
     // Focuses the row, in its own file, or the cell the diagnostic's span falls in.
     focus: (diagnostic) => {
+      // A row the filter hides shows once the filter is cleared; without a shell to clear it, the grid drops its own.
+      if (hidden(diagnostic)) {
+        hooks.clearFilter?.();
+        if (applied) applyFilter(null);
+      }
       const row = byFile.get(keyOf(diagnostic.file ?? root(), diagnostic.line));
       if (row && row.kind !== 'front') place(row.vline, diagnostic.span ? columnFor(row, diagnostic) : WBS);
     },
   });
+  /** True when the filter hides the line a diagnostic is on. */
+  function hidden(diagnostic: Diagnostic): boolean {
+    return !!applied && !applied.shows({ file: diagnostic.file ?? root(), line: diagnostic.line });
+  }
   const table = document.createElement('table');
   table.className = 'plan-sheet';
   // Space above the table when a following pane's header is taller than the grid's (setMinBodyTop).
@@ -181,6 +196,10 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
   parent.replaceChildren(bar, confirmBox, problems.banner, problems.list, spacer, table);
 
   let model: Model | null = null;
+  // The filter's rows (spec §5.7), and the filter the rows were last read with: it is used only with
+  // the model whose lines it is numbered in.
+  let filter: Visible | null = null;
+  let applied: Visible | null = null;
   // The rows the place can be on, in the order shown; with each file's front matter, every body row.
   let rows: Row[] = [];
   let shown: (Row | FrontMatter)[] = [];
@@ -549,6 +568,8 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     const classes = [kind];
     if (row.mount > 0) classes.push('mounted', `segment-depth-${row.mount}`);
     if (row.border) classes.push('in-segment');
+    // An ancestor the filter shows only for context is dimmed.
+    if (applied?.dims(row)) classes.push('filter-context');
     return classes.join(' ');
   }
 
@@ -764,7 +785,8 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     total.className = 'total';
     const cell = () => total.appendChild(document.createElement('td'));
     for (let i = 0; i < leading(); i++) cell();
-    cell().textContent = 'Total';
+    // It still sums the whole plan while the rows are filtered.
+    cell().textContent = applied ? 'Total (all rows)' : 'Total';
     columns.forEach((column) => {
       const td = cell();
       const sum = model?.value(totals)?.get(column.name);
@@ -1333,6 +1355,14 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     },
   ];
 
+  // While filtering, rows can't be reordered or re-levelled: hidden rows would move with them unseen (spec §5.7).
+  for (const action of actions) {
+    if (!['indent', 'outdent', 'up', 'down'].includes(action.id)) continue;
+    const { enabled, why } = action;
+    action.enabled = (row) => !applied && enabled(row);
+    action.why = (row) => (applied ? 'Clear the filter to reorder rows.' : (why?.(row) ?? null));
+  }
+
   /** Run a structural operation on the current row, if it applies; when a mounted file is why it doesn't, say so. */
   function act(id: string): void {
     const action = actions.find((a) => a.id === id);
@@ -1694,8 +1724,11 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       if (file === next.file && !frontMatter) frontMatter = front;
       block = null;
     };
+    // While filtering, only the filter's lines are rows, and the front matter isn't shown.
+    applied = filter && filter.version === next.version ? filter : null;
     for (const entry of placed) {
       const { node, file, vline, mount } = entry;
+      if (applied && !applied.shows({ file, line: node.line })) continue;
       if (node.kind === 'front-matter') {
         if (block && block.file !== file) closeBlock();
         if (!block) block = { file, vline, mount, nodes: [] };
@@ -1739,6 +1772,19 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
     }
   }
 
+  function applyFilter(visible: Visible | null): void {
+    filter = visible;
+    // Drawn now when it goes with the model; otherwise with the model that comes next.
+    if (!model || (visible && visible.version !== model.version)) return;
+    readModel(model);
+    build();
+    // The problems list marks the problems on hidden rows.
+    problems.update(model, frontMatter?.span ?? null);
+    restore();
+    updateToolbar();
+    fitBodyTop();
+  }
+
   function columnFor(row: Row, diagnostic: Diagnostic): number {
     if (!diagnostic.span) return WBS;
     if (row.kind === 'line') return TITLE;
@@ -1765,6 +1811,7 @@ export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: 
       // The problems list may have changed height too.
       fitBodyTop();
     },
+    setFilter: applyFilter,
     showUnsaved(files) {
       unsaved = files;
       // Only segments' mount rows show it: each is drawn again, and its title cell redraws only if its marker changed.

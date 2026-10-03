@@ -42,6 +42,27 @@ describe.each(implementations)('%s', (_name, create) => {
     expect(changes[0].mapPos(5)).toBe(7);
   });
 
+  it('maps a position text is inserted at to before the text, or with assoc 1 after it (Task 41)', () => {
+    const buffer = create('abcdef');
+    const changes = record(buffer);
+    buffer.apply([{ from: 3, to: 3, insert: 'XY' }], 'grid');
+    expect(changes[0].mapPos(3)).toBe(3);
+    expect(changes[0].mapPos(3, -1)).toBe(3);
+    expect(changes[0].mapPos(3, 1)).toBe(5);
+  });
+
+  it('maps a position inside a replaced range after the earlier edits in the same change (Task 41)', () => {
+    const buffer = create('abcdefgh');
+    const changes = record(buffer);
+    // XY goes in before b, and efg becomes Z: aXYbcdZh. Position 5, inside efg, is after the two inserted characters.
+    buffer.apply([{ from: 1, to: 1, insert: 'XY' }, { from: 4, to: 7, insert: 'Z' }], 'grid');
+    expect(changes[0].text).toBe('aXYbcdZh');
+    expect(changes[0].mapPos(5)).toBe(6);
+    expect(changes[0].mapPos(5, 1)).toBe(7);
+    // h, after the replacement, moves by both edits.
+    expect(changes[0].mapPos(7)).toBe(7);
+  });
+
   it('maps positions across a deletion', () => {
     const buffer = create('abcdef');
     const changes = record(buffer);

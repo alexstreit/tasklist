@@ -5,7 +5,7 @@
 // up, the canvas holds the cursor and hover bands, the period lines, the marks, then the deadline,
 // finish and today lines. The scale picker, in the preview toolbar, chooses Day, Week, Month or Fit.
 
-import type { FileLine, ItemNode, Model, RenderContext, Renderer, RowLayout, WorkHours } from '../../../../core';
+import type { FileLine, ItemNode, Model, RenderContext, Renderer, RowLayout, Visible, WorkHours } from '../../../../core';
 import { formatDate, formatPinnableDate } from '../../../../core';
 import { naturalLayout } from '../../../../ui/row-layout';
 import { today } from '../../../../ui/today';
@@ -63,8 +63,9 @@ interface State {
   ctx: RenderContext | null;
   /** The leader's latest layout; null while nothing leads. */
   layout: RowLayout | null;
-  /** The model the chart was last drawn from, and the chart. */
+  /** The model the chart was last drawn from, the filter it was drawn with, and the chart. */
   drawn: Model | null;
+  filter: Visible | null;
   chart: Gantt | null;
   zoom: ScaleName;
 }
@@ -104,6 +105,7 @@ function mount(host: HTMLElement): State {
     ctx: null,
     layout: null,
     drawn: null,
+    filter: null,
     chart: null,
     zoom: lastScale(),
   };
@@ -317,7 +319,8 @@ function draw(state: State): void {
   const { model, ctx, body, canvas, scale } = state;
   if (!model || !ctx) return;
   const rowHeight = parseFloat(getComputedStyle(state.root).getPropertyValue('--row-height')) || ROW_HEIGHT;
-  const layout = state.layout ?? naturalLayout(model, model.version, { bodyTop: SCALE_HEIGHT, scrollTop: 0, height: Infinity, rowHeight });
+  const filter = ctx.filter ?? null;
+  const layout = state.layout ?? naturalLayout(model, model.version, { bodyTop: SCALE_HEIGHT, scrollTop: 0, height: Infinity, rowHeight }, filter);
   // A layout of another version is of other text: keep the last frame.
   if (layout.version !== model.version) return;
   const chart = ganttGeometry(model, layout, state.zoom, today(), body.clientWidth);
@@ -338,7 +341,10 @@ function draw(state: State): void {
     return el;
   });
   place(chart.rows, state.rows, state.markLayer, (row) => drawRow(model, items.get(rowKey(row))!, row, ctx));
+  // An ancestor the filter shows only for context is dimmed.
+  for (const row of state.rows.values()) row.classList.toggle('filter-context', !!filter?.dims(lineOf(row)));
   state.drawn = model;
+  state.filter = filter;
   markCursor(state);
   markHover(state);
   if (body.scrollTop !== layout.scrollTop) body.scrollTop = layout.scrollTop;
@@ -349,6 +355,7 @@ export const ganttRenderer: Renderer = {
   label: 'Gantt',
   requires: [start, duration, finish, slack, critical, late, milestone, deadline, projectFinish],
   follows: true,
+  rank: 20,
 
   render(model: Model, host: HTMLElement, ctx: RenderContext): void {
     let state = states.get(host);
@@ -372,7 +379,7 @@ export const ganttRenderer: Renderer = {
       current.relayed = at;
       markHover(current);
     });
-    if (current.drawn !== model) draw(current);
+    if (current.drawn !== model || current.filter !== (ctx.filter ?? null)) draw(current);
     markCursor(current);
   },
 };

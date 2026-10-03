@@ -5,7 +5,7 @@
 
 import { formatDuration, formatPinnableDate } from '../../core';
 import type { FieldKey, ItemNode, Model, Pinnable, RenderContext, Renderer } from '../../core';
-import { addItemRow, addTitleCell, createGrid, mount, muted } from '../../ui/grid';
+import { addItemRow, addTitleCell, createGrid, mount, muted, shows } from '../../ui/grid';
 import './pins.css';
 
 interface Entry {
@@ -48,7 +48,7 @@ export const pinsView: Renderer = {
   requires: [],
 
   render(model: Model, host: HTMLElement, ctx: RenderContext): void {
-    const list = entries(model);
+    const list = entries(model).filter(({ node }) => shows(ctx, node));
     if (list.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'pins-empty';

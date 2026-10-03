@@ -12,8 +12,8 @@ export interface BufferChange {
   text: string;
   /** What changed, in the coordinates of the document before the change. */
   edits: readonly TextEdit[];
-  /** Position before the change -> position after it. */
-  mapPos(pos: number): number;
+  /** Position before the change -> position after it. Text inserted at `pos` goes after it, or before it with `assoc` 1. */
+  mapPos(pos: number, assoc?: -1 | 1): number;
   /** "text-editor" | "grid" | "undo" | "redo" | "load" | "remote" (the file changed on disk; not undoable) */
   origin: string;
 }

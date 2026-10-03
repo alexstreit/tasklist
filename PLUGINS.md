@@ -246,6 +246,14 @@ Includes (`include:` in the frontmatter) are table imports, which come with reso
 
 **Columns across files.** The model's columns are the root file's. For each mounted file, core maps each root column to one of the file's own columns in two passes. First by role: a root column bound to a role takes the mounted column bound to the same role. Then by name, among the mounted columns not already taken. A mounted column maps to at most one root column, so no total counts a value twice; a root column that maps to nothing is blank on that file's rows, with no diagnostic. `model.field`, `hours` and every view read cells through this mapping, so plugins never see it; `model.column` gives the mapping itself, for the grid's writes (plan spec §4b.7). A summable cell keeps the hours its own column read, with its own `hpd` and `dpw`.
 
+**Filtering** (plan spec §5.7) is core's too, and reads the format, not a plugin's fields:
+
+```ts
+filterRows(model, query): { matches: FileLine[]; ancestors: FileLine[]; count: number; total: number }
+```
+
+Pure, and display only: it changes nothing in the model. A row matches when every whitespace-separated term of `query` appears, ignoring case, in its title or a declared cell's decoded text, read from `node.fields` in the row's own file, not through the column mapping above, so a mounted row is searched by its own columns. `ref` columns' cells and the key column's are not searched; nor are outline numbers and anchors. `ancestors` are the matches' ancestors that don't match themselves; both lists are in composed order. `count` is the matches, `total` every item row of the composed tree. Following the shown rows through edits is the shell's (`src/app/filter.ts`), and drawing them the panes'.
+
 ## 7. Workspace and calendar
 
 Both are interfaces from the start, each with a naive first implementation, so later versions swap in without touching their callers.

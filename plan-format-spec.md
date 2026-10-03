@@ -344,15 +344,30 @@ interface Renderer {
   label: string;
   requires: FieldKey<unknown>[]; // tree and table: estimate's rollup, hasValue and totals
   follows?: true; // draws its rows beside a leading editor's
+  rank?: number; // how much the shell prefers it as the default view; 0 when absent
   render(model: Model, host: HTMLElement, ctx: RenderContext): void;
 }
 ```
+
+**Which view shows.** The shell shows the view the user last chose, while it can show the document. Without a choice, it picks the available renderer with the highest `rank`, ties going to registration order, when a file is opened or becomes active, not on every analysis: within a file, the view shown stays while it can show the document, and when it can't, the shell falls back by rank. So adding `project-start` to an estimate file leaves it on the tree until the file is opened again or becomes active again. The Gantt's rank is 20, the schedule table's 10, and every other renderer's 0, so a schedule file opens on the Gantt and an estimate file on the tree. A choice is kept across file switches. When the chosen view can't show the document, the shell falls back by rank without forgetting the choice, and shows the chosen view again once it can. The choice is remembered per viewer in `localStorage` (`plan.view`), as the editor choice is; when storage can't be read, or names no renderer, there is no choice. The shell reads only `rank` and names no renderer.
 
 `requires` lets the app grey out a renderer whose needs aren't met instead of rendering nonsense; an unsatisfied renderer is never called. When the plugin that owns a required field isn't registered, the reason is "needs the estimate plugin"; when a stage that writes a required field was skipped, it is the reason of the first such stage in stage order. The app asks core for the reason (`unmetReason`) and special-cases no renderer.
 
 Renderers that read a plugin's fields belong to that plugin: tree and table are in `src/plugins/estimate/renderers/`, and the schedule table in `src/plugins/schedule/renderers/`. A renderer that reads only core fields goes in `src/views/`. The row-per-item table, its cursor highlight and click-to-line, and their CSS are in `src/ui/`, shared UI code for renderers and editors, which imports only core's types (`PLUGINS.md` §8).
 
-`RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), `setCursorLine(at)` for click-to-line, `openFile(path)`, which makes a file the active one (a mount row's file badge), and `toolbar(el)`. It is renderer-agnostic.
+`RenderContext` carries the current cursor line, whether the last cursor change originated in the preview (so the preview doesn't scroll under a click), `setCursorLine(at)` for click-to-line, `openFile(path)`, which makes a file the active one (a mount row's file badge), `toolbar(el)` and `filter`. It is renderer-agnostic.
+
+**Filter.** `filter?: Visible | null` is the rows the filter shows (§5.7), or null when nothing is filtered:
+
+```ts
+interface Visible {
+  version: number; // the buffer version its lines are numbered at: the model's it goes with
+  shows(at: FileLine): boolean;
+  dims(at: FileLine): boolean; // an ancestor shown only for context
+}
+```
+
+A view draws only the rows `shows` is true for, dims those `dims` is true for, and draws everything else as it would unfiltered: its totals and every value are unchanged. The shared row helpers in `src/ui/grid.ts` (`shows`, and `addItemRow`'s `filter-context` class) do this for every view. It is optional, so a renderer that ignores it shows everything.
 
 **Toolbar.** `toolbar?(el: HTMLElement): () => void` places a control of the renderer's in the preview toolbar, beside the exporter buttons, and returns a function that removes it. The renderer places a control once, not on every render, and removes it itself when it unmounts (draws afresh into its host). The shell removes every placed control when another view is chosen, or when no view can show the document, and names no renderer. It is optional, so a renderer without controls ignores it; the Gantt's scale picker (§5.5) is the first. A line is always named with its file, `{ file, line }` (`FileLine`, in `src/core/types.ts`): the cursor line, the cursor item, `setCursorLine` and the hover relays all take one, and the root file's lines are `{ file: root, line }`. So a mounted row's line is never mistaken for the root's line of the same number.
 
@@ -390,7 +405,7 @@ interface RowLayout {
 
 A row on screen is at `bodyTop + top - scrollTop` from the top of its pane's host, the element the editor or view is mounted in, at its content box. The two hosts' tops may differ, either way round (the preview's tab bar sits above the view's host): the shell measures both against the page, converts each layout's `bodyTop` and each header height between them, and measures again when either host is resized. Editors and renderers never see the shell's markup or the offset. `RowLayout` is in `src/core/types.ts`, beside `RenderContext`; its helpers are in `src/ui/row-layout.ts`, a name chosen to avoid "rows", which already means the library.
 
-- A follower always draws from a `RowLayout`. Until a leader's arrives (when nothing leads, always) it builds its own with `naturalLayout(model, version, viewport)`: one row per item, in document order, at `--row-height`, the one row-height token, which the grid shares. So there is one drawing path, with no aligned and standalone modes.
+- A follower always draws from a `RowLayout`. Until a leader's arrives (when nothing leads, always) it builds its own with `naturalLayout(model, version, viewport, filter?)`: one row per item, in document order, at `--row-height`, the one row-height token, which the grid shares; with a filter, one per item it shows. So there is one drawing path, with no aligned and standalone modes.
 - It re-renders on a new model and repositions on a new layout, never re-rendering per scroll event. It starts its body at the layout's `bodyTop` and scrolls it to the layout's `scrollTop`.
 - It draws a layout only when `layout.version === model.version`, and otherwise keeps its last frame: after an edit the leader's layout runs ahead of the model until the next analysis.
 - A layout row whose line has no item (a comment, blank or front matter line) is left empty. An item whose line isn't in the layout, such as a folded parent's child, isn't drawn; the model still has its fields.
@@ -403,9 +418,12 @@ Exactly one editor is active at a time. Every editor writes to the shared `PlanB
 interface PlanEditor {
   update(model: Model): void; // a fresh model for the buffer's current text
   setCursorLine(at: FileLine): void; // an editor ignores a line of a file it doesn't show
+  setFilter?(visible: Visible | null): void; // show only the filter's rows (§5.7); null shows them all
   destroy(): void;
 }
 ```
+
+`setFilter` is optional: an editor without it shows every row. The shell calls it before `update` with the filter numbered as the model it then hands over, and again whenever the filter is computed or cleared. The grid draws it with the model of the same version; the text editor places it in its own text, and maps it through edits until the next call.
 
 The shell mounts one editor, hands it every new model, and destroys it when the other is chosen. It holds the editors in a list, exactly as it holds renderers and exporters, and special-cases neither. Undo survives a switch because the history belongs to the buffer, not to the editor.
 
@@ -427,8 +445,8 @@ onHoverLine?(cb: (at: FileLine | null) => void): void; // the line under the poi
 The grid takes part: hovering a body row reports its line (a comment, blank or front matter row's too; the draft and new-task rows report null), leaving the table reports null, and a relayed line bands its row, kept across a rebuild. The text editor doesn't, for now.
 
 - Both editors lead, and publish after a scroll, an edit, a fold, a resize and each `update`. A leader measures only while something subscribes: with no subscriber, none of these measures anything, and `setMinBodyTop` waits for one. Resizes come from a `ResizeObserver` on the pane; the grid also observes its toolbar, settings banner and problems list, so either opening or closing counts.
-- The text editor's rows are CodeMirror's line blocks, which cover wrapped lines; a folded line's block covers the lines folded into it, which have no rows. Each row is keyed by its file and its line in that file; a segment's header is its mount line (§4.5), an ordinary row. Its version is the buffer's: its view always shows the buffer's text. `setMinBodyTop` adds top padding to the content.
-- The grid's rows are its table's body rows on screen: items, comment, blank and front matter rows (each file's front matter is one row, on its first line), keyed by their own file and line, and the draft and new-task rows as `at: null`. Its version is its model's, since its rows are drawn from it. Its whole pane scrolls, header included, so `bodyTop` is measured in the pane's content, and `contentHeight` is the rest of the pane's content, so it includes the pinned total row (§4b.1). A follower's body is as tall, so both scroll to the same end. `setMinBodyTop` adds space above the table.
+- The text editor's rows are CodeMirror's line blocks, which cover wrapped lines; a folded line's block covers the lines folded into it, which have no rows, and a filter's hidden lines are one widget block, which is no row (§5.7). Each row is keyed by its file and its line in that file; a segment's header is its mount line (§4.5), an ordinary row. Its version is the buffer's: its view always shows the buffer's text. `setMinBodyTop` adds top padding to the content.
+- The grid's rows are its table's body rows on screen: items, comment, blank and front matter rows (each file's front matter is one row, on its first line), keyed by their own file and line, and the draft and new-task rows as `at: null`. While filtering, only the rows the filter shows (§5.7). Its version is its model's, since its rows are drawn from it. Its whole pane scrolls, header included, so `bodyTop` is measured in the pane's content, and `contentHeight` is the rest of the pane's content, so it includes the pinned total row (§4b.1). A follower's body is as tall, so both scroll to the same end. `setMinBodyTop` adds space above the table.
 
 The shell connects a leader to a follower by declared capability, never by which view it is, with one function, `connectPanes(left, right)` (`src/app/align.ts`):
 
@@ -479,7 +497,7 @@ interface TextEdit {
 interface BufferChange {
   text: string; // document after the change
   edits: TextEdit[]; // what changed, in original coordinates
-  mapPos(pos: number): number; // position before → position after
+  mapPos(pos: number, assoc?: -1 | 1): number; // position before → position after; text inserted at pos goes after it, or before it with assoc 1
   origin: string; // "text-editor" | "grid" | "undo" | "redo" | "load" | "remote" | "compose"
 }
 
@@ -596,7 +614,7 @@ A second editor over the same `PlanBuffer`: a task sheet in the style of MS Proj
 - Front matter renders as a single collapsed greyed row at the top, read-only.
 - **Composed rows.** Over a composed buffer (§3.7, in a folder), the grid shows the composed lines in composed order, from the piece map: the root's rows, and each mounted file's rows in its segment, its comment and blank lines included, and its front matter as one collapsed, read-only row like the root's. Each row carries its own `{ file, line }`, which the cursor, hover and row layout use (§3.3, §3.4). A segment's mount row is its header (§4b.7). A mounted file's rows are shaded with the text editor's segment tokens from the theme, `--mounted-row-bg` and a border on their left in `--segment-border`, at every mount depth, with the classes `mounted` and `segment-depth-N`; the hover and cursor bands show over the shading; titles are indented at the row's depth in the composed tree, and outline numbers run across the whole plan. Mounted rows are edited where they appear (§4b.7). With no mounts, or in the single-file workspace, the grid is as before.
 - The last body row is one blank **new task** row. Typing into it inserts a new item line at the end of the document at the indent of the last item line (or indent 0 if none). Over a composed buffer, that is the root file, at the indent of its last item line.
-- A read-only **total** row below it shows document `effective` and `doneSum` per summable column, mounted plans included (§2.12). It is pinned to the bottom of the grid's scroll area (its cells are sticky). It keeps its own place at the end of the table, which is what lets the last task and the new-task row scroll clear of it, so the body needs no extra padding.
+- A read-only **total** row below it shows document `effective` and `doneSum` per summable column, mounted plans included (§2.12). It is pinned to the bottom of the grid's scroll area (its cells are sticky). It keeps its own place at the end of the table, which is what lets the last task and the new-task row scroll clear of it, so the body needs no extra padding. While a filter is active it still sums the whole plan, and reads "Total (all rows)" (§5.7).
 - The **current row**, the one the focused cell or selected row is on, has the views' cursor band across its full width, behind its cells, as well as the focused cell's outline. A selected row keeps its own style over it, and a done row keeps the band.
 
 ### 4b.2 Cells
@@ -835,7 +853,7 @@ The schedule plugin's renderer (§2.11): one row per item, nested like the tree,
 
 The schedule plugin's second renderer (`src/plugins/schedule/renderers/gantt/`), and the first that follows (§3.3). It draws from its `RowLayout`: the editor's when one leads, otherwise its natural layout. A row with no item stays empty, and only rows in the layout are drawn, so a folded parent's children have no marks while its bracket still spans their dates.
 
-With mounted files (§2.12), every row is keyed by its file and line. Following the composed text editor (§4.5), the Gantt draws every row of every plan, each at its line; following the grid, which shows the same rows in the same order (§4b.1), it draws every row too. Standalone, its natural layout has every row of the composed tree. A mounted row is shaded, and has the cursor and hover bands and click-to-line like any row.
+With mounted files (§2.12), every row is keyed by its file and line. Following the composed text editor (§4.5), the Gantt draws every row of every plan, each at its line; following the grid, which shows the same rows in the same order (§4b.1), it draws every row too. Standalone, its natural layout has every row of the composed tree, or every row the filter shows (§5.7). A mounted row is shaded, and has the cursor and hover bands and click-to-line like any row.
 
 - **Geometry** is a pure function, `ganttGeometry(model, layout, scale, today, chartWidth)`, returning plain data: the resolved `dayWidth` and tiers; per row, a bar, a summary bracket or a milestone diamond, its flags (critical, late, done, pinned), a pinned start's `pinX`, a late row's `deadlineX`, and its layout row's `top` and `height`; a band for every layout row with a line, an empty one too; the deadline lines, the project finish, the today line, and the scale's labels, lines and ticks. The renderer only places what it returns. `scale` is a named scale (`'day'`, `'week'`, `'month'`, `'fit'`) or an explicit `{ dayWidth, tiers }`; a named scale gives the same chart as its explicit pair. The app passes only names; the explicit form is for tests. `chartWidth`, the pane's chart width, is read only for Fit.
 - **Layers,** from bottom to top: the cursor and hover bands, the scale's period lines, the marks, then the deadline, today and project-finish lines. Each item's marks sit on a transparent full-width row, which takes its clicks.
@@ -864,6 +882,30 @@ A view that belongs to no plugin (`src/views/pins/`), with no `requires`, so it 
 - Each entry shows the outline number, title, what is pinned, pin, derived and effective. A single key gives its `label` and `kind` (`PLUGINS.md` §4): a `'duration'` through `formatDuration`, a `'date'` through `formatPinnableDate`, at the value's own edge (`'start'` unless it says `'end'`, as a milestone's start does), and §5.4's format. A by-column key carries neither: the entry shows the column's name, and the column's type decides the format, a duration column through `formatDuration` and a number column as the plain number. An additive pin shows its `+`.
 - A pinned value whose effective value differs from its pin (a floor that had no effect) is marked. An additive one never is, since adding is what it is for.
 - Click-to-line and the cursor band, as in the other views.
+
+### 5.7 Filter
+
+One box in the app toolbar narrows every pane to the rows that match, with their ancestors kept for context. It is display only: nothing in the file, the totals or the schedule changes.
+
+**Matching** is core's, pure: `filterRows(model, query)` (`src/core/filter.ts`, `PLUGINS.md` §6) returns the matching rows and their ancestors, each as a `FileLine`, in composed order, with how many rows match and how many item rows there are in all.
+
+- The query is split on whitespace into terms. A row matches when every term appears, ignoring case, somewhere in its cells: its title and the decoded text of each declared cell, in the row's own file, so a mounted plan's rows are searched by their own columns.
+- What the grid doesn't show as text is not searched: outline numbers, IDs (anchors, and the key column's cells), and the cells of `ref` columns, qualifiers included, whose targets the grid shows as outline numbers (§4b.2). So `web` matches the demo's Web app, and not User guide, whose deps are `#web`.
+- **Shown:** the matches, and every ancestor of a match, which is dimmed unless it matches too. Every other line is hidden, and so are comments, blank lines and front matter.
+
+**When it applies.** The shown lines are computed when the query changes, when Enter is pressed in the box, and when the active file changes; never on an edit. In between, the shell follows them through every edit to each file, in that file's own text (`mapPos`, §3.7; `src/app/filter.ts`), so a row being edited never disappears, however it changes, and a line typed among shown lines shows. Text typed at a shown line's start or end stays on it. Switching the active file, opening and closing clear the filter.
+
+**The box**, at the right end of the app toolbar, whenever a document is open, so it reads as applying to the whole window: a search field ("Filter"), a ✕ that clears it, and while it's active the count, "Showing 4 of 23 tasks", which counts matches only and changes only when the filter is computed. **Ctrl+Shift+F** focuses it. **Esc** in it clears the filter and gives the focus back to the editor, where it was. An empty query is no filter.
+
+**Every pane follows it,** through the shell, which names no pane: `PlanEditor.setFilter` (§3.4) and `RenderContext.filter` (§3.3).
+
+- **Text editor:** each run of hidden lines is replaced by one block decoration with no height, so its text is untouched and its lines have no numbers. The cursor and selections skip it: they never rest on a hidden line, and move on to the next line shown, the way they moved. A typed edit, an undo or a line operation that would change a hidden line, or join one to another line, is refused whole; a change from elsewhere (the file on disk, another file's segment) goes through. Search (Ctrl+F, §4.5) doesn't land in a hidden line: every query gets a `SearchQuery` `test` that rejects a match there. Folding works on the lines shown. A cursor left on a hidden line when the filter is set goes to the next line shown.
+- **Grid:** hidden rows aren't drawn, nor is the front matter. The new-task row stays. The total row still sums the whole plan, and reads "Total (all rows)" while filtering. Rows can't be reordered while filtering, since hidden rows would move with them unseen: Move up, Move down, Indent and Outdent (§4b.5) are disabled, titled "Clear the filter to reorder rows.", and their keys show that note instead. Insert row and Delete row stay. In the problems list (§4b.6.3), a problem on a hidden row is marked "hidden by filter"; clicking it clears the filter, through the shell (`GridHooks.clearFilter`), and then focuses the row.
+- **Views** (tree, table, schedule table, pin review): hidden rows aren't drawn. Totals are unchanged.
+- **Gantt:** following, it draws the leader's layout, which holds only shown rows; standalone, its natural layout has only the rows shown.
+- **Ancestors** shown only for context are dimmed in every pane, with `--filter-context-opacity`; matches are drawn as usual.
+
+Not yet: field filters (`owner:alice`), regular expressions, saved filters, showing a match's descendants, and filtering comment lines by their text.
 
 ### 5.3 Theming
 

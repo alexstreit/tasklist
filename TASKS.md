@@ -276,7 +276,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 **Deliverables**
 
 - `src/grid/`: a grid editor over `PlanBuffer` per spec §4b.1–4b.3, items only in this task (comment/blank rows come in Task 15).
-- Columns: WBS, done checkbox, title, declared columns. Total row. New-task row. _(Task 31: a toggle for each other marker follows the done checkbox.)_ _(Task 32: the new-task row is the last body row, and the total row below it is pinned to the bottom of the pane.)_
+- Columns: WBS, done checkbox, title, declared columns. Total row. New-task row. _(Task 31: a toggle for each other marker follows the done checkbox.)_ _(Task 32: the new-task row is the last body row, and the total row below it is pinned to the bottom of the pane.)_ _(Task 41: while a filter is active the total row reads "Total (all rows)", and only the rows it shows are drawn.)_
 - Cell editing per §4b.2, including the raw-text-on-edit rule for summable cells and the pad-to-column helper.
 - Focus restoration by line and column after each buffer change, using `mapPos`.
 - App toolbar gains a Text / Grid toggle; only one editor is mounted at a time; the preview keeps working with either.
@@ -1224,12 +1224,12 @@ Expected, in work hours, with the displayed dates:
   ```
 
   (Changed by Task 35: a follower's natural layout gives a mounted row's file as `at.file`; a leader's rows are the root file's and have none.) (Changed by Task 36: every row carries its file, `at: { file, line }`, the root file's rows too; the composed text editor's rows come from every file it shows.)
-  - Helpers: `naturalLayout(model, version, viewport)` builds a follower's own layout, with one row per item at `--row-height`. `ScrollEcho` drops a reported scroll within 1px of the value the shell last set, comparing values rather than using a boolean guard.
+  - Helpers: `naturalLayout(model, version, viewport)` builds a follower's own layout, with one row per item at `--row-height`. (Changed by Task 41: an optional fourth argument, the filter, leaves out the rows it hides.) `ScrollEcho` drops a reported scroll within 1px of the value the shell last set, comparing values rather than using a boolean guard.
   - `--row-height` is one theme token, which the grid and followers share.
 
 - **Buffer and model versions:** `PlanBuffer` counts its changes, and `Model.version` records the version that `analyze` read.
 - **Leaders:** the grid and the text editor. `PlanEditor` gains optional `onRowLayout(cb)`, `scrollTo(top)` and `setMinBodyTop(px)`.
-  - The text editor uses CodeMirror's line blocks, which cover wrapped lines. Folded lines are absent.
+  - The text editor uses CodeMirror's line blocks, which cover wrapped lines. Folded lines are absent. (Changed by Task 41: so are a filter's hidden lines, whose block is a widget's, which is no row.)
   - The grid includes comment, blank and frontmatter rows, plus a draft row as `at: null`.
   - Both publish after a scroll, an edit, a fold, and a resize. Resizes use a `ResizeObserver` on the pane, so the problems list and settings banner opening or closing count.
 - **Followers:** `Renderer` gains `follows?: true`. A following renderer's `RenderContext` has `onRowLayout(cb)` and `reportScroll(top)`. It re-renders on a new model and repositions on a new layout, never re-rendering per scroll event.
@@ -2747,7 +2747,7 @@ On a new fixture, `tests/fixtures/long.plan`, with `profile: schedule`, `project
   - Close folder returns to the start screen and Reopen is offered.
   - With unsaved changes in a mounted file, the dialog lists that file, and Cancel changes nothing.
 - [x] Every existing test passes. Tests that relied on starting with `example.plan` now use the boot option, and each is listed as rewritten. — 4245 tests (4212 before); typecheck, lint and `vite build` clean.
-- [ ] **Browser pass in Edge, after a hard reload:** pending review (there is no browser here).
+- [x] **Browser pass in Edge, after a hard reload:** pending review (there is no browser here).
   - the start screen, in both themes;
   - each template;
   - a new Schedule plan created in a real folder's subfolder and mounted under a master row;
@@ -2820,10 +2820,113 @@ Also agreed with them: `main.ts` exports `boot({ document? })` and `src/app/star
 
 ---
 
-## Task 41 — Filter _(placeholder; written in full when Task 40 is done)_
+## Task 41 — Filter
 
-One filter box in the toolbar, applied to every pane at once so they stay aligned.
+**Serves:** working in large plans and portfolios (VISION §6). One filter box narrows every pane to the rows that match, with their ancestors kept for context. It's display only: nothing in the file, the totals or the schedule changes.
 
-- **Matching:** case-insensitive text in any cell of every row, mounted plans included.
-- **Shown:** matches and their ancestors, with the ancestors dimmed. Everything else is hidden, in the text editor too, with its text untouched.
-- **Display only:** totals and the schedule still cover the whole plan. "Showing 12 of 340 rows", and Esc or ✕ clears it.
+**Deliverables**
+
+- **Matching** (core, pure): `filterRows(model, query)` returns which rows show, keyed `{ file, line }`, split into matches and their ancestors, plus a count of matches and of all item rows.
+  - The query is split on whitespace into terms. A row matches when **every** term appears, case-insensitively, somewhere in its cells: the title and every declared cell's text as written (decoded), in the row's own file.
+  - Outline numbers, IDs and anchors are not searched.
+  - Mounted plans' rows are included.
+  - **Shown:** matches, plus every ancestor of a match. Non-item lines (comments, blank lines, frontmatter) are hidden while a filter is active.
+- **When it applies:** the visible set is computed when the query changes, when the active file changes, and when **Enter** is pressed in the box. It is **not** recomputed on every edit.
+  - Between recomputations, the shown rows are tracked through edits with `mapPos`, so a row being edited never disappears under the cursor, and new lines typed among shown rows stay visible.
+  - Switching the active file or closing clears the filter.
+- **The box:** in the app toolbar, whenever a document is open.
+  - **Ctrl+Shift+F** focuses it. **Esc** in it clears the filter and returns focus to the editor. A ✕ button also clears it.
+  - While it's active, it shows "Showing 4 of 23 tasks", counting matches only.
+- **Every pane follows it**, through the shell, which names no pane:
+  - **Text editor:** the hidden lines are replaced by block decorations, so their text is untouched. The cursor and selections skip them, and an edit can't reach into them. Ctrl+F search ignores matches in hidden lines (`SearchQuery`'s `test`). Folding still works on the lines shown.
+  - **Grid:** hidden rows aren't drawn. The new-task row stays. The total row still sums the whole plan, and is labelled "Total (all rows)" while filtering.
+  - **Views (tree, table, schedule, pin review):** hidden rows aren't drawn. Totals are unchanged.
+  - **Gantt:** it follows the leader's layout, which now holds only shown rows. Standalone, its natural layout uses the same visible set.
+  - **Ancestors** shown only for context are dimmed in every pane. Matches are drawn normally.
+- **Interfaces:**
+  - `PlanEditor.setFilter(visible | null)` and `RenderContext.filter`, both optional. A pane without them simply shows everything.
+  - Spec §3.3, §3.4 and a new §5.7.
+  - PLUGINS.md §6 for `filterRows`.
+
+**Hand-worked values** on `examples/demo.plan` (23 tasks). Never take them from output. If one disagrees, stop and report it.
+
+| Query       | Matches                                      | Ancestors (dimmed)  | Count shown           |
+| ----------- | -------------------------------------------- | ------------------- | --------------------- |
+| `carol`     | UX wireframes, Web app, User guide, Training | Design, Build, Docs | Showing 4 of 23 tasks |
+| `carol web` | Web app                                      | Build               | Showing 1 of 23 tasks |
+| `CAROL`     | as `carol`                                   | as `carol`          | Showing 4 of 23 tasks |
+| `2026-11`   | Go-live                                      | Release             | Showing 1 of 23 tasks |
+| `zzz`       | none                                         | none                | Showing 0 of 23 tasks |
+
+On `examples/portfolio/`: `code` matches Code in beta, with Product B as its dimmed ancestor ("Showing 1 of 7 tasks").
+
+**Acceptance criteria**
+
+- [x] `filterRows` tests assert every row of the table above. — `tests/core/filter.test.ts`: each row of the table and the portfolio's `code`, each match and ancestor by title and the count as the box words it; every value agreed with the code. Also: `web` matches Web app and not User guide, whose deps are `#web` (decision 1); `#web` and `4.3` match nothing, `integ` matches.
+- [x] Every pane with `carol` (text editor, grid, tree, schedule table, Gantt following each editor) shows exactly the matches and ancestors, with the ancestors dimmed, and the rows stay aligned (injected measurements). — `tests/align/filter.test.ts`: the text editor's lines and its leader rows (lines 11, 13, 15, 17, 27, 28, 29 at 20px each), the grid's body rows (those, then the new-task row), the Gantt following each with a mark row on exactly those lines, each at its editor row's top on screen (54 + 20n beside the text editor, 62 + 22n beside the grid), Design, Build and Docs dimmed in every pane; the tree and the schedule table with the same rows. Through the shell too, in `tests/app/shell-filter.test.ts`.
+- [x] Editing Web app's title to "Mobile app" while filtered by `carol web` keeps the row visible. Pressing Enter in the box then recomputes, and the row disappears with its ancestor Build: "Showing 0 of 23 tasks". (Corrected before any code was written to it: the criterion said "Website", which still contains `web`, so Enter couldn't remove it; see the corrections.) — `tests/app/shell-filter.test.ts`, through the text editor, the box and the tree; the tracking itself in `tests/app/filter-tracking.test.ts`.
+- [x] Typing a new line after a shown row keeps it visible. An edit can't reach a hidden line, and Ctrl+F doesn't land in one. — `tests/editor/filter.test.ts`: a new line after Web app shows; typing into a hidden line, and joining one to Web app from either side, are refused; deleting a whole shown line leaves the hidden line after it whole; a change from disk goes through; Ctrl+F through the panel finds `carol` on lines 13, 17, 28, 29 then wraps, `bob` (hidden rows only) moves nothing, and a query set by a command gets the test too; folding Build hides Web app and unfolding brings it back. The tracking of new lines, edits at a shown line's start and deleted lines in `tests/app/filter-tracking.test.ts`.
+- [x] Totals and the schedule are identical with and without a filter, and the grid's total row says "Total (all rows)". — `tests/align/filter.test.ts` and `tests/app/shell-filter.test.ts`: each tree and schedule-table row reads as it does unfiltered, the totals too, and the grid's total row is the unfiltered one with "Total" read as "Total (all rows)".
+- [x] Esc clears the filter, and so does switching files. — `tests/app/shell-filter.test.ts`: Esc empties the box and the count, shows all 30 lines and gives the focus back to the editor; ✕ clears it too; in the portfolio folder, `code` reads "Showing 1 of 7 tasks", then choosing `teams/alpha.plan` in the panel clears it, and so does Close folder, which hides the box. Ctrl+Shift+F focuses the box.
+- [x] Filtering a 5,000-line composition takes under 20 ms (median, measured once and noted). — `tests/core/filter.test.ts`, a root mounting ten 500-line files (5,013 lines): median of 21 runs, `filterRows` 0.71 ms; with the shell's lines shown (`trackFilter(…).visible`) 2.69 ms. Measured once, not a test: the text editor's `setFilter` on that composition as a composed buffer took about 12 ms in jsdom (27 ms the first time), CodeMirror's update included.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 4307 tests (4245 before); typecheck, lint and `vite build` clean. No existing test was rewritten (see below).
+- [ ] **Browser pass in Edge, after a hard reload,** on `examples/demo.plan` and a real portfolio: pending review (there is no browser here). Please also check moving the cursor up and down across hidden lines, which jsdom can't lay out (`tests/editor/filter.test.ts` checks only that it lands on a shown line).
+  - filter while editing in each editor;
+  - check the Gantt beside each;
+  - check the dimmed ancestors in both themes;
+  - clear the filter.
+
+**Visible changes:** the filter box, its count, hidden and dimmed rows in every pane, the total row's label while filtering, and the default view. In detail:
+
+- **The filter box,** at the right end of the app toolbar, after the status line, hidden on the start screen: a search field with the placeholder "Filter" (titled "Filter rows (Ctrl+Shift+F)"), a ✕ button ("Clear the filter"), and while a filter is active the count, "Showing 4 of 23 tasks", in the muted colour. While active the field has the accent background and border. It filters as you type; Enter computes it again; Esc or ✕ clears it, Esc returning the focus to the editor where it was. Ctrl+Shift+F focuses it and selects its text. Switching files, opening and closing empty it.
+- **Text editor:** hidden lines take no space and have no line numbers; the cursor and selections skip them; typing, deleting, undo or a line move that would change one, or join one to a shown line, does nothing; Ctrl+F's matches in them are skipped. A cursor on a hidden line when the filter is set moves to the next shown line.
+- **Grid:** only the shown rows, with no front matter row; the new-task row stays; the total row reads "Total (all rows)" and still sums the whole plan. Keyboard moves go between shown rows. Move up, Move down, Indent and Outdent are disabled, titled "Clear the filter to reorder rows.", and Alt+↑, Alt+↓, Alt+Shift+→ and Alt+Shift+← show that note instead of acting; Insert row and Delete row stay. In the problems list, a problem on a hidden row ends with "hidden by filter", in muted italics; clicking it clears the filter and then focuses its row.
+- **Tree, table, schedule table, pin review:** only the shown rows; totals unchanged.
+- **Gantt:** only the shown rows, beside either editor or standalone.
+- **The default view is chosen by rank:** a schedule file opens on the Gantt, an estimate file on the tree, when it is opened or becomes active; within a file the view stays while it can show it. A view you pick is kept across files while it can show them, falls back to the highest-ranked one when it can't, comes back when it can, and is remembered across reloads. Before, the preview opened on the tree and kept whatever view was showing.
+- **Ancestors shown for context** are drawn at half opacity (0.5 light, 0.55 dark: `--filter-context-opacity`) in every pane: the text editor's lines, the grid's and the views' cells, and the Gantt's marks.
+
+**Decisions taken** (asked and answered while working):
+
+1. **Ref cells aren't searched**, qualifiers included, for the same reason as IDs and outline numbers: the grid doesn't show their text. The table stands; §5.7 states the rule, and a test shows `web` matches Web app but not User guide, whose deps are `#web`. (Asked before any code: as first written, every declared cell's text was searched, which made User guide match `carol web` against the table.)
+2. **The edit criterion retitles Web app to "Mobile app"** (see the corrections).
+
+**Decisions taken** (by me, within the task; please check):
+
+- **`Visible` answers by line,** `shows(at)` and `dims(at)`, plus the `version` its lines are numbered at, rather than sets of keys: `src/ui` may import only core's types, so the views can't build a key. The key is private to `src/app/filter.ts`.
+- **The key column's cells aren't searched,** as IDs; nor is a mount row's `mount=` path, which is no declared cell.
+- **The shell follows the shown lines in each file's own text,** through that file's buffer's changes, which the composed view routes to it, so mapping needs no piece map and lines come out keyed `{ file, line }`. Each run of hidden or dimmed lines holds one of the line breaks around it, so text typed at either end of it lands outside, and deleting its lines leaves it empty. Text typed at the start of a run's first line stays on that line. `BufferChange.mapPos` takes an optional `assoc`, with CodeMirror's meaning, in both buffers (spec §3.7).
+- **What can't change a hidden line in the text editor** is a change with a user event: typing, deleting, undo, redo and the line operations. A change with none passes: from disk, another file's segment, a recomposition, and a diagnostic's fix, which writes to its own line. An undo that would reach a hidden line does nothing.
+- **The grid draws a filter only with the model of its version;** the shell calls `setFilter` before `update`, with the filter numbered as that model. The text editor places a filter in its own text and maps it through edits until the next call, so its decorations need no version.
+- **A cursor or selection end that lands on a hidden line goes on to the next shown line, the way it moved,** or back to the line before at the document's end: atomic ranges alone let it rest on a hidden run's first or last line, and on the document's edges when hidden lines start or end it.
+- **Esc gives the focus back to the editor element that had it** before the box (a grid cell, or CodeMirror's content), or else to the editor's own tab stop, with no new `PlanEditor` member.
+- **A grid with no shell to clear the filter** (mounted on its own, as in tests) drops its own filter when a hidden row's problem is clicked.
+- **The count always says "tasks"** ("Showing 1 of 7 tasks"), as the table words it. An empty or blank query is no filter.
+
+**Corrections:**
+
+- **The edit criterion said "Website".** Matching is by substring, and "Website" still contains `web`, so pressing Enter couldn't make the row disappear under `carol web`. Agreed with them: the edit retitles Web app to "Mobile app"; the row stays while it is edited, and after Enter it goes with Build, and the count reads "Showing 0 of 23 tasks". The criterion's wording above is updated.
+
+**Changed in review** (asked for before commit):
+
+1. **No reordering while filtered.** In the grid, Move up, Move down, Indent and Outdent are disabled while a filter is active, titled "Clear the filter to reorder rows.", and their keys show that note instead of acting, since hidden rows would move with the row unseen. Insert row and Delete row stay. (This replaces my first choice, which left them working.) Tested in `tests/grid/filter.test.ts`: the four disabled with the tooltip and the two enabled, each key giving the note and leaving the text as it was, and all four enabled again once the filter is cleared.
+2. **Problems on hidden rows** are marked "hidden by filter" in the problems list, and clicking one clears the filter, through a new optional `GridHooks.clearFilter` the shell gives, and then focuses the row. (This replaces my first choice, where focusing one did nothing.) The list now takes a root row's title from the model rather than from the rows drawn, so a hidden row's problem is still named ("Go-live", not "Line 26"). Tested in `tests/grid/filter.test.ts` (the mark only on hidden rows' problems; the click with a shell hook and without one) and, through the shell, in `tests/app/shell-filter.test.ts` (the box and its count empty, every view row back, the focus on Go-live's row).
+3. **`InMemoryBuffer.mapPos`** maps a position inside a replaced range as CodeMirror does: to the replacement's start, or with `assoc` 1 its end, shifted by the earlier edits in the same change. Before, it returned the replacement's end in the old text's coordinates. Added to `tests/buffer/shared.test.ts`, which both buffers pass. (This was under "Noticed, not changed".)
+
+4. **The box is at the right end of the app toolbar**, after the status line, with its ✕ and count beside it, so it reads as applying to the whole window rather than one pane; it was after the file name. Its keys are unchanged.
+
+5. **The default view is chosen by rank.** `Renderer` gains an optional `rank` (0 when absent): the Gantt 20, the schedule table 10, the tree and the others 0. The shell shows the view last chosen while it's available, otherwise the highest-ranked available one, ties going to registration order, and still names no renderer. A choice (a click on a view's tab) is kept across file switches, isn't replaced by a fallback, and is remembered per viewer in `localStorage` (`plan.view`); unreadable storage, or a stored id no renderer has, means no choice. With no choice, the view is picked by rank only when a file is opened or becomes active (boot, opening, closing and switching files); within a file the view shown stays while it's available and otherwise falls back by rank. (Corrected in review: at first rank was applied on every analysis, so typing `project-start` into an estimate file switched it to the Gantt mid-edit.) Spec §3.3. Tested in `tests/app/shell-views.test.ts` (a schedule file on the Gantt and an estimate file on the tree, with a stale stored id; Tree picked on a schedule file sticks across files and is stored; a chosen Gantt falls back to the tree on the estimate file and returns on the schedule file) `tests/app/shell-views-storage.test.ts` (storage that throws: the Gantt by rank, and a pick still applies) and `tests/app/shell-views-rank.test.ts` (with nothing chosen: typing `project-start: 2026-10-05` into an estimate file character by character leaves it on the Tree after every analysis; switching away and back shows the Gantt; deleting the line again falls back to the Tree).
+
+**Rewritten tests:** `tests/grid/reuse.test.ts`, "kept rows draw exactly what a fresh build draws": a 20 s timeout. Its two property tests take about 3.3 s each alone, as on `main` before this task, and with this task's new shell test files running alongside, the portfolio one passed vitest's 5 s default in three full runs out of three; nothing in it changed. `tests/app/shell-portfolio.test.ts`, "opens the folder on portfolio.plan, and the tree shows the whole portfolio…": the portfolio is a schedule file, so it now opens on the Gantt, and the test picks Tree first. `tests/app/shell-filter.test.ts`, the box's first test (written in this task): it now expects the box last in the toolbar, after the status line, not after the file name. `tests/support/layout.ts`'s `editorLayout` now measures a filter's hidden lines as one block with no height, as a browser does; no existing test has one.
+
+**New tests:** `tests/core/filter.test.ts` (the table, the portfolio, ref cells, anchors and outline numbers, and the 5,000-line timing), `tests/app/filter-tracking.test.ts` (following the shown lines through edits), `tests/editor/filter.test.ts` (the text editor: the cursor, the edit guard, Ctrl+F, folding), `tests/align/filter.test.ts` (every pane with `carol`, and the Gantt level with each editor), `tests/app/shell-filter.test.ts` (the box, its count and keys, every pane through the shell, a hidden row's problem in the grid, "Mobile app" and Enter, switching files and closing) `tests/grid/filter.test.ts` (no reordering while filtered; problems on hidden rows), and `tests/app/shell-views.test.ts`, `tests/app/shell-views-storage.test.ts` and `tests/app/shell-views-rank.test.ts` (the default view by rank, when it is picked, and the view chosen). Added cases in `tests/buffer/shared.test.ts`: `assoc`, and a position inside a replaced range after earlier edits.
+
+**Spec:** plan-format-spec §3.3 (`RenderContext.filter`, `Visible`, `naturalLayout`'s filter, `Renderer.rank` and which view shows), §3.4 (`PlanEditor.setFilter`, and which rows the text editor and the grid publish while filtering), §3.7 (`mapPos`'s `assoc`), §4b.1 (the total row's label), §5.5 (the Gantt's natural layout) and a new §5.7, the filter. PLUGINS.md §6: `filterRows`. Task 21's and Task 29's notes say what this task changed. VISION.md is unchanged. The plan format spec has no draft version line, so there is nothing to bump.
+
+**Not in this task:**
+
+- Field filters (`owner:alice`).
+- Regular expressions.
+- Saved filters.
+- Showing the descendants of a match.
+- Filtering comment lines by their text.

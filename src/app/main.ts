@@ -8,8 +8,8 @@
 import { CodeMirrorBuffer } from '../buffer';
 import { ComposedBuffer } from '../buffer/composed';
 import type { Mount } from '../buffer/pieces';
-import { mountsOf, Notice, PROFILES, readMounts, relativePath, unmetReason } from '../core';
-import type { Exporter, FileLine, ItemNode, Model, OpenedFile, Renderer, Workspace } from '../core';
+import { filterRows, mountsOf, Notice, PROFILES, readMounts, relativePath, unmetReason } from '../core';
+import type { Exporter, FileLine, ItemNode, Model, OpenedFile, Renderer, Visible, Workspace } from '../core';
 import { mountTextEditor } from '../editor';
 import { mountGrid } from '../grid';
 import { mountOn, withRepairs } from '../grid/edits';
@@ -19,6 +19,8 @@ import { connectPanes, followerChannel } from './align';
 import { cursorItemFor, itemLines } from './cursor';
 import { ask, names } from './dialog';
 import { createOpenFiles, isDirty } from './files';
+import { trackFilter } from './filter';
+import type { FilterTracker } from './filter';
 import type { OpenFile, OpenFiles, SaveResult } from './files';
 import { createMounts } from './mounts';
 import { mountFilePanel } from './panel';
@@ -43,6 +45,8 @@ interface PlanEditor extends Partial<Leader> {
   onHoverLine?(cb: (at: FileLine | null) => void): void;
   /** The files with unsaved changes: the composed text editor's segment headers mark them. */
   showUnsaved?(files: ReadonlySet<string>): void;
+  /** Show only the filter's rows (spec §5.7); null shows them all. */
+  setFilter?(visible: Visible | null): void;
   destroy(): void;
 }
 
@@ -124,7 +128,7 @@ function renderTabs(): void {
       button.disabled = reason !== null;
       button.title = reason ?? '';
       button.addEventListener('click', () => {
-        activate(renderer);
+        choose(renderer);
         render();
       });
       return button;
@@ -232,20 +236,25 @@ function render(): void {
     dirty = false;
     // A change of segments re-analyzes, for the new version; the model's files are as they were.
     recompose(model);
+    // The filter's lines, followed through the edits since it was computed, numbered as this model's.
+    if (tracker) editor?.setFilter?.((visible = tracker.visible(model)));
     editor?.update(model);
     renderExporters();
   }
-  if (unmet(active, model) !== null) {
-    // The document changed under the active renderer; fall back to one that can show it.
-    const fallback = renderers.find((r) => unmet(r, model) === null);
-    if (!fallback) {
-      renderTabs();
-      host.replaceChildren();
-      viewTools.replaceChildren();
-      return;
-    }
-    activate(fallback);
+  // The view chosen, while it can show the document. Without a choice, the highest-ranked that can,
+  // picked when a file is opened or becomes active; then the view shown stays while it can (spec §3.3).
+  const available = renderers.filter((r) => unmet(r, model) === null);
+  const ranked = available.reduce<Renderer | null>((best, r) => (best && (best.rank ?? 0) >= (r.rank ?? 0) ? best : r), null);
+  const kept = !rankOnRender && available.includes(active) ? active : null;
+  const shown = chosen ? (available.includes(chosen) ? chosen : ranked) : (kept ?? ranked);
+  rankOnRender = false;
+  if (!shown) {
+    renderTabs();
+    host.replaceChildren();
+    viewTools.replaceChildren();
+    return;
   }
+  activate(shown);
   renderTabs();
   const cursorItem = cursorItemFor(lines, cursorLine);
   const scrollToCursor = editorMovedCursor && cursorItem !== null && !sameLine(cursorItem, highlightedLine);
@@ -260,8 +269,82 @@ function render(): void {
     toolbar: (el) => (viewTools.append(el), () => el.remove()),
     setHoverLine,
     onHoverLine,
+    filter: visible,
     ...(active.follows ? channel.context : {}),
   });
+}
+
+// The filter (spec §5.7): computed from the box when its query changes and on Enter, then followed
+// through every edit until it is computed again. Switching the active file or closing clears it.
+let tracker: FilterTracker | null = null;
+let visible: Visible | null = null;
+
+/** A file's current text: its own buffer's, or what the last analysis read. */
+function textOf(file: string): string {
+  return files.files().find((f) => (f.path ?? '') === file)?.buffer.text() ?? model.files.get(file)?.doc.text ?? '';
+}
+
+/** Computes the filter afresh from the box's query, over the current text; an empty query clears it. */
+function refilter(): void {
+  const query = filterInput.value.trim();
+  if (query === '') return clearFilter();
+  if (dirty) render();
+  const found = filterRows(model, query);
+  tracker = trackFilter(model, found, textOf);
+  filterCount.textContent = `Showing ${found.count} of ${found.total} tasks`;
+  showFilter(tracker.visible(model));
+}
+
+/** The box is emptied and every row shows again. */
+function clearFilter(): void {
+  dropFilter();
+  showFilter(null);
+}
+
+/** Forgets the filter, without drawing: the active file is about to change. */
+function dropFilter(): void {
+  tracker = null;
+  visible = null;
+  filterInput.value = '';
+  filterCount.textContent = '';
+  filterBox.classList.remove('active');
+}
+
+function showFilter(next: Visible | null): void {
+  visible = next;
+  filterBox.classList.toggle('active', next !== null);
+  editor?.setFilter?.(next);
+  render();
+}
+
+/** Focus goes back to the editor: to where it was before the box took it, or to the editor's own tab stop. */
+function focusEditor(): void {
+  const target = beforeFilter?.isConnected && editorHost.contains(beforeFilter) ? beforeFilter : editorHost.querySelector<HTMLElement>('[contenteditable="true"], [tabindex="0"]');
+  target?.focus();
+}
+
+// True from when a file is opened or becomes active until its first render picks the view by rank.
+let rankOnRender = true;
+// The view last chosen, kept across files and reloads. A per-viewer convenience, like the editor
+// choice: it may be unavailable (private browsing), and then the default view is the highest-ranked.
+const VIEW_KEY = 'plan.view';
+let chosen: Renderer | null = lastView();
+
+function lastView(): Renderer | null {
+  try {
+    return renderers.find((r) => r.id === localStorage.getItem(VIEW_KEY)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function choose(renderer: Renderer): void {
+  chosen = renderer;
+  try {
+    localStorage.setItem(VIEW_KEY, renderer.id);
+  } catch {
+    // Storage is not available; the choice lasts until the page is reloaded.
+  }
 }
 
 function activate(renderer: Renderer): void {
@@ -327,7 +410,9 @@ function makeBuffer(text: string): CodeMirrorBuffer {
 }
 
 function watch(buffer: CodeMirrorBuffer): void {
-  buffer.onChange(() => {
+  buffer.onChange((change) => {
+    // The filter's lines follow every edit to the file, in its own text.
+    tracker?.map(files.files().find((f) => f.buffer === buffer)?.path ?? '', change);
     if (buffer === files.active().buffer) {
       dirty = true;
       schedule();
@@ -342,6 +427,8 @@ function onFilesChange(): void {
   if (editorBuffer(file) !== shownBuffer) {
     shownBuffer = editorBuffer(file);
     cursorLine = highlightedLine = null;
+    dropFilter();
+    rankOnRender = true;
     dirty = true;
     mountEditor(editorKind);
     render();
@@ -351,6 +438,10 @@ function onFilesChange(): void {
 }
 
 function useFiles(next: OpenFiles<CodeMirrorBuffer>): void {
+  // Opening or closing clears the filter, and picks the view afresh, even when the editor keeps its buffer.
+  dropFilter();
+  rankOnRender = true;
+  editor?.setFilter?.(null);
   for (const view of views.values()) view.destroy();
   views = new Map();
   files = next;
@@ -679,6 +770,7 @@ const editors = [
         onCursorLine,
         onOpenFile: (path) => openFile(path),
         status: (message) => (status.textContent = message),
+        clearFilter,
         // Only a workspace that can list files has plans to mount.
         ...(files.workspace.can.list ? { plans: listPlans } : {}),
       }),
@@ -723,6 +815,7 @@ function mountEditor(kind: (typeof editors)[number]): void {
     // Storage is not available; the app just opens in the default editor next time.
   }
   editor = kind.mount();
+  editor.setFilter?.(visible);
   onEditorHover(null);
   editor.onHoverLine?.(onEditorHover);
   // When an analysis is already pending the new editor fills on the next render.
@@ -773,6 +866,25 @@ const showCloseMenu = (on: boolean): void => {
   closeButton.setAttribute('aria-expanded', String(on));
   if (on) closeMenu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
 };
+// The filter box, at the toolbar's right end, whenever a document is open: it filters the whole window (spec §5.7).
+const filterBox = document.createElement('span');
+filterBox.className = 'filter';
+const filterInput = document.createElement('input');
+filterInput.type = 'search';
+filterInput.id = 'filter';
+filterInput.placeholder = 'Filter';
+filterInput.setAttribute('aria-label', 'Filter rows');
+filterInput.title = 'Filter rows (Ctrl+Shift+F)';
+const filterCount = document.createElement('span');
+filterCount.className = 'filter-count';
+filterCount.setAttribute('aria-live', 'polite');
+const filterClear = button('✕', 'filter-clear');
+filterClear.title = 'Clear the filter';
+filterClear.setAttribute('aria-label', 'Clear the filter');
+filterBox.append(filterInput, filterClear, filterCount);
+filename.parentElement!.append(filterBox);
+// What had the focus before the box took it, for Esc.
+let beforeFilter: HTMLElement | null = null;
 const panelHost = document.createElement('nav');
 panelHost.id = 'files';
 editorHost.before(panelHost);
@@ -796,7 +908,7 @@ function renderToolbar(): void {
   if (can.list) closeButton.setAttribute('aria-haspopup', 'menu');
   else closeButton.removeAttribute('aria-haspopup');
   showCloseMenu(false);
-  editorTabs.hidden = filename.hidden = starting;
+  editorTabs.hidden = filename.hidden = filterBox.hidden = starting;
   panelHost.hidden = starting || !can.list;
 }
 
@@ -882,6 +994,31 @@ closeFileItem.addEventListener('click', () => (showCloseMenu(false), void closeF
 closeFolderItem.addEventListener('click', () => (showCloseMenu(false), void closeAll()));
 document.addEventListener('click', (event) => {
   if (!closeMenu.hidden && !closeMenu.contains(event.target as Node) && event.target !== closeButton) showCloseMenu(false);
+});
+filterInput.addEventListener('focus', (event) => {
+  const from = event.relatedTarget;
+  if (from instanceof HTMLElement && from !== filterClear) beforeFilter = from;
+});
+filterInput.addEventListener('input', refilter);
+filterInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    refilter();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    clearFilter();
+    focusEditor();
+  }
+});
+filterClear.addEventListener('click', () => {
+  clearFilter();
+  filterInput.focus();
+});
+document.addEventListener('keydown', (event) => {
+  if (starting || !(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== 'f') return;
+  event.preventDefault();
+  filterInput.focus();
+  filterInput.select();
 });
 saveButton.addEventListener('click', () => void save());
 saveAsButton.addEventListener('click', () => void save(true));

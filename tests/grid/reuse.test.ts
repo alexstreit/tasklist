@@ -185,7 +185,8 @@ function sequence(subject: Subject, seed: number, steps: number): string | null 
   }
 }
 
-describe('kept rows draw exactly what a fresh build draws', () => {
+// About 3 s each alone (40 random edit sequences); under the full suite's parallel load they can pass 5 s.
+describe('kept rows draw exactly what a fresh build draws', { timeout: 20_000 }, () => {
   it('on the portfolio, over a composed buffer', () => {
     changed = 0;
     for (let seed = 1; seed <= 40; seed++) expect(sequence(composedPortfolio(), seed, 12)).toBeNull();

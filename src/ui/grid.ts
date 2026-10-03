@@ -26,14 +26,21 @@ export function createGrid(className: string, headers: string[]): HTMLTableEleme
   return table;
 }
 
+/** Whether the filter shows the row (spec §5.7); with none, every row shows. Hidden rows aren't drawn. */
+export function shows(ctx: RenderContext, node: ItemNode): boolean {
+  return !ctx.filter || ctx.filter.shows(node);
+}
+
 /**
  * An item row: done and cursor classes, click-to-line, the outline number, then the caller adds the
- * rest. A mounted row is shaded; its line is in its own file, which the cursor and hover name.
+ * rest. A mounted row is shaded; its line is in its own file, which the cursor and hover name. An
+ * ancestor the filter shows only for context is dimmed.
  */
 export function addItemRow(table: HTMLTableElement, node: ItemNode, ctx: RenderContext, model: Model): HTMLTableRowElement {
   const row = table.tBodies[0].insertRow();
   row.classList.toggle('done', node.done);
   if (node.file !== model.file) row.classList.add('mounted');
+  if (ctx.filter?.dims(node)) row.classList.add('filter-context');
   row.dataset.file = node.file;
   row.dataset.line = String(node.line);
   const cursor = ctx.cursorItem;

@@ -192,6 +192,18 @@ export interface CursorItem extends FileLine {
   exact: boolean;
 }
 
+/**
+ * The lines a filter shows (spec §5.7): the matches and their ancestors, followed through edits
+ * since, with any line typed among them. Every other line is hidden.
+ */
+export interface Visible {
+  /** The buffer version the lines are numbered at: the model's they go with. */
+  version: number;
+  shows(at: FileLine): boolean;
+  /** An ancestor shown only for context, drawn dimmed. */
+  dims(at: FileLine): boolean;
+}
+
 export interface RenderContext {
   cursorLine: FileLine | null;
   cursorItem: CursorItem | null;
@@ -210,6 +222,8 @@ export interface RenderContext {
   setHoverLine?(at: FileLine | null): void;
   /** The line hovered in the other pane. Replaces any earlier callback, and is called at once with the current line. */
   onHoverLine?(cb: (at: FileLine | null) => void): void;
+  /** The rows the filter shows (spec §5.7); absent or null when nothing is filtered. */
+  filter?: Visible | null;
   // The follower part, present only for a renderer that `follows` (spec §3.3).
   /** Where the leading pane's rows are. Replaces any earlier callback, and is called at once with the latest layout, if any. */
   onRowLayout?(cb: (layout: RowLayout) => void): void;
@@ -247,6 +261,8 @@ export interface Renderer {
   requires: FieldKey<unknown>[];
   /** Draws its rows where a leading pane's rows are (spec §3.3). */
   follows?: true;
+  /** How much the shell prefers it as the default view; 0 when absent. Ties go to registration order (spec §3.3). */
+  rank?: number;
   render(model: Model, host: HTMLElement, ctx: RenderContext): void;
 }
 

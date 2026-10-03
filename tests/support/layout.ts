@@ -22,13 +22,14 @@ function install(inPane: (el: Element) => DOMRect | null): () => void {
 
 /**
  * A CodeMirror editor filling a 600×400 pane at the window's top: each line is as tall as
- * `lineHeight` says for its text, and the content scrolls with the scroller. CodeMirror measures these heights itself, so its line
+ * `lineHeight` says for its text, a filter's hidden lines take no height, and the content scrolls with the scroller. CodeMirror measures these heights itself, so its line
  * blocks carry them.
  */
 export function editorLayout(pane: HTMLElement, lineHeight: (text: string) => number): () => void {
   const PADDING = 4; // CodeMirror's own .cm-content padding
-  const isBlock = (el: Element) => el.classList.contains('cm-line');
-  const heightOf = (el: Element) => lineHeight(el.textContent ?? '');
+  // A filter's hidden lines are one block with no height (Task 41).
+  const isBlock = (el: Element) => el.classList.contains('cm-line') || el.classList.contains('cm-filter-hidden');
+  const heightOf = (el: Element) => (el.classList.contains('cm-filter-hidden') ? 0 : lineHeight(el.textContent ?? ''));
   return install((el) => {
     if (!pane.contains(el)) return null;
     if (isBlock(el)) {
