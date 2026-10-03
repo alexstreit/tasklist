@@ -1,0 +1,11 @@
+---
+profile: schedule
+project-start: 2026-10-05
+---
+Prep {#prep}       | 16d
+^Show A {#showa}   | start=2026-10-23
+^Show B            | start=2026-10-23 | deps=#prep
+^Show C            | start=2026-10-23 | deps=#prep | due=2026-10-23
+^Show D            | start=2026-10-24
+^Some task         | due=2027-11-29
+After A            | 1d | deps=#showa

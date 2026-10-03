@@ -4,7 +4,7 @@
 
 import type { Plugin } from '../../core';
 import { backwardStage } from './backward';
-import { critical, deadline, duration, finish, late, lateFinish, lateStart, milestone, projectFinish, slack, start } from './fields';
+import { critical, deadline, duration, finish, late, lateFinish, lateStart, milestone, network, projectFinish, slack, start } from './fields';
 import { forwardStage } from './forward';
 import { ganttRenderer } from './renderers/gantt';
 import { scheduleRenderer } from './renderers/table';
@@ -12,7 +12,7 @@ import { scheduleRenderer } from './renderers/table';
 export const schedulePlugin: Plugin = {
   id: 'schedule',
   requires: [],
-  fields: [start, duration, finish, lateStart, lateFinish, slack, critical, late, milestone, deadline, projectFinish],
+  fields: [start, duration, finish, lateStart, lateFinish, slack, critical, late, milestone, deadline, projectFinish, network],
   stages: [forwardStage, backwardStage],
   renderers: [scheduleRenderer, ganttRenderer],
 };

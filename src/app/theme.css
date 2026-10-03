@@ -13,6 +13,7 @@
   --border: #dddddd;
   --border-soft: #eeeeee;
   --hover: #f3f4f6;
+  --backdrop: rgb(0 0 0 / 0.3);
   --button-bg: #ffffff;
   --button-border: #d1d5db;
   --accent-bg: #dbeafe;
@@ -24,6 +25,13 @@
   --cursor-row-fg: #1e3a8a;
   --near-row-bg: #eff6ff;
   --near-row-edge: #93c5fd;
+  --mounted-row-bg: #f8f7f2;
+  --segment-border: #d6d3c4;
+  --segment-gutter-fg: #a8a28c;
+  --badge-bg: #f3f4f6;
+  --badge-fg: #374151;
+  /* an ancestor the filter shows only for context (spec §5.7) */
+  --filter-context-opacity: 0.5;
 
   /* editor tokens (cm-plan-*) */
   --tok-front-matter: #7c6f64;
@@ -73,6 +81,7 @@
     --border: #374151;
     --border-soft: #1f2937;
     --hover: #1f2937;
+    --backdrop: rgb(0 0 0 / 0.5);
     --button-bg: #1f2937;
     --button-border: #4b5563;
     --accent-bg: #1e3a8a;
@@ -83,6 +92,12 @@
     --cursor-row-fg: #dbeafe;
     --near-row-bg: #172554;
     --near-row-edge: #3b82f6;
+    --mounted-row-bg: #1a1f2b;
+    --segment-border: #3b4458;
+    --segment-gutter-fg: #6b7590;
+    --badge-bg: #374151;
+    --badge-fg: #e5e7eb;
+    --filter-context-opacity: 0.55;
 
     --tok-front-matter: #a89f91;
     --tok-comment: #8b8b8b;

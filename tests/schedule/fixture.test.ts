@@ -49,7 +49,8 @@ const expected: Record<string, Expected> = {
     shown: ['Mon 12 Oct', 'Tue 13 Oct'],
   },
   'Beta ready': {
-    start: { derived: 56, effective: 56, mode: 'derived' },
+    // Task 38: a milestone's start shows at the end edge.
+    start: { derived: 56, effective: 56, mode: 'derived', edge: 'end' },
     duration: { derived: 0, effective: 0, mode: 'derived' }, // a milestone
     finish: 56, lateStart: 48, lateFinish: 48, slack: -8, critical: true, late: true,
     shown: ['Tue 13 Oct', 'Tue 13 Oct'],
@@ -116,7 +117,7 @@ describe('the schedule fixture (examples/schedule.plan)', () => {
     ]);
     // The deadline, 12 Oct, is hour 48.
     expect(model.calendar!.fromDate('2026-10-12', 'end')).toBe(48);
-    expect(model.diagnostics[2].message).toBe('finishes 2026-10-13, after its deadline 2026-10-12');
+    expect(model.diagnostics[2].message).toBe('finishes Tue 13 Oct, after its deadline Mon 12 Oct');
   });
 
   it('shows the dates of the table in the schedule table', () => {

@@ -49,6 +49,21 @@ describe('the naive calendar', () => {
     expect(monday.fromDate('2026-10-09', 'end')).toBe(40);
   });
 
+  // Task 38: a milestone pinned to Sat 24 Oct converts to the end of Fri 23 Oct, day 14.
+  it("converts a later weekend day's end to the end of the Friday before (Task 38)", () => {
+    expect(monday.fromDate('2026-10-24', 'end')).toBe(120);
+    expect(monday.fromDate('2026-10-25', 'end')).toBe(120);
+    expect(monday.toDate(120, 'end')).toBe('2026-10-23');
+  });
+
+  // Task 38: there is no working hour before hour 0, so its end edge is hour 0's own day.
+  it("shows hour 0 at the end edge on hour 0's own day (Task 38)", () => {
+    expect(monday.toDate(0, 'end')).toBe('2026-10-05');
+    expect(monday.toDate(0, 'end')).toBe(monday.toDate(0, 'start'));
+    // A weekend project-start: hour 0 is the Monday after it.
+    expect(naiveCalendar('2026-10-10', 8).toDate(0, 'end')).toBe('2026-10-12');
+  });
+
   it('does not make a task that finishes at the end of its deadline day late', () => {
     // Deadlines convert at 'end', so a task finishing that day is on time.
     const start = monday.fromDate('2026-10-07', 'start');

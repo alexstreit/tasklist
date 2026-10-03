@@ -1,0 +1,14 @@
+{
+  "spec": [
+    "ext \u00a712.1: mount naming the key column is a structural error on the mount line; mount is ignored and identity still applies (Q44)"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-mount-column",
+      "line": 3
+    }
+  ]
+}

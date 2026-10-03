@@ -1,0 +1,97 @@
+{
+  "spec": [
+    "ext §12.3: mount rows at the top level, at depth 3, and with children of their own",
+    "ext §2: the implicit columns in the order key, nest, mount"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "id",
+      "type": "text",
+      "implicit": true
+    },
+    {
+      "name": "parent",
+      "type": "ref",
+      "implicit": true
+    },
+    {
+      "name": "mount",
+      "type": "text",
+      "implicit": true
+    }
+  ],
+  "rows": [
+    {
+      "line": 5,
+      "lead": "Portfolio"
+    },
+    {
+      "line": 6,
+      "lead": "Product A",
+      "values": {
+        "mount": "teams/alpha.plan"
+      },
+      "id": "a",
+      "mount": {
+        "path": "teams/alpha.plan"
+      }
+    },
+    {
+      "line": 7,
+      "indent": 4,
+      "lead": "Kickoff",
+      "parent": 6
+    },
+    {
+      "line": 8,
+      "lead": "Programme"
+    },
+    {
+      "line": 9,
+      "indent": 4,
+      "lead": "Stream",
+      "parent": 8
+    },
+    {
+      "line": 10,
+      "indent": 8,
+      "lead": "Team",
+      "parent": 9
+    },
+    {
+      "line": 11,
+      "indent": 12,
+      "lead": "Product B",
+      "values": {
+        "mount": "teams/beta.plan"
+      },
+      "parent": 10,
+      "mount": {
+        "path": "teams/beta.plan"
+      }
+    },
+    {
+      "line": 12,
+      "lead": "Product C",
+      "values": {
+        "mount": "teams/gamma.plan"
+      },
+      "mount": {
+        "path": "teams/gamma.plan"
+      }
+    },
+    {
+      "line": 13,
+      "indent": 4,
+      "lead": "Review",
+      "parent": 12
+    }
+  ]
+}

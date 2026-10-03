@@ -1,0 +1,32 @@
+{
+  "spec": [
+    "ext §12.2: a target with a part, #ID, parsed and not resolved"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [],
+  "rows": [
+    {
+      "line": 4,
+      "lead": "Backend",
+      "values": {
+        "mount": "teams/alpha.plan#backend"
+      },
+      "mount": {
+        "path": "teams/alpha.plan",
+        "part": "backend"
+      }
+    },
+    {
+      "line": 5,
+      "lead": "Frontend",
+      "values": {
+        "mount": "Team Alpha/alpha.plan#Front-end_2"
+      },
+      "mount": {
+        "path": "Team Alpha/alpha.plan",
+        "part": "Front-end_2"
+      }
+    }
+  ]
+}

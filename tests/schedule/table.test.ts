@@ -5,14 +5,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { analyze } from '../../src/app/registry';
 import { cursorItemFor, itemLines } from '../../src/app/cursor';
-import type { RenderContext } from '../../src/core';
+import type { FileLine, RenderContext } from '../../src/core';
 import { scheduleRenderer } from '../../src/plugins/schedule/renderers/table';
 import fixture from '../../examples/schedule.plan?raw';
 
 Element.prototype.scrollIntoView = vi.fn();
 
-function render(text: string, cursorLine: number | null = null, setCursorLine = (_line: number) => {}) {
+function render(text: string, line: number | null = null, setCursorLine = (_at: FileLine) => {}) {
   const model = analyze(text, { filename: 'a.plan' });
+  const cursorLine = line === null ? null : { file: 'a.plan', line };
   const host = document.createElement('div');
   const ctx: RenderContext = { cursorLine, cursorItem: cursorItemFor(itemLines(model), cursorLine), scrollToCursor: false, setCursorLine };
   scheduleRenderer.render(model, host, ctx);
@@ -55,6 +56,6 @@ describe('schedule table', () => {
     const { row } = render(fixture, 10, setCursorLine);
     expect(row('API').classList.contains('at-cursor')).toBe(true);
     row('Docs').click();
-    expect(setCursorLine).toHaveBeenCalledWith(13);
+    expect(setCursorLine).toHaveBeenCalledWith({ file: 'a.plan', line: 13 });
   });
 });

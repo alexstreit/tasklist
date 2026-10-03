@@ -1,0 +1,30 @@
+{
+  "spec": [
+    "ext \u00a712.1: mount naming the lead column is a structural error on the mount line, and mount is ignored (Q44)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-mount-column",
+      "line": 2
+    }
+  ],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    }
+  ],
+  "rows": [
+    {
+      "line": 4,
+      "lead": "teams/alpha.plan"
+    },
+    {
+      "line": 5,
+      "lead": "Beta"
+    }
+  ]
+}

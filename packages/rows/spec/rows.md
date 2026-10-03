@@ -1,6 +1,6 @@
 # rows — File Format
 
-**Version 0.11 (draft)**
+**Version 0.12 (draft)**
 
 A `.rows` file is a plain-text table: an optional frontmatter block describing the columns, then one delimited row per line. The format is self-contained. Some keys and forms are reserved for extensions (§9).
 
@@ -298,7 +298,7 @@ The declarations are separated by `,` too, because they follow the file's own de
 
 | Reserved                                                                                             | Treatment in this specification                               |
 | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Keys `key`, `include`, `nest`, `order`, `markers`, `roles`                                           | Ignored.                                                      |
+| Keys `key`, `include`, `nest`, `order`, `markers`, `roles`, `mount`                                  | Ignored.                                                      |
 | Type `ref` (and `ref[...]`)                                                                          | Read as `text`.                                               |
 | Heading line: first non-whitespace characters are one or more `#` followed by a space or end of line | Structural error. Quote the lead value to write it literally. |
 | One or more `{...}` groups at the end of an unquoted lead cell                                       | Part of the lead value.                                       |

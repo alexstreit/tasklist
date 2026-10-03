@@ -1,14 +1,39 @@
 // Grid editor. A task sheet over the shared buffer: every change it makes is
-// a text edit like any other. Spec §4b.
+// a text edit like any other. Spec §4b. Over a composed buffer (spec §3.7) it
+// shows every file the root mounts, in composed order, and edits each row in
+// its own file with `applyFile`.
 
 import { readFlag } from 'rows';
 import type { Cell as RowsCell, Column as RowsColumn, EditResult } from 'rows';
-import { formatDuration, preview } from '../core';
-import type { Column, Diagnostic, Fix, ItemNode, Model, Node, Pinnable, Span } from '../core';
+import { formatDuration, mountRefusal, preview, relativePath } from '../core';
+import type { Column, Diagnostic, FileLine, Fix, ItemNode, Model, Node, Pinnable, Span, Visible } from '../core';
 import type { PlanBuffer, TextEdit } from '../buffer';
+import type { PieceMap } from '../buffer/pieces';
 import { deleteLines, indent, moveDown, moveUp, outdent } from '../editing';
 import type { LineRange } from '../editing';
-import { canMarkDone, columnOf, deleteItem, insertIndent, insertItem, levels, moveItem, setDone, setField, setFlag, setLine, setTitle, setToggle, shiftItem, withRepairs } from './edits';
+import {
+  canMarkDone,
+  cellColumn,
+  deleteItem,
+  docOf,
+  fileLabel,
+  hasMarker,
+  insertIndent,
+  insertItem,
+  levels,
+  mountOn,
+  moveItem,
+  noColumn,
+  setDone,
+  setField,
+  setFlag,
+  setLine,
+  setTitle,
+  setToggle,
+  shiftItem,
+  unmount,
+  withRepairs,
+} from './edits';
 import { plainRefusal } from './messages';
 import { isRefColumn, refText, setRefs } from './refs';
 import { hasValue, rollup, totals } from '../plugins/estimate/fields';
@@ -27,26 +52,66 @@ const TITLE = 1;
 const DECLARED = 2;
 const MARKER = -2;
 
+/**
+ * Where a row is: `vline` is its line in the buffer the grid shows (the composed text, or the
+ * file's own text), which is how the grid finds it; `file` and `line` are its own file's and its
+ * line there, which is how the model, the cursor and the other panes name it. `mount` is its
+ * mount depth: 0 in the root, 1 in a file the root mounts, and so on. `border` is true from a
+ * segment's mount row to the segment's last row: they have its border.
+ */
+interface Placed {
+  vline: number;
+  file: string;
+  line: number;
+  mount: number;
+  border: boolean;
+}
+
 /** An item line, or any other line shown as one editable full-width cell. */
 type Row =
-  // `depth` is the level the row is shown at, `level` the one rows' structure edits use (edits.ts `levels`).
-  | { kind: 'item'; line: number; span: Span; indent: number; node: ItemNode; depth: number; level: number }
-  | { kind: 'line'; line: number; span: Span; indent: number; text: string; blank: boolean };
+  // `depth` is the level the row is shown at, `level` the one rows' structure edits use (edits.ts `levels`);
+  // `base` is the depth its file's roots are shown at.
+  | (Placed & { kind: 'item'; span: Span; indent: number; node: ItemNode; depth: number; level: number; base: number })
+  | (Placed & { kind: 'line'; span: Span; indent: number; text: string; blank: boolean; base: number });
+
+/** A file's front matter, shown as one collapsed, read-only row on its first line. */
+type FrontMatter = Placed & { kind: 'front'; span: Span; text: string; diagnostic?: Diagnostic };
+
+/** What the grid needs of a composed buffer (spec §3.7): its piece map, and edits in a file's own offsets. */
+export interface ComposedSource {
+  pieces(): PieceMap;
+  applyFile(file: string, edits: readonly TextEdit[], origin: string): void;
+}
 
 export interface GridHooks {
   /** `fromApi` is true when the move came from setCursorLine rather than the user. */
-  onCursorLine(line: number, fromApi: boolean): void;
+  onCursorLine(at: FileLine, fromApi: boolean): void;
+  /** Make a mounted file the active file: its mount row's file badge (Open). */
+  onOpenFile?(path: string): void;
+  /** Say something on the status line: a deleted mounted task names its file. */
+  status?(message: string): void;
+  /**
+   * The workspace's plan files, each with the files it mounts (resolved), for Mount plan…; absent
+   * when the workspace can't list files (the single-file workspace).
+   */
+  plans?(): Promise<{ path: string; mounts: string[] }[]>;
+  /** Clear the filter (spec §5.7): a problem on a hidden row is focused once it is cleared. */
+  clearFilter?(): void;
 }
 
 /** The grid leads (spec §3.4): its rows are its table's body rows. */
 export interface GridEditor extends Leader {
   /** Also republishes the row layout. */
   update(model: Model): void;
-  setCursorLine(line: number): void;
+  /** The files with unsaved changes: the mount rows of mounted files mark them. */
+  showUnsaved(files: ReadonlySet<string>): void;
+  /** Draw only the filter's rows (spec §5.7); null draws them all. */
+  setFilter(visible: Visible | null): void;
+  setCursorLine(at: FileLine): void;
   /** Band the row on `line`, hovered in the other pane; null clears it. */
-  setHoverLine(line: number | null): void;
+  setHoverLine(at: FileLine | null): void;
   /** The line of the row under the pointer; null off the rows, or on one with no line. Replaces any earlier callback. */
-  onHoverLine(cb: (line: number | null) => void): void;
+  onHoverLine(cb: (at: FileLine | null) => void): void;
   destroy(): void;
 }
 
@@ -64,7 +129,7 @@ function muted(text: string): HTMLSpanElement {
 /** 1-based line containing `pos`. */
 function lineAt(text: string, pos: number): number {
   let line = 1;
-  for (let i = 0; i < pos && i < text.length; i++) if (text[i] === '\n') line++;
+  for (let i = text.indexOf('\n'); i !== -1 && i < pos; i = text.indexOf('\n', i + 1)) line++;
   return line;
 }
 
@@ -86,22 +151,41 @@ function indentOf(text: string): number {
 
 const within = (outer: Span, inner: Span): boolean => inner.from >= outer.from && inner.to <= outer.to;
 
-export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHooks): GridEditor {
+const keyOf = (file: string, line: number): string => `${file}\n${line}`;
+const sameLine = (a: FileLine | null, b: FileLine | null): boolean => a === b || (!!a && !!b && a.file === b.file && a.line === b.line);
+
+/**
+ * `buffer` is the buffer the grid shows. A composed buffer (spec §3.7) also gives its piece map,
+ * and the grid shows every file in it and writes each with `applyFile`; any other buffer is the
+ * root file's own text.
+ */
+export function mountGrid(buffer: PlanBuffer & Partial<ComposedSource>, parent: HTMLElement, hooks: GridHooks): GridEditor {
   const bar = document.createElement('div');
   bar.className = 'sheet-toolbar';
   // The settings banner and the problems list, with their fixes (spec §4b.6.3, §4b.6.6).
   const problems = mountProblems({
-    write: (host, make) => void write(host, make),
+    write: (host, file, make) => write(host, file, make) !== null,
+    // From the model, not the rows drawn: a row the filter hides still names its problems.
     titleOf: (line) => {
-      const row = byLine.get(line);
-      return row?.kind === 'item' && row.node.title !== '' ? row.node.title : null;
+      const node = model?.lines[line - 1];
+      return node?.kind === 'item' && node.title !== '' ? node.title : null;
     },
-    // Focuses the row, or the cell the diagnostic's span falls in.
+    hidden: (diagnostic) => hidden(diagnostic),
+    // Focuses the row, in its own file, or the cell the diagnostic's span falls in.
     focus: (diagnostic) => {
-      const row = byLine.get(diagnostic.line);
-      if (row) place(row.line, diagnostic.span ? columnFor(row, diagnostic) : WBS);
+      // A row the filter hides shows once the filter is cleared; without a shell to clear it, the grid drops its own.
+      if (hidden(diagnostic)) {
+        hooks.clearFilter?.();
+        if (applied) applyFilter(null);
+      }
+      const row = byFile.get(keyOf(diagnostic.file ?? root(), diagnostic.line));
+      if (row && row.kind !== 'front') place(row.vline, diagnostic.span ? columnFor(row, diagnostic) : WBS);
     },
   });
+  /** True when the filter hides the line a diagnostic is on. */
+  function hidden(diagnostic: Diagnostic): boolean {
+    return !!applied && !applied.shows({ file: diagnostic.file ?? root(), line: diagnostic.line });
+  }
   const table = document.createElement('table');
   table.className = 'plan-sheet';
   // Space above the table when a following pane's header is taller than the grid's (setMinBodyTop).
@@ -112,11 +196,24 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   parent.replaceChildren(bar, confirmBox, problems.banner, problems.list, spacer, table);
 
   let model: Model | null = null;
+  // The filter's rows (spec §5.7), and the filter the rows were last read with: it is used only with
+  // the model whose lines it is numbered in.
+  let filter: Visible | null = null;
+  let applied: Visible | null = null;
+  // The rows the place can be on, in the order shown; with each file's front matter, every body row.
   let rows: Row[] = [];
+  let shown: (Row | FrontMatter)[] = [];
+  // The files with unsaved changes, for the mount rows' markers (the shell says, as for the text editor).
+  let unsaved: ReadonlySet<string> = new Set();
+  // Rows by vline, and rows and front matter by their own file and line.
   const byLine = new Map<number, Row>();
-  // The front matter block, shown collapsed and read-only above the rows.
-  let frontMatter: { line: number; span: Span; text: string; diagnostic?: Diagnostic } | null = null;
-  // Diagnostics by `line:column`; spec §4b.2.
+  const byFile = new Map<string, Row | FrontMatter>();
+  // Each body row's element by vline, as last built, and back.
+  const trs = new Map<number, HTMLTableRowElement>();
+  const vlineOf = new WeakMap<HTMLTableRowElement, number>();
+  // The root file's front matter, shown collapsed and read-only above the rows.
+  let frontMatter: FrontMatter | null = null;
+  // Diagnostics by `vline:column`; spec §4b.2.
   let marks = new Map<string, Diagnostic>();
   // Where the grid is: a cell of a row, or its WBS cell, which is what row
   // selection is. Anchored to the end of the line so that edits and inserted
@@ -130,12 +227,13 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   // The row the place is on, which has the current-row band.
   let currentRow: HTMLTableRowElement | null = null;
   // Hover across panes: the line under the pointer here, and the one hovered in the other pane.
-  let hovered: number | null = null;
-  let onHover: ((line: number | null) => void) | null = null;
-  let relayed: number | null = null;
+  let hovered: FileLine | null = null;
+  let onHover: ((at: FileLine | null) => void) | null = null;
+  let relayed: FileLine | null = null;
   // A row being typed into that is not in the buffer yet: the insert-above
   // row and the new-task row. Nothing is written until a title is committed.
-  let draft: { anchor: number; indent: number } | null = null;
+  // `base` is the depth its file's roots are shown at.
+  let draft: { anchor: number; indent: number; base: number } | null = null;
 
   const draftInput = document.createElement('input');
   draftInput.className = 'cell-input';
@@ -149,15 +247,33 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (change.origin === 'load') {
       at = null;
       draft = null;
+      kept = [];
       return;
     }
     if (at) at = { anchor: change.mapPos(at.anchor), column: at.column };
-    if (draft) draft = { anchor: change.mapPos(draft.anchor), indent: draft.indent };
+    for (const k of kept) k.pos = change.mapPos(k.pos);
+    if (draft) draft = { ...draft, anchor: change.mapPos(draft.anchor) };
   });
 
-  function cellFor(line: number, column: number): HTMLTableCellElement | null {
-    const row = table.querySelector<HTMLTableRowElement>(`tr[data-line="${line}"]`);
+  function cellFor(vline: number, column: number): HTMLTableCellElement | null {
+    const row = trs.get(vline);
     return row?.querySelector<HTMLTableCellElement>(`td[data-column="${column}"]`) ?? null;
+  }
+
+  /** A file's current text: its pieces of the composed text, or the buffer's own. */
+  function textOf(file: string): string {
+    const map = buffer.pieces?.();
+    if (!map) return buffer.text();
+    const text = buffer.text();
+    return map.runs
+      .filter((r) => !r.joint && r.file === file)
+      .map((r) => text.slice(r.at, r.at + r.to - r.from))
+      .join('');
+  }
+
+  /** A position in a file's own text, in the buffer the grid shows. */
+  function shownPos(file: string, offset: number): number {
+    return buffer.pieces ? buffer.pieces().toComposed(file, offset) : offset;
   }
 
   /**
@@ -165,10 +281,10 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    * commit an edit and rebuild the table underneath us. Then the cell we were
    * focusing is detached and the focus lands nowhere, so resolve it again.
    */
-  function focusCell(line: number, column: number): void {
-    const td = cellFor(line, column);
+  function focusCell(vline: number, column: number): void {
+    const td = cellFor(vline, column);
     td?.focus();
-    if (td && !td.isConnected) cellFor(line, column)?.focus();
+    if (td && !td.isConnected) cellFor(vline, column)?.focus();
   }
 
   /** The row the toolbar and the structural keys act on. */
@@ -180,8 +296,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     return { fromLine: row.line, toLine: row.line };
   }
 
-  function apply(edits: readonly TextEdit[]): void {
-    if (edits.length > 0) buffer.apply(edits, 'grid');
+  /** Edits in `file`'s own offsets. */
+  function apply(file: string, edits: readonly TextEdit[]): void {
+    if (edits.length === 0) return;
+    if (buffer.applyFile) buffer.applyFile(file, edits, 'grid');
+    else buffer.apply(edits, 'grid');
   }
 
   // A brief message by a cell, saying why an edit was not made (spec §4b.2).
@@ -200,19 +319,20 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   }
 
   /**
-   * Make a rows edit against the document the model was read from, and
+   * Make a rows edit to `file` against the document the model read it from, and
    * return the edits applied; or show why it can't be made, leave the cell as
    * it was, and return null. The model trails the buffer by the shell's
    * debounce, and edits against an older text would land in the wrong place.
    */
-  function write(td: HTMLElement | null, make: (current: Model) => EditResult): TextEdit[] | null {
+  function write(td: HTMLElement | null, file: string, make: (current: Model) => EditResult): TextEdit[] | null {
+    const read = model?.files.get(file)?.doc ?? (model?.file === file ? model.doc : undefined);
     const result: EditResult =
-      model && model.doc.text === buffer.text() ? make(model) : { refused: 'the grid is still reading the last change; try again' };
+      model && read && read.text === textOf(file) ? make(model) : { refused: 'the grid is still reading the last change; try again' };
     if ('refused' in result) {
       notice(td, plainRefusal(result.refused));
       return null;
     }
-    apply(result.edits);
+    apply(file, result.edits);
     return result.edits;
   }
 
@@ -237,18 +357,24 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     return columnsOf(row).includes(column) ? column : TITLE;
   }
 
+  /** Why a declared cell can't be typed into: its file has no column for it (spec §4b.2); null when it can. */
+  function unmapped(row: Row, column: number): string | null {
+    if (row.kind !== 'item' || column < DECLARED || !model?.columns[column - DECLARED]) return null;
+    return cellColumn(model, row.node, column - DECLARED) ? null : plainRefusal(noColumn(model, row.node, column - DECLARED).refused);
+  }
+
   /** The text a cell edits, or null when the cell is not text-editable. */
   function rawOf(row: Row, column: number): string | null {
     if (row.kind === 'line') return column === TITLE ? row.text : null;
     if (column === TITLE) return row.node.title;
     const index = column - DECLARED;
-    if (!model?.columns[index]) return null;
+    if (!model?.columns[index] || unmapped(row, column)) return null;
     // Editing a ref cell shows its outline numbers, as it is shown: the one exception to the raw text (§4b.2).
-    if (isRefColumn(model, index)) return refText(model, row.node, index);
-    const text = row.node.fields[index]?.text ?? '';
+    if (isRefColumn(model, row.node, index)) return refText(model, row.node, index);
+    const text = model.field(row.node, index)?.text ?? '';
     const cell = rollupOf(row.node, index);
     // A bool the checkbox shows is toggled, not typed; any other text is edited as text.
-    if (!cell) return boolColumn(column) && isFlag(text) ? null : text;
+    if (!cell) return boolColumn(row.node, column) && isFlag(text) ? null : text;
     // An additive value rolls its children in; editing it in place would be a lie.
     return cell.mode === 'additive' ? null : text;
   }
@@ -258,67 +384,97 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     return model!.get(node, rollup)?.get(model!.columns[index].name);
   }
 
-  /** The rows column behind a grid column when it is bool, whose cells show a checkbox; null otherwise. */
-  function boolColumn(column: number): RowsColumn | null {
+  /** The rows column behind a node's grid column, in its own file, when it is bool, whose cells show a checkbox; null otherwise. */
+  function boolColumn(node: ItemNode, column: number): RowsColumn | null {
     if (!model || column < DECLARED) return null;
-    const rowsColumn = columnOf(model, column - DECLARED);
+    const rowsColumn = cellColumn(model, node, column - DECLARED);
     return rowsColumn?.kind === 'bool' ? rowsColumn : null;
   }
 
   const isFlag = (text: string) => text === '' || text === 'true' || text === 'false';
 
-  function fill(td: HTMLTableCellElement, node: ItemNode, index: number): void {
-    td.replaceChildren();
-    const column = model!.columns[index];
-    const text = node.fields[index]?.text ?? '';
-    const cell = rollupOf(node, index);
-    if (!cell) {
-      if (isRefColumn(model!, index)) {
-        td.textContent = refText(model!, node, index);
-        return;
-      }
-      const bool = boolColumn(DECLARED + index);
-      // A bool is a checkbox (spec §4b.6.5), unless its text is no bool; then it shows as written.
-      if (bool && isFlag(text)) {
-        const box = document.createElement('input');
-        box.type = 'checkbox';
-        box.tabIndex = -1;
-        box.checked = readFlag(model!.doc, node.row, bool) === true;
-        box.addEventListener('change', () => {
-          if (!write(td, (current) => withRepairs(current, setFlag(current, node, index, box.checked), [node]))) box.checked = !box.checked;
-        });
-        td.classList.add('check');
-        td.append(box);
-        return;
-      }
-      td.textContent = text;
-      return;
-    }
-    if (cell.mode === 'additive') {
-      td.classList.add('additive');
-      td.title = `additive value "${text}" — edit it in the text editor`;
-      td.append(muted('+'));
-    }
-    // An unestimated subtree shows nothing rather than "0h".
-    if (!model!.get(node, hasValue)?.get(column.name)) return;
-    td.append(format(column, cell.effective));
-    if (cell.mode === 'derived') td.classList.add('derived');
-    // Derived cells render bare: effective already is the child sum.
-    else if (cell.derived !== undefined) td.append(muted(`⟨Σ ${format(column, cell.derived)}⟩`));
+  // Rows are described before they are drawn (spec §4b.1): each cell as a CellSpec, which says
+  // everything the cell shows. A rebuild keeps each row's element, found by its file and line (the
+  // line followed through every edit since the last build), and redraws only the cells whose spec
+  // changed, so a commit or an insert touches a few cells, not the whole portfolio. Checkboxes and
+  // badges are handled on the table (below), so a kept cell never acts on an older model's node.
+
+  /** What a cell shows, in order. */
+  type Part =
+    | { kind: 'text'; text: string }
+    | { kind: 'muted'; text: string }
+    | { kind: 'check'; checked: boolean; disabled: boolean; label?: string }
+    // The WBS cell's extra values (spec §4b.6.6), and a mount row's file badge.
+    | { kind: 'extra'; text: string }
+    | { kind: 'file'; path: string }
+    // A mount row whose file is shown under it is the segment's header: its unsaved marker, and its buttons.
+    | { kind: 'unsaved' }
+    | { kind: 'action'; action: 'open' | 'unmount'; label: string; title: string; disabled: boolean };
+
+  /** A cell: `column` is its data-column, absent for a front matter row's cells, which take no place. */
+  interface CellSpec {
+    column?: number;
+    className: string;
+    title?: string;
+    why?: string;
+    colSpan?: number;
+    padding?: string;
+    parts: Part[];
   }
 
-  /** `className` is passed in rather than set by the caller, so it cannot wipe the diagnostic class. */
-  function addCell(row: HTMLTableRowElement, line: number, column: number, className = ''): HTMLTableCellElement {
-    const td = row.insertCell();
-    td.dataset.column = String(column);
-    td.tabIndex = -1;
-    td.className = className;
-    const diagnostic = marks.get(`${line}:${column}`);
-    if (diagnostic) {
-      td.classList.add(diagnostic.severity);
-      td.title = diagnostic.message;
+  interface RowSpec {
+    className: string;
+    file: string;
+    line: number;
+    cells: CellSpec[];
+  }
+
+  /** A cell with its diagnostic, if one marks it (spec §4b.2). */
+  function cellSpec(vline: number, column: number, className: string, parts: Part[] = [], extra: Partial<CellSpec> = {}): CellSpec {
+    const diagnostic = marks.get(`${vline}:${column}`);
+    return {
+      column,
+      className: diagnostic ? [className, diagnostic.severity].filter(Boolean).join(' ') : className,
+      ...(diagnostic ? { title: diagnostic.message } : {}),
+      ...extra,
+      parts,
+    };
+  }
+
+  /** A declared cell: a ref cell's outline numbers, a bool's checkbox, text, or a roll-up. */
+  function declaredSpec(vline: number, node: ItemNode, index: number): CellSpec {
+    const columnAt = DECLARED + index;
+    const column = model!.columns[index];
+    const text = model!.field(node, index)?.text ?? '';
+    const cell = rollupOf(node, index);
+    if (!cell) {
+      if (isRefColumn(model!, node, index)) return cellSpec(vline, columnAt, '', [{ kind: 'text', text: refText(model!, node, index) }]);
+      const bool = boolColumn(node, columnAt);
+      // A bool is a checkbox (spec §4b.6.5), unless its text is no bool; then it shows as written.
+      if (bool && isFlag(text)) {
+        const checked = readFlag(docOf(model!, node), node.row, bool) === true;
+        const spec = cellSpec(vline, columnAt, '', [{ kind: 'check', checked, disabled: false }]);
+        return { ...spec, className: [spec.className, 'check'].filter(Boolean).join(' ') };
+      }
+      return cellSpec(vline, columnAt, '', [{ kind: 'text', text }]);
     }
-    return td;
+    const classes: string[] = [];
+    const parts: Part[] = [];
+    let title: string | undefined;
+    if (cell.mode === 'additive') {
+      classes.push('additive');
+      title = `additive value "${text}" — edit it in the text editor`;
+      parts.push({ kind: 'muted', text: '+' });
+    }
+    // An unestimated subtree shows nothing rather than "0h".
+    if (model!.get(node, hasValue)?.get(column.name)) {
+      parts.push({ kind: 'text', text: format(column, cell.effective) });
+      if (cell.mode === 'derived') classes.push('derived');
+      // Derived cells render bare: effective already is the child sum.
+      else if (cell.derived !== undefined) parts.push({ kind: 'muted', text: `⟨Σ ${format(column, cell.derived)}⟩` });
+    }
+    const spec = cellSpec(vline, columnAt, '', parts);
+    return { ...spec, className: [spec.className, ...classes].filter(Boolean).join(' '), ...(title !== undefined ? { title } : {}) };
   }
 
   /** What a row's WBS badge lists: its extra values, and each column it sets twice with both values. */
@@ -330,168 +486,343 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const extras = row.overflow.filter((c) => !repeated(c));
     if (extras.length > 0) parts.push(`+ ${extras.map(shown).join(' | ')}`);
     for (const c of row.overflow.filter(repeated)) {
-      const column = model?.doc.schema.columns.find((x) => x.name === c.name?.text && x.index > 0);
+      const column = model ? docOf(model, node).schema.columns.find((x) => x.name === c.name?.text && x.index > 0) : undefined;
       const first = column ? row.cells[column.index] : null;
       parts.push(`${c.name!.text}: ${first?.text ?? ''} / ${c.text ?? ''}`);
     }
     return parts.join(' · ');
   }
 
-  /** The placeholder row for a title that has not been written to the buffer yet. */
-  function addDraftRow(body: HTMLTableSectionElement, columns: Column[]): void {
-    const row = body.insertRow();
-    row.className = 'draft';
-    for (let i = 0; i < leading(); i++) row.insertCell();
-    const title = row.insertCell();
-    title.style.paddingLeft = `${0.5 + (draft ? draft.indent / 4 : 0) * 1.25}em`;
-    title.append(draftInput);
-    columns.forEach(() => row.insertCell());
+  /** A title cell's parts: the title, and on a mount row the file badge, whose menu opens or unmounts its file (spec §4b.4). */
+  function titleParts(node: ItemNode): Part[] {
+    return [{ kind: 'text', text: node.title }, ...(node.mount !== undefined ? [{ kind: 'file' as const, path: node.mount }] : [])];
   }
 
-  function addItemRow(body: HTMLTableSectionElement, row: Row & { kind: 'item' }, columns: Column[]): void {
-    const { node } = row;
-    const tr = body.insertRow();
-    tr.className = 'item';
-    tr.dataset.line = String(node.line);
-    tr.classList.toggle('done', node.done);
+  function itemSpec(row: Row & { kind: 'item' }): RowSpec {
+    const { node, vline } = row;
+    const mounted = node.file !== root();
+    const cells: CellSpec[] = [];
 
-    const wbs = addCell(tr, node.line, WBS, 'wbs');
-    wbs.textContent = node.outlineNumber;
+    const wbs = cellSpec(vline, WBS, 'wbs');
     // The ID, so a grid user can name the task to a text user (spec §4b.1).
-    if (node.row.anchors.length > 0) wbs.title = [`#${node.row.anchors[0].id}`, wbs.title].filter(Boolean).join('\n');
+    const title = node.row.anchors.length > 0 ? [`#${node.row.anchors[0].id}`, wbs.title].filter(Boolean).join('\n') : wbs.title;
     const extra = extraValues(node);
-    if (extra) {
-      // The values rows kept as overflow, or a column's two values (spec §4b.6.6).
-      const badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.textContent = extra;
-      badge.title = extra;
-      wbs.prepend(badge);
-    }
+    // The values rows kept as overflow, or a column's two values (spec §4b.6.6).
+    cells.push({ ...wbs, ...(title ? { title } : {}), parts: [...(extra ? [{ kind: 'extra' as const, text: extra }] : []), { kind: 'text', text: node.outlineNumber }] });
 
-    const check = addCell(tr, node.line, DONE, 'check');
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.checked = node.done;
-    // The cell is the focusable thing (Space toggles it); a tabbable checkbox
-    // would make Tab walk the checkbox column instead of the grid.
-    box.tabIndex = -1;
     // Done through an ancestor: shown, but only the ancestor's marker can clear it.
-    box.disabled = !canMarkDone(model!) || (node.done && !node.ownDone);
-    box.addEventListener('change', () => {
-      if (!write(check, (current) => withRepairs(current, setDone(current, node, box.checked), [node]))) box.checked = !box.checked;
-    });
-    check.append(box);
+    const markable = canMarkDone(model!, node.file);
+    const done = cellSpec(vline, DONE, 'check', [{ kind: 'check', checked: node.done, disabled: !markable || (node.done && !node.ownDone) }]);
+    // A mounted file without the marker says so (spec §4b.5).
+    const noDone = mounted && !markable ? plainRefusal(`file ${fileLabel(model!, node.file)} has no marker done`) : null;
+    cells.push(noDone ? { ...done, title: noDone, why: noDone } : done);
 
     toggles().forEach((marker, i) => {
-      const td = addCell(tr, node.line, MARKER - i, 'check');
-      const toggle = document.createElement('input');
-      toggle.type = 'checkbox';
-      toggle.tabIndex = -1;
-      toggle.checked = readFlag(model!.doc, node.row, marker.column) === true;
-      toggle.setAttribute('aria-label', marker.name);
-      toggle.addEventListener('change', () => {
-        if (!write(td, (current) => withRepairs(current, setToggle(current, node, marker.name, toggle.checked), [node]))) toggle.checked = !toggle.checked;
-      });
-      td.append(toggle);
+      // The marker is the row's file's, by name; a file that doesn't declare it can't take it (spec §4b.5).
+      const own = docOf(model!, node).schema.markers.find((m) => m.name === marker.name);
+      const checked = own ? readFlag(docOf(model!, node), node.row, own.column) === true : false;
+      const spec = cellSpec(vline, MARKER - i, 'check', [{ kind: 'check', checked, disabled: !own, label: marker.name }]);
+      const reason = own ? null : plainRefusal(`file ${fileLabel(model!, node.file)} has no marker ${marker.name}`);
+      cells.push(reason ? { ...spec, title: reason, why: reason } : spec);
     });
 
-    const title = addCell(tr, node.line, TITLE, 'title');
-    title.textContent = node.title;
-    title.style.paddingLeft = `${0.5 + row.depth * 1.25}em`;
-
-    columns.forEach((_, i) => fill(addCell(tr, node.line, DECLARED + i), node, i));
+    // A mount row whose file is shown under it is the segment's header (spec §4b.7): ●, Open and Unmount after its badge.
+    const header = node.composes !== undefined && buffer.pieces !== undefined;
+    const parts = titleParts(node);
+    if (header) {
+      if (unsaved.has(node.composes!)) parts.push({ kind: 'unsaved' });
+      parts.push(
+        { kind: 'action', action: 'open', label: 'Open', title: `Open ${node.composes}`, disabled: !hooks.onOpenFile },
+        { kind: 'action', action: 'unmount', label: 'Unmount', title: `Stop showing ${node.composes} here; the file stays as it is`, disabled: false },
+      );
+    }
+    cells.push(cellSpec(vline, TITLE, 'title', parts, { padding: `${0.5 + row.depth * 1.25}em` }));
+    model!.columns.forEach((_, i) => cells.push(declaredSpec(vline, node, i)));
+    const kind = `item${node.done ? ' done' : ''}${header ? ' segment-mount' : ''}`;
+    return { className: rowClass(row, kind), file: row.file, line: row.line, cells };
   }
 
   /** A comment or blank line: one full-width cell holding the raw text. */
-  function addLineRow(body: HTMLTableSectionElement, row: Row & { kind: 'line' }, columns: Column[]): void {
-    const tr = body.insertRow();
-    tr.dataset.line = String(row.line);
-    tr.className = row.blank ? 'line blank' : 'line';
-    addCell(tr, row.line, WBS, 'wbs');
-    const raw = addCell(tr, row.line, TITLE, 'raw');
-    raw.colSpan = leading() + columns.length;
-    raw.textContent = row.text;
+  function lineSpec(row: Row & { kind: 'line' }): RowSpec {
+    const cells = [cellSpec(row.vline, WBS, 'wbs'), cellSpec(row.vline, TITLE, 'raw', [{ kind: 'text', text: row.text }], { colSpan: leading() + model!.columns.length })];
+    return { className: rowClass(row, row.blank ? 'line blank' : 'line'), file: row.file, line: row.line, cells };
   }
+
+  /** A file's front matter: one collapsed, read-only row. */
+  function frontSpec(block: FrontMatter): RowSpec {
+    const d = block.diagnostic;
+    const raw: CellSpec = {
+      className: d ? `raw ${d.severity}` : 'raw',
+      ...(d ? { title: d.message } : {}),
+      colSpan: leading() + model!.columns.length,
+      parts: [{ kind: 'text', text: block.text }],
+    };
+    return { className: rowClass(block, 'front-matter'), file: block.file, line: block.line, cells: [{ className: '', parts: [] }, raw] };
+  }
+
+  /**
+   * A row's classes: its kind's; its shading when it is a mounted file's (spec §4b.1); and
+   * `in-segment` from a segment's mount row to its last row, which has the segment's border.
+   */
+  function rowClass(row: Placed, kind: string): string {
+    const classes = [kind];
+    if (row.mount > 0) classes.push('mounted', `segment-depth-${row.mount}`);
+    if (row.border) classes.push('in-segment');
+    // An ancestor the filter shows only for context is dimmed.
+    if (applied?.dims(row)) classes.push('filter-context');
+    return classes.join(' ');
+  }
+
+  function partElement(part: Part): globalThis.Node {
+    switch (part.kind) {
+      case 'text':
+        return document.createTextNode(part.text);
+      case 'muted':
+        return muted(part.text);
+      case 'check': {
+        // The cell is the focusable thing (Space toggles it); a tabbable checkbox
+        // would make Tab walk the checkbox column instead of the grid.
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.tabIndex = -1;
+        box.checked = part.checked;
+        box.disabled = part.disabled;
+        if (part.label) box.setAttribute('aria-label', part.label);
+        return box;
+      }
+      case 'extra': {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = part.text;
+        badge.title = part.text;
+        return badge;
+      }
+      case 'file': {
+        const badge = document.createElement('button');
+        badge.type = 'button';
+        badge.className = 'file-badge';
+        badge.tabIndex = -1;
+        badge.textContent = part.path.split('/').pop()!;
+        badge.title = `Open ${part.path}`;
+        badge.disabled = !hooks.onOpenFile;
+        return badge;
+      }
+      case 'unsaved': {
+        const marker = document.createElement('span');
+        marker.className = 'segment-unsaved';
+        marker.textContent = '●';
+        marker.title = 'Unsaved changes';
+        return marker;
+      }
+      case 'action': {
+        // Not in the tab order, as the checkboxes aren't: the cell is; the toolbar has Unmount too.
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'segment-action';
+        button.dataset.action = part.action;
+        button.tabIndex = -1;
+        button.textContent = part.label;
+        button.title = part.title;
+        button.disabled = part.disabled;
+        return button;
+      }
+    }
+  }
+
+  /** Each drawn cell's spec, as a key: a cell whose key is unchanged is left as it is. */
+  const drawn = new WeakMap<HTMLTableCellElement, string>();
+
+  /** Draw a cell from its spec, unless it already shows it; `force` draws it anyway (after an editor was in it). */
+  function drawCell(td: HTMLTableCellElement, spec: CellSpec, force = false): void {
+    const key = JSON.stringify(spec);
+    if (!force && drawn.get(td) === key) return;
+    drawn.set(td, key);
+    td.className = spec.className;
+    if (!spec.className) td.removeAttribute('class');
+    if (spec.column !== undefined) td.dataset.column = String(spec.column);
+    if (spec.title !== undefined) td.title = spec.title;
+    else td.removeAttribute('title');
+    if (spec.why !== undefined) td.dataset.why = spec.why;
+    else delete td.dataset.why;
+    if (spec.colSpan !== undefined) td.colSpan = spec.colSpan;
+    else td.removeAttribute('colspan');
+    if (spec.padding !== undefined) td.style.paddingLeft = spec.padding;
+    else td.removeAttribute('style');
+    td.replaceChildren(...spec.parts.map(partElement));
+  }
+
+  /** A new cell for a spec: one with a column takes part in the place, so it is focusable. */
+  function newCell(spec: CellSpec): HTMLTableCellElement {
+    const td = document.createElement('td');
+    if (spec.column !== undefined) td.tabIndex = -1;
+    return td;
+  }
+
+  /** The classes the place and hover put on a row, which a redraw keeps. */
+  const STATE = ['at-cursor', 'selected', 'hover'];
+
+  /**
+   * What each kept row was last drawn with, so an unchanged row is checked without reading the
+   * DOM back (slow in jsdom): its classes, file and line, its cells, and their columns.
+   */
+  const drawnRows = new WeakMap<HTMLTableRowElement, { className: string; file: string | null; line: number; shape: string; cells: HTMLTableCellElement[] }>();
+
+  /** Draw a row from its spec into `tr`, a kept row or a new one: only what changed is touched. */
+  function drawRow(tr: HTMLTableRowElement, spec: RowSpec): void {
+    const shape = spec.cells.map((c) => c.column ?? '').join(',');
+    let was = drawnRows.get(tr);
+    // A row whose cells no longer line up (another kind of row now, or other columns) is drawn afresh.
+    if (!was || was.shape !== shape) {
+      const cells = spec.cells.map(newCell);
+      tr.replaceChildren(...cells);
+      was = { className: '', file: null, line: -1, shape, cells };
+      drawnRows.set(tr, was);
+    }
+    if (was.className !== spec.className) {
+      tr.className = [spec.className, ...STATE.filter((c) => tr.classList.contains(c))].join(' ');
+      was.className = spec.className;
+    }
+    if (was.file !== spec.file) tr.dataset.file = was.file = spec.file;
+    if (was.line !== spec.line) {
+      tr.dataset.line = String(spec.line);
+      was.line = spec.line;
+    }
+    const { cells } = was;
+    spec.cells.forEach((c, i) => drawCell(cells[i], c));
+  }
+
+  /** The spec a grid cell is drawn from now: an editor's cell is drawn back from it. */
+  function specOf(row: Row, column: number): CellSpec | undefined {
+    return (row.kind === 'item' ? itemSpec(row) : lineSpec(row)).cells.find((c) => c.column === column);
+  }
+
+  // Body rows are kept here, in order, rather than walked through tBodies[0].rows: in jsdom each
+  // read of that live collection scans it, so walking a portfolio's thousands of rows was quadratic.
+  let bodyRows: HTMLTableRowElement[] = [];
+  // The rows drawn last, each by the end of its line in the shown text, followed through every
+  // change since: the next build finds a row's element there, so an insert above it keeps it.
+  let kept: { pos: number; tr: HTMLTableRowElement }[] = [];
+
+  /** A plain row: the draft and new-task rows, drawn afresh each time. */
+  function plainRow(className: string, columns: Column[], title?: (td: HTMLTableCellElement) => void): HTMLTableRowElement {
+    const tr = document.createElement('tr');
+    tr.className = className;
+    const cell = () => tr.appendChild(document.createElement('td'));
+    for (let i = 0; i < leading(); i++) cell();
+    title?.(cell());
+    columns.forEach(cell);
+    return tr;
+  }
+
+  /** The placeholder row for a title that has not been written to the buffer yet. */
+  function draftRow(columns: Column[]): HTMLTableRowElement {
+    return plainRow('draft', columns, (title) => {
+      title.style.paddingLeft = `${0.5 + (draft ? draft.base + draft.indent / 4 : 0) * 1.25}em`;
+      title.append(draftInput);
+    });
+  }
+
+  const thead = document.createElement('thead');
+  const tbody = document.createElement('tbody');
+  const tfoot = document.createElement('tfoot');
 
   function build(): void {
     if (!model) return;
     const columns = model.columns;
     const text = buffer.text();
     const draftLine = draft ? lineAt(text, draft.anchor) : null;
-    table.replaceChildren();
-    const head = table.createTHead().insertRow();
+    note.remove();
+    if (!table.tBodies[0]) table.append(thead, tbody, tfoot);
+    const head = document.createElement('tr');
     for (const name of ['#', '', ...toggles().map((m) => m.char), 'Task', ...columns.map((c) => c.name)]) {
       const th = document.createElement('th');
       th.textContent = name;
       head.append(th);
     }
+    thead.replaceChildren(head);
 
-    const body = table.createTBody();
-    if (frontMatter) {
-      const tr = body.insertRow();
-      tr.className = 'front-matter';
-      tr.insertCell();
-      const cell = tr.insertCell();
-      cell.className = 'raw';
-      cell.colSpan = leading() + columns.length;
-      cell.textContent = frontMatter.text;
-      if (frontMatter.diagnostic) {
-        cell.classList.add(frontMatter.diagnostic.severity);
-        cell.title = frontMatter.diagnostic.message;
-      }
-    }
+    // Where each line of the shown text ends, to find the row kept for it.
+    const ends: number[] = [];
+    for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) ends.push(i);
+    ends.push(text.length);
+    const old = new Map<number, HTMLTableRowElement>();
+    for (const { pos, tr } of kept) if (!old.has(pos)) old.set(pos, tr);
 
-    byLine.clear();
-    selectedRow = null;
-    currentRow = null;
-    for (const row of rows) {
-      if (row.line === draftLine) addDraftRow(body, columns);
-      byLine.set(row.line, row);
-      if (row.kind === 'item') addItemRow(body, row, columns);
-      else addLineRow(body, row, columns);
+    const wanted: HTMLTableRowElement[] = [];
+    const next: typeof kept = [];
+    trs.clear();
+    let drafted = false;
+    for (const row of shown) {
+      if (row.kind !== 'front' && row.vline === draftLine) wanted.push(draftRow(columns)), (drafted = true);
+      const pos = ends[row.vline - 1] ?? text.length;
+      const tr = old.get(pos) ?? document.createElement('tr');
+      old.delete(pos);
+      drawRow(tr, row.kind === 'front' ? frontSpec(row) : row.kind === 'item' ? itemSpec(row) : lineSpec(row));
+      wanted.push(tr);
+      next.push({ pos, tr });
+      if (row.kind === 'front') continue;
+      trs.set(row.vline, tr);
+      vlineOf.set(tr, row.vline);
     }
+    kept = next;
     // The line the draft was anchored to is no longer a row (an undo, say).
     // Keep the draft on screen rather than dropping what was typed.
-    if (draftLine !== null && !byLine.has(draftLine)) addDraftRow(body, columns);
-
+    if (draftLine !== null && !drafted) wanted.push(draftRow(columns));
     // The last body row; the total row below it stays at the bottom of the pane (spec §4b.1).
-    const adder = body.insertRow();
-    adder.className = 'new-task';
-    for (let i = 0; i < leading(); i++) adder.insertCell();
-    adder.insertCell().append(newTask);
-    columns.forEach(() => adder.insertCell());
+    wanted.push(plainRow('new-task', columns, (td) => td.append(newTask)));
 
-    const foot = table.createTFoot();
-    const total = foot.insertRow();
+    // Into the body in this order: rows that went are removed first, so the rest mostly stay put.
+    const keep = new Set(wanted);
+    for (const tr of bodyRows) if (!keep.has(tr)) tr.remove();
+    let cursor = tbody.firstChild;
+    for (const tr of wanted) {
+      if (cursor === tr) cursor = cursor.nextSibling;
+      else tbody.insertBefore(tr, cursor);
+    }
+    bodyRows = wanted;
+
+    const total = document.createElement('tr');
     total.className = 'total';
-    for (let i = 0; i < leading(); i++) total.insertCell();
-    total.insertCell().textContent = 'Total';
+    const cell = () => total.appendChild(document.createElement('td'));
+    for (let i = 0; i < leading(); i++) cell();
+    // It still sums the whole plan while the rows are filtered.
+    cell().textContent = applied ? 'Total (all rows)' : 'Total';
     columns.forEach((column) => {
-      const td = total.insertCell();
+      const td = cell();
       const sum = model?.value(totals)?.get(column.name);
       if (!sum) return;
       td.append(format(column, sum.effective), muted(`done ${format(column, sum.doneSum)}`));
     });
+    tfoot.replaceChildren(total);
     markPlace();
     markHover();
   }
 
-  /** The line a body row is on: the front matter's first line, or its own; null for the draft and new-task rows. */
-  function lineOf(tr: HTMLTableRowElement): number | null {
-    if (tr.classList.contains('front-matter')) return frontMatter!.line;
-    return tr.dataset.line === undefined ? null : Number(tr.dataset.line);
+  /** The root file's path. */
+  function root(): string {
+    return model?.file ?? '';
+  }
+
+  /** The file and line a body row is on: the front matter's first line, or its own; null for the draft and new-task rows. */
+  function lineOf(tr: HTMLTableRowElement): FileLine | null {
+    return tr.dataset.line === undefined ? null : { file: tr.dataset.file!, line: Number(tr.dataset.line) };
+  }
+
+  /** The file and line of a row the grid shows, by vline. */
+  function placeOf(vline: number): FileLine {
+    const row = byLine.get(vline);
+    return row ? { file: row.file, line: row.line } : { file: root(), line: vline };
   }
 
   /** Band the row hovered in the other pane. */
   function markHover(): void {
-    for (const tr of table.tBodies[0]?.rows ?? []) tr.classList.toggle('hover', relayed !== null && lineOf(tr) === relayed);
+    for (const tr of bodyRows) tr.classList.toggle('hover', relayed !== null && sameLine(lineOf(tr), relayed));
   }
 
-  function hover(line: number | null): void {
-    if (line === hovered) return;
-    hovered = line;
-    onHover?.(line);
+  function hover(at: FileLine | null): void {
+    if (sameLine(at, hovered)) return;
+    hovered = at;
+    onHover?.(at);
   }
 
   // Row alignment (spec §3.4). The whole pane scrolls, header included, so the body's top is
@@ -506,12 +837,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     // Before the first model there is no body, and no rows.
     const bodyTop = body ? body.getBoundingClientRect().top - paneTop + scrollTop : 0;
     const rows: RowLayout['rows'] = [];
-    for (const tr of body?.rows ?? []) {
+    for (const tr of bodyRows) {
       const rect = tr.getBoundingClientRect();
       // Off screen: above the pane's top, or below its bottom.
       if (rect.bottom <= paneTop || rect.top >= paneTop + parent.clientHeight) continue;
-      const line = lineOf(tr);
-      rows.push({ at: line === null ? null : { line }, top: rect.top - paneTop + scrollTop - bodyTop, height: rect.height });
+      rows.push({ at: lineOf(tr), top: rect.top - paneTop + scrollTop - bodyTop, height: rect.height });
     }
     return { version: model?.version ?? 0, bodyTop, contentHeight: parent.scrollHeight - bodyTop, scrollTop, rows };
   }
@@ -562,7 +892,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       selectedRow?.classList.add('selected');
     }
 
-    const stop = line === null ? cellFor(rows[0]?.line ?? 0, WBS) : cellFor(line, at?.column ?? WBS);
+    const stop = line === null ? cellFor(rows[0]?.vline ?? 0, WBS) : cellFor(line, at?.column ?? WBS);
     if (stop === tabStop) return;
     if (tabStop?.isConnected) tabStop.tabIndex = -1;
     tabStop = stop;
@@ -573,13 +903,13 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    * Put the place on a cell. The anchor comes from the buffer as it stands,
    * not from the model, which may predate the edit that led here.
    */
-  function place(line: number, column: number, fromApi = false): void {
-    at = { anchor: lineEndOf(buffer.text(), line), column };
+  function place(vline: number, column: number, fromApi = false): void {
+    at = { anchor: lineEndOf(buffer.text(), vline), column };
     held = true;
     markPlace();
-    focusCell(line, column);
+    focusCell(vline, column);
     updateToolbar();
-    hooks.onCursorLine(line, fromApi);
+    hooks.onCursorLine(placeOf(vline), fromApi);
   }
 
   function clearPlace(): void {
@@ -590,8 +920,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     (document.activeElement as HTMLElement | null)?.blur();
   }
 
-  function rowIndex(line: number): number {
-    return rows.findIndex((row) => row.line === line);
+  function rowIndex(vline: number): number {
+    return rows.findIndex((row) => row.vline === vline);
   }
 
   function lastColumn(row: Row): number {
@@ -600,9 +930,9 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
   }
 
   /** Move the place `delta` rows, or to the new-task row when it runs off the end. */
-  function step(line: number, delta: number, column: number): void {
-    const next = rows[rowIndex(line) + delta];
-    if (next) place(next.line, nearest(next, column));
+  function step(vline: number, delta: number, column: number): void {
+    const next = rows[rowIndex(vline) + delta];
+    if (next) place(next.vline, nearest(next, column));
     else if (delta > 0) newTask.focus();
   }
 
@@ -612,32 +942,31 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const i = columns.indexOf(column);
     const next = columns[i + (back ? -1 : 1)];
     if (next !== undefined) {
-      place(row.line, next);
+      place(row.vline, next);
       return;
     }
-    const sibling = rows[rowIndex(row.line) + (back ? -1 : 1)];
-    if (sibling) place(sibling.line, back ? lastColumn(sibling) : columnsOf(sibling)[1]);
+    const sibling = rows[rowIndex(row.vline) + (back ? -1 : 1)];
+    if (sibling) place(sibling.vline, back ? lastColumn(sibling) : columnsOf(sibling)[1]);
     else if (!back) newTask.focus();
   }
 
   function endEdit(row: Row, column: number): void {
     editing = null;
-    const td = cellFor(row.line, column);
+    const td = cellFor(row.vline, column);
     if (!td) return;
     // Shows the model as it stands; the rebuild after the edit corrects it.
-    if (row.kind === 'line') td.textContent = row.text;
-    else if (column === TITLE) td.textContent = row.node.title;
-    else if (model) fill(td, row.node, column - DECLARED);
+    const spec = model ? specOf(row, column) : undefined;
+    if (spec) drawCell(td, spec, true);
     td.focus();
   }
 
   function commit(row: Row, column: number, value: string): void {
     endEdit(row, column);
-    if (row.kind === 'line') return apply(setLine(buffer.text(), row.span, value));
+    if (row.kind === 'line') return apply(row.file, setLine(textOf(row.file), row.span, value));
     const { node } = row;
-    write(cellFor(row.line, column), (current) => {
+    write(cellFor(row.vline, column), row.file, (current) => {
       const index = column - DECLARED;
-      if (column >= DECLARED && isRefColumn(current, index)) {
+      if (column >= DECLARED && isRefColumn(current, node, index)) {
         const { result, touched } = setRefs(current, node, index, value);
         return withRepairs(current, result, touched);
       }
@@ -651,10 +980,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    * for a date, and a plain text input otherwise. Durations are normalised on
    * commit (setField). `focus` is what takes the keyboard.
    */
-  function cellEditor(column: number, value: string, typed: string | null): { element: HTMLElement; focus: HTMLInputElement | HTMLSelectElement } {
+  function cellEditor(row: Row, column: number, value: string, typed: string | null): { element: HTMLElement; focus: HTMLInputElement | HTMLSelectElement } {
     const input = document.createElement('input');
     input.className = 'cell-input';
-    const rowsColumn = model && column >= DECLARED ? columnOf(model, column - DECLARED) : undefined;
+    // The row's own file's column: a mounted file's may differ from the root's.
+    const rowsColumn = model && row.kind === 'item' && column >= DECLARED ? cellColumn(model, row.node, column - DECLARED) : undefined;
     if (rowsColumn?.kind === 'enum' && rowsColumn.enumValues) {
       const select = document.createElement('select');
       select.className = 'cell-input';
@@ -712,13 +1042,20 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    */
   function beginEdit(row: Row, column: number, typed: string | null = null): void {
     const raw = rawOf(row, column);
-    if (raw === null) return;
-    place(row.line, column);
-    const td = cellFor(row.line, column);
+    if (raw === null) {
+      // A cell its file has no column for can't be typed into; say why.
+      const refusal = unmapped(row, column);
+      if (refusal) place(row.vline, column), notice(cellFor(row.vline, column), refusal);
+      return;
+    }
+    place(row.vline, column);
+    const td = cellFor(row.vline, column);
     if (!td) return;
-    editing = { line: row.line, column };
+    editing = { line: row.vline, column };
     // Spreadsheet rule: editing shows the text as written, not the computed value.
-    const { element, focus: input } = cellEditor(column, raw, typed);
+    const { element, focus: input } = cellEditor(row, column, raw, typed);
+    // The cell no longer shows its spec: the next build draws it again.
+    drawn.delete(td);
     td.replaceChildren(element);
     input.focus();
     if (input instanceof HTMLInputElement) {
@@ -730,7 +1067,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       if (event.key === 'Enter') {
         event.preventDefault();
         commit(row, column, input.value);
-        step(row.line, 1, column);
+        step(row.vline, 1, column);
       } else if (event.key === 'Tab') {
         event.preventDefault();
         commit(row, column, input.value);
@@ -747,7 +1084,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     keys.addEventListener('blur', (event) => {
       // Moving to the date picker beside the input is still editing.
       if (element.contains(event.relatedTarget as globalThis.Node | null)) return;
-      if (editing?.line === row.line && editing.column === column) commit(row, column, input.value);
+      if (editing?.line === row.vline && editing.column === column) commit(row, column, input.value);
     });
   }
 
@@ -756,9 +1093,15 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
   function startDraft(row: Row): void {
     const indent = row.kind === 'item' && model ? insertIndent(model, row.node, row.level) : row.indent;
-    draft = { anchor: row.span.from, indent };
+    draft = { anchor: shownPos(row.file, row.span.from), indent, base: row.base };
     draftInput.value = '';
-    build();
+    // Only the draft row comes in, above the row: nothing else changed, so nothing else is drawn.
+    const above = trs.get(row.vline);
+    if (above && model) {
+      const tr = draftRow(model.columns);
+      above.before(tr);
+      bodyRows.splice(bodyRows.indexOf(above), 0, tr);
+    } else build();
     layout.publish();
     draftInput.focus();
     updateToolbar();
@@ -768,19 +1111,20 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
    * Write a new item, with the repairs of the row it goes above, and put the
    * place on its title. The anchor is in post-edit coordinates: the last
    * character the insert wrote, which is on the new line whether rows put the
-   * line break before it or after it. The repairs all come after it.
+   * line break before it or after it. The repairs all come after it. The
+   * item goes in `file`, the file of the row it goes above.
    */
-  function insert(td: HTMLElement | null, where: { beforeLine: number } | 'end', indent: number, title: string, above?: Row): boolean {
+  function insert(td: HTMLElement | null, file: string, where: { beforeLine: number } | 'end', indent: number, title: string, above?: Row): boolean {
     let line: TextEdit | undefined;
-    const edits = write(td, (current) => {
-      const result = insertItem(current, where, indent, title);
+    const edits = write(td, file, (current) => {
+      const result = insertItem(current, where, indent, title, file);
       if ('refused' in result || result.edits.length === 0) return result;
       line = result.edits[0];
       return withRepairs(current, result, above?.kind === 'item' ? [above.node] : []);
     });
     if (!edits) return false;
     if (!line) return true;
-    at = { anchor: line.from + line.insert.length - 1, column: TITLE };
+    at = { anchor: shownPos(file, line.from + line.insert.length - 1), column: TITLE };
     held = true;
     restore();
     return true;
@@ -800,8 +1144,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     }
     // A refused insert keeps the draft and what was typed, with the reason beside it.
     draft = null;
-    const line = lineAt(buffer.text(), pending.anchor);
-    if (!insert(draftInput.parentElement, { beforeLine: line }, pending.indent, title, byLine.get(line))) {
+    // The file and line the draft goes above: the piece its anchor is in.
+    const where = buffer.pieces ? buffer.pieces().toFile(pending.anchor) : { file: root(), offset: pending.anchor };
+    const line = lineAt(textOf(where.file), where.offset);
+    const above = byFile.get(keyOf(where.file, line));
+    if (!insert(draftInput.parentElement, where.file, { beforeLine: line }, pending.indent, title, above?.kind === 'front' ? undefined : above)) {
       draft = pending;
       return;
     }
@@ -812,10 +1159,10 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const value = newTask.value;
     // Cleared first: the focus move after the insert blurs this input, which adds a task again.
     newTask.value = '';
-    // At the indent of the last item line, not of a trailing comment or blank (§4b.1).
-    const last = [...rows].reverse().find((row) => row.kind === 'item');
+    // At the end of the root file, at the indent of its last item line, not of a trailing comment or blank (§4b.1).
+    const last = [...rows].reverse().find((row) => row.kind === 'item' && row.file === root());
     // A refused insert keeps what was typed, with the reason beside it.
-    if (!insert(newTask.parentElement, 'end', last?.indent ?? 0, value)) newTask.value = value;
+    if (!insert(newTask.parentElement, root(), 'end', last?.indent ?? 0, value)) newTask.value = value;
   }
 
   /** Put the place back where it was, following the line if it moved. */
@@ -828,59 +1175,73 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     if (!at) return;
     const line = lineAt(buffer.text(), at.anchor);
     // A deleted row hands the place to whatever took its line, or to the row above.
-    const row = byLine.get(line) ?? [...rows].reverse().find((r) => r.line <= line) ?? rows[0];
+    const row = byLine.get(line) ?? [...rows].reverse().find((r) => r.vline <= line) ?? rows[0];
     if (!row) return;
-    at = { anchor: lineEndOf(buffer.text(), row.line), column: nearest(row, at.column) };
+    at = { anchor: lineEndOf(buffer.text(), row.vline), column: nearest(row, at.column) };
     markPlace();
-    if (held) focusCell(row.line, at.column);
+    if (held) focusCell(row.vline, at.column);
     updateToolbar();
   }
 
-  /**
-   * The toolbar (§4b.5). A button is enabled only when its operation would
-   * change something, which for most of them is "the edit is not empty".
-   */
-  /** A level-based operation on an item row; a refusal is shown by the current cell. */
-  function structure(row: Row & { kind: 'item' }, make: (current: Model) => EditResult): void {
-    write(cellFor(row.line, at?.column ?? WBS), make);
+  /** A level-based operation on an item row, in its own file; a refusal is shown by the current cell. True when it was made. */
+  function structure(row: Row & { kind: 'item' }, make: (current: Model) => EditResult): boolean {
+    return write(cellFor(row.vline, at?.column ?? WBS), row.file, make) !== null;
   }
 
   /**
-   * Delete an item row. When other rows refer to it, ask first, with a preview: applying removes
-   * the row and those references as one change, and cancelling writes nothing (spec §4b.4).
+   * Delete an item row. When other rows refer to it, or it is a mount row, ask first, with a preview:
+   * applying removes the row and those references as one change, and cancelling writes nothing
+   * (spec §4b.4). A mounted task's delete names its file on the status line.
    */
   function remove(row: Row & { kind: 'item' }): void {
     const current = model;
-    const plain = current && current.doc.text === buffer.text() ? deleteItem(current, row.node) : null;
+    const plain = current && docOf(current, row.node).text === textOf(row.file) ? deleteItem(current, row.node) : null;
     const full = current && plain ? deleteItem(current, row.node, true) : null;
-    if (!current || !plain || !full || 'refused' in plain || 'refused' in full) return structure(row, (m) => deleteItem(m, row.node, true));
+    const deleted = () => {
+      if (current && row.file !== current.file) hooks.status?.(`Deleted ${nameOf(row.node)} from ${fileLabel(current, row.file)}.`);
+    };
+    if (!current || !plain || !full || 'refused' in plain || 'refused' in full) {
+      if (structure(row, (m) => deleteItem(m, row.node, true))) deleted();
+      return;
+    }
     const kept = new Set(plain.edits.map((e) => JSON.stringify(e)));
     const references = full.edits.filter((e) => !kept.has(JSON.stringify(e)));
-    if (references.length === 0) return structure(row, () => full);
+    if (references.length === 0 && !row.node.row.mount) {
+      if (structure(row, () => full)) deleted();
+      return;
+    }
     const fix: Fix = {
       label: 'Delete row',
       tier: 'confirm',
       edits: full.edits,
-      preview: preview(current.doc.text, full.edits),
+      preview: preview(docOf(current, row.node).text, full.edits),
       warning: deleteQuestion(current, row.node, references),
     };
     confirmBox.replaceChildren();
     // Cancel puts the focus back on the row it was opened from, as Apply does.
-    problems.run(confirmBox, fix, () => {
-      held = true;
-      restore();
+    problems.run(confirmBox, fix, row.file, {
+      onCancel: () => {
+        held = true;
+        restore();
+      },
+      onApply: deleted,
     });
   }
 
-  /** "Delete Review? API and UI refer to it in deps; those references will be removed." By column, in column order. */
+  const nameOf = (n: ItemNode) => (n.title !== '' ? n.title : `Line ${n.line}`);
+
+  /**
+   * "Delete Review? API and UI refer to it in deps; those references will be removed." By column, in
+   * column order, among the rows of its own file. A mounted row names its file ("Delete API from
+   * alpha.plan?"), and a mount row says its file stays as it is.
+   */
   function deleteQuestion(current: Model, node: ItemNode, references: TextEdit[]): string {
-    const name = (n: ItemNode) => (n.title !== '' ? n.title : `Line ${n.line}`);
     const groups = new Map<string, string[]>();
-    for (const column of current.doc.schema.columns.filter((c) => c.kind === 'ref')) {
+    for (const column of docOf(current, node).schema.columns.filter((c) => c.kind === 'ref')) {
       for (const other of [...byLine.values()]) {
-        if (other.kind !== 'item' || other.node === node) continue;
+        if (other.kind !== 'item' || other.node === node || other.file !== node.file) continue;
         const cell = other.node.row.cells[column.index];
-        if (cell?.text && references.some((e) => e.from < cell.valueTo && cell.valueFrom < e.to)) groups.set(column.name, [...(groups.get(column.name) ?? []), name(other.node)]);
+        if (cell?.text && references.some((e) => e.from < cell.valueTo && cell.valueFrom < e.to)) groups.set(column.name, [...(groups.get(column.name) ?? []), nameOf(other.node)]);
       }
     }
     const list = (xs: string[]) => (xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
@@ -890,15 +1251,35 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     const who = only
       ? `${list(only[1])} ${count === 1 ? 'refers' : 'refer'} to it in ${only[0]}`
       : `${[...groups].map(([column, titles]) => `${list(titles)} in ${column}`).join(', ')} refer to it`;
-    return `Delete ${name(node)}? ${who}; ${these} will be removed.`;
+    const from = node.file !== current.file ? ` from ${fileLabel(current, node.file)}` : '';
+    const parts = [`Delete ${nameOf(node)}${from}?`];
+    if (node.row.mount) parts.push(`${node.mount ?? node.row.mount.path} stays as it is; it just won't be shown here.`);
+    if (count > 0) parts.push(`${who}; ${these} will be removed.`);
+    return parts.join(' ');
   }
 
-  const actions: { id: string; label: string; run(row: Row): void; enabled(row: Row): boolean }[] = [
+  /** The row before `row` in its own file, among the rows the place can be on. */
+  function previousInFile(row: Row, item: boolean): Row | undefined {
+    return rows
+      .slice(0, rowIndex(row.vline))
+      .reverse()
+      .find((r) => r.file === row.file && (!item || r.kind === 'item'));
+  }
+
+  /** The lines of a row's own file, as the model read them. */
+  const linesOf = (row: Row) => model?.files.get(row.file)?.lines ?? model?.lines ?? [];
+
+  /**
+   * The toolbar (§4b.5). A button is enabled only when its operation would change something, which
+   * for most of them is "the edit is not empty". Where a mounted file is the reason, `why` says so:
+   * the button's tooltip, and the note its key gives.
+   */
+  const actions: { id: string; label: string; run(row: Row): void; enabled(row: Row): boolean; why?(row: Row): string | null }[] = [
     { id: 'insert', label: 'Insert row', run: startDraft, enabled: () => true },
     {
       id: 'delete',
       label: 'Delete row',
-      run: (row) => (row.kind === 'item' ? remove(row) : apply(deleteLines(buffer.text(), range(row)))),
+      run: (row) => (row.kind === 'item' ? remove(row) : apply(row.file, deleteLines(textOf(row.file), range(row)))),
       enabled: () => true,
     },
     {
@@ -907,14 +1288,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       run: (row) =>
         row.kind === 'item'
           ? structure(row, (m) => withRepairs(m, shiftItem(m, row.node, row.level, 1), [row.node], false))
-          : apply(indent(buffer.text(), range(row))),
-      // An item row needs a previous sibling to become its child: an item row above at the same or a greater level.
+          : apply(row.file, indent(textOf(row.file), range(row))),
+      // An item row needs a previous sibling to become its child: an item row above at the same or a greater level, in its file.
       enabled: (row) => {
-        if (row.kind === 'item') {
-          const previous = rows.slice(0, rowIndex(row.line)).reverse().find((r) => r.kind === 'item');
-          return previous?.kind === 'item' && previous.level >= row.level;
-        }
-        const previous = rows[rowIndex(row.line) - 1];
+        const previous = previousInFile(row, row.kind === 'item');
+        if (row.kind === 'item') return previous?.kind === 'item' && previous.level >= row.level;
         return previous !== undefined && previous.indent >= row.indent;
       },
     },
@@ -924,41 +1302,75 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       run: (row) =>
         row.kind === 'item'
           ? structure(row, (m) => withRepairs(m, shiftItem(m, row.node, row.level, -1), [row.node], false))
-          : apply(outdent(buffer.text(), range(row))),
+          : apply(row.file, outdent(textOf(row.file), range(row))),
       // The same conditions the operations use, without re-reading the document
       // on every focus move: a level or indentation to remove, a line above, a line below.
       enabled: (row) => (row.kind === 'item' ? row.level > 0 : row.indent > 0),
+      // A mounted file's root can't leave its file.
+      why: (row) => (row.kind === 'item' && row.level === 0 && row.file !== root() && model ? plainRefusal(`it would leave file ${fileLabel(model, row.file)}`) : null),
     },
     {
       id: 'up',
       label: 'Move up',
       run: (row) =>
-        row.kind === 'item' ? structure(row, (m) => withRepairs(m, moveItem(m, row.node, 'up'), [row.node], false)) : apply(moveUp(buffer.text(), range(row))),
-      // An item row swaps with its previous sibling, so there must be one; a line never goes into the front matter.
+        row.kind === 'item'
+          ? structure(row, (m) => withRepairs(m, moveItem(m, row.node, 'up'), [row.node], false))
+          : apply(row.file, moveUp(textOf(row.file), range(row))),
+      // An item row swaps with its previous sibling in its file, so there must be one; a line never goes into the front matter.
       enabled: (row) =>
-        row.kind === 'item' ? model !== null && !('refused' in moveItem(model, row.node, 'up')) : row.line > 1 && model?.lines[row.line - 2]?.kind !== 'front-matter',
+        row.kind === 'item' ? model !== null && !('refused' in moveItem(model, row.node, 'up')) : row.line > 1 && linesOf(row)[row.line - 2]?.kind !== 'front-matter',
     },
     {
       id: 'down',
       label: 'Move down',
       run: (row) =>
-        row.kind === 'item' ? structure(row, (m) => withRepairs(m, moveItem(m, row.node, 'down'), [row.node], false)) : apply(moveDown(buffer.text(), range(row))),
-      enabled: (row) => (row.kind === 'item' ? model !== null && !('refused' in moveItem(model, row.node, 'down')) : row.line < (model?.lines.length ?? 0)),
+        row.kind === 'item'
+          ? structure(row, (m) => withRepairs(m, moveItem(m, row.node, 'down'), [row.node], false))
+          : apply(row.file, moveDown(textOf(row.file), range(row))),
+      enabled: (row) => (row.kind === 'item' ? model !== null && !('refused' in moveItem(model, row.node, 'down')) : row.line < linesOf(row).length),
     },
     {
       id: 'done',
       label: 'Toggle done',
-      run: (row) => row.kind === 'item' && write(cellFor(row.line, DONE), (current) => withRepairs(current, setDone(current, row.node, !row.node.done), [row.node])),
+      run: (row) =>
+        row.kind === 'item' && write(cellFor(row.vline, DONE), row.file, (current) => withRepairs(current, setDone(current, row.node, !row.node.done), [row.node])),
       // A row done through an ancestor has no marker of its own to clear.
-      enabled: (row) => row.kind === 'item' && canMarkDone(model!) && (!row.node.done || row.node.ownDone),
+      enabled: (row) => row.kind === 'item' && canMarkDone(model!, row.file) && (!row.node.done || row.node.ownDone),
+      why: (row) => (row.file !== root() && model && !canMarkDone(model, row.file) ? plainRefusal(`file ${fileLabel(model, row.file)} has no marker done`) : null),
+    },
+    {
+      id: 'mount',
+      label: 'Mount plan…',
+      // Opens the picker of the folder's plan files (spec §4b.7).
+      run: (row) => row.kind === 'item' && void pickPlan(row),
+      enabled: (row) => row.kind === 'item' && hooks.plans !== undefined,
+      why: () => (hooks.plans ? null : 'Open the folder to mount plans.'),
+    },
+    {
+      id: 'unmount',
+      label: 'Unmount',
+      // Clears the mount cell: the segment goes, and the file stays as it is. One undo step, no confirm.
+      run: (row) => row.kind === 'item' && structure(row, (m) => withRepairs(m, unmount(m, row.node), [row.node])),
+      enabled: (row) => row.kind === 'item' && row.node.row.mount !== undefined,
     },
   ];
 
-  /** Run a structural operation on the current row, if it applies. */
+  // While filtering, rows can't be reordered or re-levelled: hidden rows would move with them unseen (spec §5.7).
+  for (const action of actions) {
+    if (!['indent', 'outdent', 'up', 'down'].includes(action.id)) continue;
+    const { enabled, why } = action;
+    action.enabled = (row) => !applied && enabled(row);
+    action.why = (row) => (applied ? 'Clear the filter to reorder rows.' : (why?.(row) ?? null));
+  }
+
+  /** Run a structural operation on the current row, if it applies; when a mounted file is why it doesn't, say so. */
   function act(id: string): void {
     const action = actions.find((a) => a.id === id);
     const row = target();
-    if (action && row && action.enabled(row)) action.run(row);
+    if (!action || !row) return;
+    if (action.enabled(row)) return action.run(row);
+    const reason = action.why?.(row);
+    if (reason) notice(cellFor(row.vline, at?.column ?? WBS), reason);
   }
 
   const buttons = actions.map((action) => {
@@ -973,13 +1385,97 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
   function updateToolbar(): void {
     const row = draft ? null : target();
-    buttons.forEach((button, i) => (button.disabled = row === null || !actions[i].enabled(row)));
+    buttons.forEach((button, i) => {
+      button.disabled = row === null || !actions[i].enabled(row);
+      button.title = (row && button.disabled && actions[i].why?.(row)) || '';
+    });
+    // On a row that already mounts, Mount plan… changes its mount.
+    const mount = buttons[actions.findIndex((a) => a.id === 'mount')];
+    mount.textContent = row?.kind === 'item' && row.node.row.mount ? 'Change mounted plan…' : 'Mount plan…';
+    // Its reason shows without a row too: in the single-file workspace there's nothing to mount from.
+    if (!hooks.plans) mount.title = 'Open the folder to mount plans.';
+  }
+
+  /**
+   * Mount plan… (spec §4b.7): a picker of the workspace's plan files, with a filter. A file core
+   * refuses for this row (its own file, a loop, one shown elsewhere) is disabled, with the reason as
+   * its tooltip. Choosing one writes the row's `mount=` cell, relative to the row's file, as one
+   * undo step. It shows below the toolbar, where the delete confirm does; any change to the buffer
+   * drops it.
+   */
+  async function pickPlan(row: Row & { kind: 'item' }): Promise<void> {
+    const listed = await hooks.plans!();
+    const current = model;
+    if (!current) return;
+    const mounts = new Map(listed.map((p) => [p.path, p.mounts]));
+    const box = document.createElement('div');
+    box.className = 'mount-picker';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-label', 'Mount a plan');
+    const heading = document.createElement('div');
+    heading.className = 'mount-picker-heading';
+    heading.textContent = `${row.node.row.mount ? 'Change the plan mounted on' : 'Mount a plan on'} ${nameOf(row.node)}`;
+    const filter = document.createElement('input');
+    filter.className = 'fix-input';
+    filter.placeholder = 'Filter';
+    filter.setAttribute('aria-label', 'Filter plans');
+    const list = document.createElement('ul');
+    const close = () => {
+      box.remove();
+      held = true;
+      restore();
+    };
+    const choices = listed.map(({ path }) => {
+      const reason = path === row.node.mount ? 'This row mounts it already.' : mountRefusal(current, row.node, path, (p) => mounts.get(p));
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mount-choice';
+      b.dataset.path = path;
+      b.textContent = path;
+      b.disabled = reason !== null;
+      if (reason !== null) b.title = reason;
+      b.addEventListener('click', () => {
+        const relative = relativePath(row.file, path);
+        if (write(b, row.file, (m) => withRepairs(m, mountOn(m, row.node, relative), [row.node]))) close();
+      });
+      const li = document.createElement('li');
+      li.append(b);
+      list.append(li);
+      return { li, b, path };
+    });
+    filter.addEventListener('input', () => {
+      const typed = filter.value.trim().toLowerCase();
+      for (const c of choices) c.li.hidden = typed !== '' && !c.path.toLowerCase().includes(typed);
+    });
+    box.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      } else if (event.key === 'Enter' && event.target === filter) {
+        event.preventDefault();
+        choices.find((c) => !c.li.hidden && !c.b.disabled)?.b.click();
+      }
+    });
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'fix';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', close);
+    box.append(heading, filter, list, cancel);
+    confirmBox.replaceChildren(box);
+    filter.focus();
+  }
+
+  /** A segment's mount row's buttons: Open makes its file active; Unmount clears its `mount=` cell (spec §4b.7). */
+  function mountAction(row: Row & { kind: 'item' }, action: string | undefined): void {
+    if (action === 'open' && row.node.composes !== undefined) return hooks.onOpenFile?.(row.node.composes);
+    if (action === 'unmount') structure(row, (m) => withRepairs(m, unmount(m, row.node), [row.node]));
   }
 
   function cellAt(event: Event): { row: Row; column: number } | null {
     const td = (event.target as HTMLElement).closest('td');
-    const line = Number(td?.parentElement && (td.parentElement as HTMLTableRowElement).dataset.line);
-    const row = byLine.get(line);
+    const tr = td?.parentElement as HTMLTableRowElement | undefined;
+    const row = tr ? byLine.get(vlineOf.get(tr) ?? -1) : undefined;
     if (!td || !row || td.dataset.column === undefined) return null;
     return { row, column: Number(td.dataset.column) };
   }
@@ -1012,17 +1508,17 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
     switch (event.key) {
       case 'ArrowUp':
-        return handled(), step(row.line, -1, column);
+        return handled(), step(row.vline, -1, column);
       case 'ArrowDown':
-        return handled(), step(row.line, 1, column);
+        return handled(), step(row.vline, 1, column);
       case 'ArrowLeft':
-        return handled(), place(row.line, columns[Math.max(0, columns.indexOf(column) - 1)]);
+        return handled(), place(row.vline, columns[Math.max(0, columns.indexOf(column) - 1)]);
       case 'ArrowRight':
-        return handled(), place(row.line, columns[Math.min(columns.length - 1, columns.indexOf(column) + 1)]);
+        return handled(), place(row.vline, columns[Math.min(columns.length - 1, columns.indexOf(column) + 1)]);
       case 'Enter':
         // Unbound on a selected row (§4b.4).
         if (selected) return;
-        return handled(), step(row.line, 1, column);
+        return handled(), step(row.vline, 1, column);
       case 'Tab':
         // Unbound on a selected row, which is how the keyboard leaves the grid.
         if (selected) return;
@@ -1032,7 +1528,7 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
         return handled(), clearPlace();
       case 'Delete':
         if (selected) return handled(), act('delete');
-        if (rawOf(row, column) === null && !boolColumn(column)) return;
+        if (rawOf(row, column) === null && !(row.kind === 'item' && boolColumn(row.node, column))) return;
         return handled(), commit(row, column, '');
       case 'Insert':
         return handled(), act('insert');
@@ -1040,9 +1536,11 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
         return handled(), beginEdit(row, column, '');
       case ' ': {
         if (column === DONE) return handled(), act('done');
-        // A bool cell's checkbox (spec §4b.6.5).
-        const box = cellFor(row.line, column)?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        // A bool cell's checkbox (spec §4b.6.5), or a marker's toggle; a disabled one says why, when it can.
+        const td = cellFor(row.vline, column);
+        const box = td?.querySelector<HTMLInputElement>('input[type="checkbox"]');
         if (!box) break;
+        if (box.disabled && td?.dataset.why) return handled(), notice(td, td.dataset.why);
         return handled(), box.click();
       }
     }
@@ -1052,14 +1550,48 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
 
   table.addEventListener('click', (event) => {
     const hit = cellAt(event);
-    if (hit && !editing) place(hit.row.line, hit.column);
+    // A mount row's file badge opens its file, as in the views; it doesn't move the place.
+    if ((event.target as HTMLElement).closest('.file-badge')) {
+      if (hit?.row.kind === 'item' && hit.row.node.mount !== undefined) hooks.onOpenFile?.(hit.row.node.mount);
+      return;
+    }
+    // A mount row's Open and Unmount; they don't move the place.
+    const action = (event.target as HTMLElement).closest<HTMLButtonElement>('.segment-action');
+    if (action) {
+      if (hit?.row.kind === 'item') mountAction(hit.row, action.dataset.action);
+      return;
+    }
+    if (hit && !editing) place(hit.row.vline, hit.column);
   });
+  // A checkbox on any row: done, a marker's toggle, or a bool cell (spec §4b.1, §4b.6.5). Handled
+  // here rather than on the box, so a kept cell writes the current model's row. Captured, so a
+  // change event that doesn't bubble still arrives.
+  table.addEventListener(
+    'change',
+    (event) => {
+    const box = event.target as HTMLInputElement;
+    const hit = box.type === 'checkbox' ? cellAt(event) : null;
+    if (!hit || hit.row.kind !== 'item') return;
+    const { node } = hit.row;
+    const column = hit.column;
+    const on = box.checked;
+    const make = (m: Model): EditResult =>
+      withRepairs(
+        m,
+        column === DONE ? setDone(m, node, on) : column <= MARKER ? setToggle(m, node, toggles()[MARKER - column].name, on) : setFlag(m, node, column - DECLARED, on),
+        [node],
+      );
+    if (!write(cellFor(hit.row.vline, column), node.file, make)) box.checked = !on;
+    },
+    true,
+  );
   table.addEventListener('mouseover', (event) => {
     const tr = (event.target as HTMLElement).closest('tr');
     hover(tr && tr.parentElement === table.tBodies[0] ? lineOf(tr) : null);
   });
   table.addEventListener('mouseleave', () => hover(null));
   table.addEventListener('dblclick', (event) => {
+    if ((event.target as HTMLElement).closest('.file-badge, .segment-action')) return;
     const hit = cellAt(event);
     if (hit && hit.column !== DONE && hit.column !== WBS) beginEdit(hit.row, hit.column);
   });
@@ -1068,8 +1600,8 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
     // The keyboard can land on the tab stop without going through a click.
     const hit = cellAt(event);
     if (!hit || editing) return;
-    if (at && at.column === hit.column && lineAt(buffer.text(), at.anchor) === hit.row.line) return;
-    place(hit.row.line, hit.column);
+    if (at && at.column === hit.column && lineAt(buffer.text(), at.anchor) === hit.row.vline) return;
+    place(hit.row.vline, hit.column);
   });
   table.addEventListener('focusout', (event) => {
     const next = event.relatedTarget as Node | null;
@@ -1108,61 +1640,159 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       return;
     }
     event.preventDefault();
-    place(last.line, back ? lastColumn(last) : nearest(last, at?.column ?? TITLE));
+    place(last.vline, back ? lastColumn(last) : nearest(last, at?.column ?? TITLE));
   });
   newTask.addEventListener('blur', addTask);
 
-  /** Every line of the file becomes a row; front matter collapses into one. */
+  /**
+   * Every line becomes a row, in the order the buffer shows them; each file's front matter collapses
+   * into one. Over a composed buffer that is composed order, from the piece map: the root's lines,
+   * with each mounted file's lines in its segment (spec §4b.1).
+   */
   function readModel(next: Model): void {
     const text = buffer.text();
-    const level = levels(next);
-    const items = new Map<number, ItemNode>();
-    const collect = (node: ItemNode): void => void (items.set(node.line, node), node.children.forEach(collect));
-    next.roots.forEach(collect);
+    const map = buffer.pieces?.();
+    // Where each line of the shown text starts, to number the rows by vline.
+    const starts = [0];
+    for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) starts.push(i + 1);
+    const vlineAt = (pos: number): number => {
+      let lo = 0;
+      let hi = starts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (starts[mid] <= pos) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo + 1;
+    };
+    // Each line of the model's files, with its file, its vline and its mount depth.
+    const placed: { node: Node; file: string; vline: number; mount: number }[] = [];
+    if (!map) {
+      for (const node of next.lines) placed.push({ node, file: next.file, vline: node.line, mount: 0 });
+    } else {
+      // A file's runs come in its own order, so one cursor per file walks its lines once.
+      const cursor = new Map<string, number>();
+      for (const run of map.runs) {
+        const lines = run.joint ? undefined : next.files.get(run.file)?.lines;
+        if (!lines) continue;
+        let i = cursor.get(run.file) ?? 0;
+        while (i < lines.length && lines[i].span.from < run.from) i++;
+        for (; i < lines.length && lines[i].span.from < run.to; i++) {
+          placed.push({ node: lines[i], file: run.file, vline: vlineAt(run.at + lines[i].span.from - run.from), mount: run.depth });
+        }
+        cursor.set(run.file, i);
+      }
+    }
+
+    // Each segment's border runs from its mount row's vline to its last row's.
+    const borders: [number, number][] = [];
+    for (const s of map?.segments ?? []) {
+      const mountRow = placed.find((p) => p.file === s.mount.file && p.node.line === s.mount.line);
+      const range = map!.range(s);
+      if (mountRow && next.files.has(s.file) && range.to > range.from) borders.push([mountRow.vline, vlineAt(range.to - 1)]);
+    }
+    const bordered = (vline: number) => borders.some(([from, to]) => vline >= from && vline <= to);
+
+    const level = new Map<string, Map<number, { shown: number; indent: number }>>();
+    const levelOf = (file: string) => level.get(file) ?? (level.set(file, levels(next, file)), level.get(file)!);
+    // The depth a file's roots are shown at: 0 for the root, one below its mount row for a mounted file.
+    const bases = new Map<string, number>();
 
     rows = [];
+    shown = [];
+    byLine.clear();
+    byFile.clear();
     frontMatter = null;
-    const block: Node[] = [];
-    for (const node of next.lines) {
+    const fileText = (file: string) => next.files.get(file)?.doc.text ?? next.doc.text;
+    let block: { file: string; vline: number; mount: number; nodes: Node[] } | null = null;
+    const closeBlock = (): void => {
+      if (!block) return;
+      const { file, nodes } = block;
+      const span = { from: nodes[0].span.from, to: nodes[nodes.length - 1].span.to };
+      const front: FrontMatter = {
+        kind: 'front',
+        vline: block.vline,
+        file,
+        line: nodes[0].line,
+        mount: block.mount,
+        border: bordered(block.vline),
+        span,
+        text: fileText(file).slice(span.from, span.to).split('\n').join(' '),
+      };
+      shown.push(front);
+      byFile.set(keyOf(file, front.line), front);
+      if (file === next.file && !frontMatter) frontMatter = front;
+      block = null;
+    };
+    // While filtering, only the filter's lines are rows, and the front matter isn't shown.
+    applied = filter && filter.version === next.version ? filter : null;
+    for (const entry of placed) {
+      const { node, file, vline, mount } = entry;
+      if (applied && !applied.shows({ file, line: node.line })) continue;
       if (node.kind === 'front-matter') {
-        block.push(node);
+        if (block && block.file !== file) closeBlock();
+        if (!block) block = { file, vline, mount, nodes: [] };
+        block.nodes.push(node);
         continue;
       }
-      const item = node.kind === 'item' ? items.get(node.line) : undefined;
-      if (item) {
-        rows.push({ kind: 'item', line: node.line, span: node.span, indent: item.indent, node: item, depth: level.get(node.line)?.shown ?? 0, level: level.get(node.line)?.indent ?? 0 });
+      closeBlock();
+      const where = { vline, file, line: node.line, mount, border: bordered(vline) };
+      let row: Row;
+      if (node.kind === 'item') {
+        const lv = levelOf(file).get(node.line);
+        const depth = lv?.shown ?? 0;
+        const indent = lv?.indent ?? 0;
+        if (!bases.has(file)) bases.set(file, depth - indent);
+        row = { kind: 'item', ...where, span: node.span, indent: node.indent, node, depth, level: indent, base: bases.get(file)! };
       } else {
-        const raw = text.slice(node.span.from, node.span.to);
-        rows.push({ kind: 'line', line: node.line, span: node.span, indent: indentOf(raw), text: raw, blank: node.kind === 'blank' });
+        const raw = fileText(file).slice(node.span.from, node.span.to);
+        row = { kind: 'line', ...where, span: node.span, indent: indentOf(raw), text: raw, blank: node.kind === 'blank', base: bases.get(file) ?? mount };
       }
+      rows.push(row);
+      shown.push(row);
+      byLine.set(vline, row);
+      byFile.set(keyOf(file, node.line), row);
     }
-    if (block.length > 0) {
-      const span = { from: block[0].span.from, to: block[block.length - 1].span.to };
-      frontMatter = { line: block[0].line, span, text: text.slice(span.from, span.to).split('\n').join(' ') };
-    }
+    closeBlock();
 
-    // Diagnostics land on the cell their span belongs to; the rest on the WBS
-    // cell, and anything inside the front matter on its collapsed row (§4b.2).
+    // Diagnostics land on the cell their span belongs to; the rest on the WBS cell, and anything
+    // inside a file's front matter on its collapsed row (§4b.2). Each is on its own file's row.
     marks = new Map();
-    const lineRows = new Map(rows.map((row) => [row.line, row]));
+    const fronts = new Map(shown.flatMap((r) => (r.kind === 'front' ? [[r.file, r] as const] : [])));
     for (const diagnostic of next.diagnostics) {
-      const row = lineRows.get(diagnostic.line);
-      if (!row) {
-        if (frontMatter && !frontMatter.diagnostic) frontMatter.diagnostic = diagnostic;
+      const file = diagnostic.file ?? next.file;
+      const row = byFile.get(keyOf(file, diagnostic.line));
+      if (!row || row.kind === 'front') {
+        const front = fronts.get(file);
+        if (front && !front.diagnostic) front.diagnostic = diagnostic;
         continue;
       }
-      const key = `${diagnostic.line}:${columnFor(row, diagnostic)}`;
+      const key = `${row.vline}:${columnFor(row, diagnostic)}`;
       if (!marks.has(key)) marks.set(key, diagnostic);
     }
+  }
+
+  function applyFilter(visible: Visible | null): void {
+    filter = visible;
+    // Drawn now when it goes with the model; otherwise with the model that comes next.
+    if (!model || (visible && visible.version !== model.version)) return;
+    readModel(model);
+    build();
+    // The problems list marks the problems on hidden rows.
+    problems.update(model, frontMatter?.span ?? null);
+    restore();
+    updateToolbar();
+    fitBodyTop();
   }
 
   function columnFor(row: Row, diagnostic: Diagnostic): number {
     if (!diagnostic.span) return WBS;
     if (row.kind === 'line') return TITLE;
     if (within(row.node.titleSpan, diagnostic.span)) return TITLE;
-    // The whole cell, so a named cell's `NAME=` counts as in it.
-    const i = row.node.fields.findIndex((field, k) => {
-      const cell = field && model ? row.node.row.cells[columnOf(model, k).index] : null;
+    // The whole cell, so a named cell's `NAME=` counts as in it; each root column's cell in the row's own file.
+    const i = (model?.columns ?? []).findIndex((_, k) => {
+      const column = model ? cellColumn(model, row.node, k) : null;
+      const cell = column ? row.node.row.cells[column.index] : null;
       return cell && within({ from: cell.from, to: cell.to }, diagnostic.span as Span);
     });
     return i >= 0 ? DECLARED + i : WBS;
@@ -1181,12 +1811,22 @@ export function mountGrid(buffer: PlanBuffer, parent: HTMLElement, hooks: GridHo
       // The problems list may have changed height too.
       fitBodyTop();
     },
-    setCursorLine(line) {
-      const row = byLine.get(line);
-      if (row) place(row.line, nearest(row, at?.column ?? TITLE), true);
+    setFilter: applyFilter,
+    showUnsaved(files) {
+      unsaved = files;
+      // Only segments' mount rows show it: each is drawn again, and its title cell redraws only if its marker changed.
+      if (!model) return;
+      for (const row of rows) {
+        const tr = row.kind === 'item' && row.node.composes !== undefined ? trs.get(row.vline) : undefined;
+        if (tr && row.kind === 'item') drawRow(tr, itemSpec(row));
+      }
     },
-    setHoverLine(line) {
-      relayed = line;
+    setCursorLine({ file, line }) {
+      const row = byFile.get(keyOf(file, line));
+      if (row && row.kind !== 'front') place(row.vline, nearest(row, at?.column ?? TITLE), true);
+    },
+    setHoverLine(at) {
+      relayed = at;
       markHover();
     },
     onHoverLine(cb) {

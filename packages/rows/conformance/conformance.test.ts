@@ -25,6 +25,7 @@ interface ExpectedRow {
   id?: string | null;
   aliases?: string[];
   parent?: number | null;
+  mount?: { path: string; part?: string } | null;
 }
 interface Expected {
   spec: string[];
@@ -103,7 +104,7 @@ describe('conformance suite shape', () => {
       expect(e.rows).toBeDefined();
     }
     for (const r of e.rows ?? []) {
-      expect(Object.keys(r).filter((k) => !['line', 'lead', 'indent', 'values', 'overflow', 'markers', 'id', 'aliases', 'parent'].includes(k))).toEqual([]);
+      expect(Object.keys(r).filter((k) => !['line', 'lead', 'indent', 'values', 'overflow', 'markers', 'id', 'aliases', 'parent', 'mount'].includes(k))).toEqual([]);
       expect(r).toHaveProperty('line');
       expect(r).toHaveProperty('lead');
     }
@@ -169,8 +170,9 @@ describe('conformance cases', () => {
       id: row.id,
       aliases: row.aliases,
       parent: row.parent?.line ?? null,
+      mount: row.mount ? { path: row.mount.path, ...(row.mount.part !== undefined ? { part: row.mount.part } : {}) } : null,
     }));
-    const wanted = e.rows.map((r) => ({ indent: 0, values: {}, overflow: [], markers: [], id: null, aliases: [], parent: null, ...r }));
+    const wanted = e.rows.map((r) => ({ indent: 0, values: {}, overflow: [], markers: [], id: null, aliases: [], parent: null, mount: null, ...r }));
     expect(actual).toEqual(wanted);
   });
 });

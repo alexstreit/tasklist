@@ -33,7 +33,9 @@ describe('native workspace', () => {
   it('opens a file and writes back to the same handle without prompting', async () => {
     const file = fakeHandle('q4.plan', 'Auth | 2d\n');
     const { store, win } = setup(file);
-    expect(store.can).toEqual({ list: false, watch: false, saveInPlace: true });
+    expect(store.can).toEqual({ list: false, watch: false, saveInPlace: true, saveAs: true, create: false });
+    // Creating a file at a path needs a folder (Task 40).
+    expect(await store.create('new.plan', 'x')).toEqual({ outcome: 'failed', reason: 'Creating a file at a path needs a folder workspace' });
     expect(await store.list()).toEqual([]);
     expect(await store.open()).toEqual({ path: 'q4.plan', text: 'Auth | 2d\n' });
     expect(win.showOpenFilePicker.mock.calls[0][0].types[0].accept).toEqual({ 'text/plain': ['.plan', '.rows'] });

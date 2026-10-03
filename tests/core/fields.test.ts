@@ -21,6 +21,7 @@ describe('Model.fields()', () => {
       'schedule.finish',
       'schedule.milestone',
       'schedule.project-finish',
+      'schedule.network',
       'schedule.late-start',
       'schedule.late-finish',
       'schedule.slack',

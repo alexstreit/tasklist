@@ -1,0 +1,19 @@
+{
+  "spec": [
+    "ext intro: an empty mount: declares nothing and is not an error (A12, by analogy with A1)"
+  ],
+  "stage": "extensions",
+  "failed": true,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "invalid-cell-name",
+      "line": 5
+    },
+    {
+      "class": "structural",
+      "code": "too-many-cells",
+      "line": 5
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 // Tree renderer. Spec §5. One row per item, nesting shown by indentation.
 
 import type { ItemNode, Model, RenderContext, Renderer } from '../../../core';
-import { addItemRow, createGrid, mount } from '../../../ui/grid';
+import { addItemRow, addTitleCell, createGrid, mount, shows } from '../../../ui/grid';
 import { addTotalRow, addValueCells, requires } from './shared';
 
 export const treeRenderer: Renderer = {
@@ -12,11 +12,11 @@ export const treeRenderer: Renderer = {
   render(model: Model, host: HTMLElement, ctx: RenderContext): void {
     const table = createGrid('plan-tree', ['#', '', ...model.columns.map((c) => c.name)]);
     const visit = (node: ItemNode, depth: number): void => {
-      const row = addItemRow(table, node, ctx);
-      const title = row.insertCell();
-      title.textContent = node.title;
-      title.style.paddingLeft = `${0.5 + depth * 1.25}em`;
-      addValueCells(row, node, model);
+      if (shows(ctx, node)) {
+        const row = addItemRow(table, node, ctx, model);
+        addTitleCell(row, node, ctx, depth);
+        addValueCells(row, node, model);
+      }
       node.children.forEach((child) => visit(child, depth + 1));
     };
     model.roots.forEach((root) => visit(root, 0));

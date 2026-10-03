@@ -84,16 +84,16 @@ describe('diagnostics', () => {
     expect(model.get(node(model, 'B'), start)!.effective).toBe(8 + 40 + 2);
   });
 
-  it('schedule-dep-on-summary: the dependency is ignored', () => {
-    const model = run('P {#p}\n    A | 1d\nB | 1d | | | #p\n');
-    expect(found(model, 'schedule-dep-on-summary')).toEqual([{ line: 7, severity: 'warning', source: 'schedule' }]);
-    expect(model.get(node(model, 'B'), start)!.effective).toBe(0);
+  it('a dependency on a parent waits for its latest descendant, plus the lag (Task 35)', () => {
+    const model = run('P {#p}\n    A | 1d\n    C | 2d\nB | 1d | | | #p 1d\n');
+    expect(scheduleCodes(model)).toEqual([]);
+    expect(model.get(node(model, 'B'), start)!.effective).toBe(16 + 8);
   });
 
   it('schedule-late: the finish passes the row’s own deadline', () => {
     const model = run('A | 2d | | | | 2026-10-05\n');
     expect(found(model, 'schedule-late')).toEqual([{ line: 5, severity: 'warning', source: 'schedule' }]);
-    expect(model.diagnostics.find((d) => d.code === 'schedule-late')!.message).toBe('finishes 2026-10-06, after its deadline 2026-10-05');
+    expect(model.diagnostics.find((d) => d.code === 'schedule-late')!.message).toBe('finishes Tue 6 Oct, after its deadline Mon 5 Oct');
   });
 
   it('a row that finishes at the end of its deadline day is not late', () => {
@@ -182,6 +182,21 @@ describe('dependency cycles', () => {
     expect(found(model, 'schedule-dep-cycle').map((d) => d.line)).toEqual([5, 6]);
     expect(model.get(node(model, 'A'), start)!.effective).toBe(0);
   });
+
+  it('a descendant depending on its own parent (Task 35)', () => {
+    const model = run('P {#p}\n    M\n        A | 1d | | | #p\n    B | 1d\n');
+    expect(found(model, 'schedule-dep-cycle').map((d) => d.line)).toEqual([5, 6, 7]);
+    expect(model.diagnostics.find((d) => d.code === 'schedule-dep-cycle' && d.line === 7)!.message).toBe(
+      'in a dependency cycle with M, P; the dependencies in the cycle are ignored',
+    );
+    expect(model.get(node(model, 'A'), start)!.effective).toBe(0);
+  });
+
+  it('a parent depending on itself', () => {
+    const model = run('P {#p} | | | | #p\n    A | 1d\n');
+    expect(found(model, 'schedule-dep-cycle').map((d) => d.line)).toEqual([5, 6]);
+    expect(model.get(node(model, 'A'), start)!.effective).toBe(0);
+  });
 });
 
 describe('parent rows', () => {
@@ -215,6 +230,15 @@ describe('parent rows', () => {
     expect(['A', 'B'].map((t) => model.get(node(model, t), lateStart))).toEqual([16, 8]);
     expect(model.get(node(model, 'X'), lateFinish)).toBe(8);
     expect(model.get(node(model, 'X'), slack)).toBe(0);
+  });
+
+  it('a parent as predecessor: its successor’s late start, less the lag, limits every descendant’s late finish (Task 35)', () => {
+    // A finishes at 8 and B at 16; Y waits for P's finish, 16, plus a day, and finishes at 32.
+    const model = run('P {#p}\n    A | 1d\n    B | 2d\nY | 1d | | | #p 1d\nZ | 4d\n');
+    expect(model.get(node(model, 'Y'), start)!.effective).toBe(24);
+    expect(['A', 'B'].map((t) => model.get(node(model, t), lateFinish))).toEqual([16, 16]);
+    expect(['A', 'B', 'P'].map((t) => model.get(node(model, t), slack))).toEqual([8, 0, 0]);
+    expect(model.get(node(model, 'P'), critical)).toBe(true);
   });
 
   it('a parent has no duration, late start or late finish', () => {

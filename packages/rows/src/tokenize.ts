@@ -265,6 +265,7 @@ export interface LineContext {
   comment: string;
   state?: LineState; // default 'body'
   markers?: Map<string, string>; // char → column name; omit for a base-only parse
+  mount?: string; // the mount column's name (ext §12), when it is valid
   extensions?: boolean; // default true
 }
 
@@ -277,6 +278,8 @@ export type TokenType =
   | 'name'
   | 'equals'
   | 'value'
+  | 'path'
+  | 'part'
   | 'comment'
   | 'fm-delimiter'
   | 'fm-key'
@@ -341,16 +344,29 @@ export function tokenizeLine(text: string, ctx: LineContext): LineTokens {
     return { kind, tokens: [{ type: 'comment', from: trimStartIndex(text), to: text.length }], next: 'body' };
   }
   const ext = ctx.extensions === false ? null : { markers: ctx.markers ?? new Map<string, string>() };
-  return { kind, tokens: rowTokens(scanRow(text, ctx.sep, ext)), next: 'body' };
+  return { kind, tokens: rowTokens(scanRow(text, ctx.sep, ext), text, ext ? ctx.mount : undefined), next: 'body' };
 }
 
-function rowTokens(row: ScannedRow): Token[] {
+/** `mount` is the mount column's name: a cell named for it has its value split into a path and a `#ID` part. */
+function rowTokens(row: ScannedRow, text: string, mount?: string): Token[] {
   const tokens: Token[] = [];
   if (row.indent.width > 0) tokens.push({ type: 'indent', from: row.indent.from, to: row.indent.to });
   const value = (type: 'lead' | 'value', cell: ScannedCell) => {
     if (cell.valueTo > cell.valueFrom) {
       tokens.push({ type, from: cell.valueFrom, to: cell.valueTo, quoted: cell.quoted, ...(cell.quoted ? { escapes: cell.escapes } : {}) });
     }
+  };
+  // ext §12.2: split at the first `#`, which escapes never write; quotes stay in whichever token holds them.
+  const mountTokens = (cell: ScannedCell) => {
+    const found = text.indexOf('#', cell.valueFrom);
+    const hash = found === -1 || found >= cell.valueTo ? cell.valueTo : found;
+    const piece = (type: 'path' | 'part', from: number, to: number) => {
+      if (to <= from) return;
+      const escapes = cell.escapes.filter((e) => from <= e.from && e.to <= to);
+      tokens.push({ type, from, to, quoted: cell.quoted, ...(cell.quoted ? { escapes } : {}) });
+    };
+    piece('path', cell.valueFrom, hash);
+    piece('part', hash, cell.valueTo);
   };
   for (const m of row.markers) tokens.push({ type: 'marker', from: m.from, to: m.to });
   value('lead', row.lead);
@@ -363,7 +379,8 @@ function rowTokens(row: ScannedRow): Token[] {
       tokens.push({ type: 'name', from: cell.name.from, to: cell.name.to });
       tokens.push({ type: 'equals', from: cell.name.to, to: cell.name.to + 1 });
     }
-    value('value', cell);
+    if (cell.name && cell.name.text === mount && cell.valueTo > cell.valueFrom) mountTokens(cell);
+    else value('value', cell);
   });
   return tokens;
 }

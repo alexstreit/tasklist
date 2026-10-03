@@ -8,12 +8,14 @@ import { today } from '../ui/today';
 import type { Diagnostic, Fix, Model, Span } from '../core';
 
 export interface ProblemsHooks {
-  /** Make an edit through the grid's write path, which shows beside `host` why one was refused. */
-  write(host: HTMLElement, make: (model: Model) => EditResult): void;
-  /** The title of the item on a line, or null when the line has no titled item. */
+  /** Make an edit to `file` through the grid's write path, which shows beside `host` why one was refused; true when it was made. */
+  write(host: HTMLElement, file: string, make: (model: Model) => EditResult): boolean;
+  /** The title of the root file's item on a line, or null when the line has no titled item. */
   titleOf(line: number): string | null;
-  /** Focus the row a diagnostic is on, or the cell its span falls in; nothing when the line has no row. */
+  /** Focus the row a diagnostic is on, in its file, or the cell its span falls in; nothing when the line has no row. */
   focus(diagnostic: Diagnostic): void;
+  /** True when the filter hides the row a diagnostic is on (spec §5.7). */
+  hidden?(diagnostic: Diagnostic): boolean;
 }
 
 export interface Problems {
@@ -23,8 +25,11 @@ export interface Problems {
   list: HTMLDetailsElement;
   /** Rebuild both from a model. `settings` is the front matter's span, or null without one. */
   update(model: Model, settings: Span | null): void;
-  /** Apply a fix as the list does: a confirm fix shows its preview and warning in `host` first; `onCancel` runs when it is cancelled. */
-  run(host: HTMLElement, fix: Fix, onCancel?: () => void): void;
+  /**
+   * Apply a fix to `file` as the list does: a confirm fix shows its preview and warning in `host`
+   * first. `onCancel` runs when it is cancelled, and `onApply` when it was applied.
+   */
+  run(host: HTMLElement, fix: Fix, file: string, after?: { onCancel?: () => void; onApply?: () => void }): void;
 }
 
 function part(className: string, text: string): HTMLSpanElement {
@@ -66,10 +71,10 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
    * and cancelling writes nothing (spec §4b.6.1). A fix that takes a typed
    * value (a column's new name) shows it in an input, and the preview follows it.
    */
-  function runFix(host: HTMLElement, offered: Fix, onCancel?: () => void): void {
+  function runFix(host: HTMLElement, offered: Fix, file: string, after: { onCancel?: () => void; onApply?: () => void } = {}): void {
     const fix = resolveFix(offered, day);
     if (fix.tier !== 'confirm') {
-      hooks.write(host, () => ({ edits: fix.edits }));
+      if (hooks.write(host, file, () => ({ edits: fix.edits }))) after.onApply?.();
       return;
     }
     host.querySelector('.fix-preview')?.remove();
@@ -78,12 +83,12 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
     const pre = document.createElement('pre');
     pre.textContent = fix.preview ?? '';
     let edits = fix.edits;
-    const ok = button('fix', 'Apply', () => hooks.write(host, () => ({ edits })));
+    const ok = button('fix', 'Apply', () => hooks.write(host, file, () => ({ edits })) && after.onApply?.());
     if (fix.warning) box.append(part('fix-warning', fix.warning));
     let first: HTMLElement = ok;
     if (fix.input) {
       const typed = fix.input;
-      const text = model?.doc.text ?? '';
+      const text = model?.files.get(file)?.doc.text ?? model?.doc.text ?? '';
       const input = document.createElement('input');
       input.className = 'fix-input';
       input.value = fix.input.value;
@@ -100,27 +105,59 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
       box.append(input);
       first = input;
     }
-    box.append(pre, ok, button('fix', 'Cancel', () => (box.remove(), onCancel?.())));
+    box.append(pre, ok, button('fix', 'Cancel', () => (box.remove(), after.onCancel?.())));
     host.append(box);
     first.focus();
   }
 
+  /** The title of the item on a mounted file's line, or null. */
+  function mountedTitle(file: string, line: number): string | null {
+    const node = model?.files.get(file)?.lines[line - 1];
+    return node?.kind === 'item' && node.title !== '' ? node.title : null;
+  }
+
+  /**
+   * A problem names its row, in its own file; clicking it focuses the row in the grid, and its fixes
+   * apply to its file, a mounted file's too (spec §4b.6.3).
+   */
   function problem(diagnostic: Diagnostic): HTMLLIElement {
     const li = document.createElement('li');
     li.className = diagnostic.severity;
     li.dataset.line = String(diagnostic.line);
-    const where = hooks.titleOf(diagnostic.line) ?? `Line ${diagnostic.line}`;
+    const { file, line } = diagnostic;
+    if (file !== undefined) li.dataset.file = file;
+    const where = (file === undefined ? hooks.titleOf(line) : mountedTitle(file, line)) ?? `Line ${line}`;
     const go = button('problem', '', () => hooks.focus(diagnostic));
     go.append(part('severity', diagnostic.severity), part('where', where), part('message', diagnostic.message));
-    li.append(go, ...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(li, fix))));
+    if (hooks.hidden?.(diagnostic)) go.append(part('filter-hidden', 'hidden by filter'));
+    li.append(go);
+    const target = file ?? model?.file ?? '';
+    li.append(...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(li, fix, target))));
     return li;
   }
 
-  /** Every diagnostic in document order, each with its row and its fixes (spec §4b.6.3). */
+  /**
+   * Every diagnostic, each with its row and its fixes (spec §4b.6.3): the root file's first, then
+   * each mounted file's in composed order, in document order within each. When more than one file
+   * has problems, each group is headed by its file's path.
+   */
   function renderList(): void {
-    const all = [...(model?.diagnostics ?? [])].sort((a, b) => a.line - b.line || (a.span?.from ?? -1) - (b.span?.from ?? -1));
+    const byPlace = (a: Diagnostic, b: Diagnostic) => a.line - b.line || (a.span?.from ?? -1) - (b.span?.from ?? -1);
+    const all = model?.diagnostics ?? [];
+    const groups = [...(model?.files.keys() ?? [''])]
+      .map((path, i) => ({ path, list: all.filter((d) => (i === 0 ? d.file === undefined : d.file === path)).sort(byPlace) }))
+      .filter((group) => group.list.length > 0);
     count.textContent = `Problems (${all.length})`;
-    entries.replaceChildren(...all.map(problem));
+    entries.replaceChildren(
+      ...groups.flatMap(({ path, list }) => {
+        const items: HTMLLIElement[] = list.map(problem);
+        if (groups.length === 1) return items;
+        const heading = document.createElement('li');
+        heading.className = 'problem-file';
+        heading.textContent = path || 'Untitled';
+        return [heading, ...items];
+      }),
+    );
   }
 
   /**
@@ -130,7 +167,8 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
    * would help.
    */
   function renderBanner(settings: Span | null): void {
-    const diagnostics = [...(model?.diagnostics ?? [])].sort((a, b) => a.line - b.line);
+    // The active file's settings only: a mounted file's are in the problems list.
+    const diagnostics = (model?.diagnostics ?? []).filter((d) => d.file === undefined).sort((a, b) => a.line - b.line);
     const inSettings = (d: Diagnostic) => model?.lines[d.line - 1]?.kind === 'front-matter';
     const settingsEdit = (d: Diagnostic) => settings !== null && d.fixes?.some((f) => f.edits.every((e) => e.from >= settings.from && e.to <= settings.to));
     const shared = new Map<string, Diagnostic[]>();
@@ -154,7 +192,7 @@ export function mountProblems(hooks: ProblemsHooks): Problems {
         item.className = `banner-item ${diagnostic.severity}`;
         const message = more > 0 ? `${diagnostic.message} (and ${more} more like it)` : diagnostic.message;
         item.append(part('severity', diagnostic.severity), part('message', message));
-        item.append(...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(item, fix))));
+        item.append(...fixesOf(diagnostic).map((fix) => button('fix', fix.label, () => runFix(item, fix, model?.file ?? ''))));
         return item;
       }),
     );

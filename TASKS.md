@@ -104,8 +104,8 @@ Implement `src/renderers/tree/` per spec §5, replacing the JSON dump.
 
 - [x] Open a file with comments, blank lines, trailing whitespace on some lines, a trailing `|` on one item, and a front matter block; save it unchanged; the file on disk is byte-identical except tab-to-space and CRLF-to-LF normalisation.
 - [x] Open a CRLF file, save it; the file on disk now has LF endings.
-- [x] `Ctrl+S` on a new document prompts for a location; subsequent saves don't prompt.
-- [x] Closing the tab with unsaved changes prompts (via `beforeunload`). (Changed by Task 27: after a download, the indicator stays on, and leaving prompts only once the buffer differs from what was downloaded.)
+- [x] `Ctrl+S` on a new document prompts for a location; subsequent saves don't prompt. (Changed by Task 34: each later save reads the file again first, and asks before overwriting a change made on disk.)
+- [x] Closing the tab with unsaved changes prompts (via `beforeunload`). (Changed by Task 27: after a download, the indicator stays on, and leaving prompts only once the buffer differs from what was downloaded. Changed by Task 34: it prompts while any open file has unsaved changes, and Open asks before replacing them.)
 - [x] Works in Chrome and in a browser without File System Access (Firefox) via the fallback.
 - [x] In a framed context (VS Code Simple Browser) failure is reported visibly.
 
@@ -276,7 +276,7 @@ Refactor so the app owns one buffer and all structural edits are shared pure fun
 **Deliverables**
 
 - `src/grid/`: a grid editor over `PlanBuffer` per spec §4b.1–4b.3, items only in this task (comment/blank rows come in Task 15).
-- Columns: WBS, done checkbox, title, declared columns. Total row. New-task row. _(Task 31: a toggle for each other marker follows the done checkbox.)_ _(Task 32: the new-task row is the last body row, and the total row below it is pinned to the bottom of the pane.)_
+- Columns: WBS, done checkbox, title, declared columns. Total row. New-task row. _(Task 31: a toggle for each other marker follows the done checkbox.)_ _(Task 32: the new-task row is the last body row, and the total row below it is pinned to the bottom of the pane.)_ _(Task 41: while a filter is active the total row reads "Total (all rows)", and only the rows it shows are drawn.)_
 - Cell editing per §4b.2, including the raw-text-on-edit rule for summable cells and the pad-to-column helper.
 - Focus restoration by line and column after each buffer change, using `mapPos`.
 - App toolbar gains a Text / Grid toggle; only one editor is mounted at a time; the preview keeps working with either.
@@ -633,7 +633,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - The highlighter resolves cells with the parser's rules, not just token positions. The tokenizer marks `ratio=` as a cell name, but the parser reads an undeclared name as part of an unnamed cell, and an unnamed cell after a named one, or past the declared columns, as overflow. The conformance test caught this, and DESIGN §7 now says so.
 - The grid refuses an edit while its model trails the buffer (the shell's 50 ms debounce), with the same note. Before this task that case silently wrote at stale offsets.
 - Typed values are trimmed and tabs become spaces before they go to rows. A title that is unchanged after trimming is a no-op.
-- "New documents start with `profile: plan`": the only document the app creates is the startup one, `examples/example.plan`, which already says `profile: plan`. There is no New command, so nothing else changed.
+- "New documents start with `profile: plan`": the only document the app creates is the startup one, `examples/example.plan`, which already says `profile: plan`. There is no New command, so nothing else changed. (Changed by Task 40: the app opens on a start screen, and the new plan wizard writes `profile:` into every file it creates.)
 
 **Rewritten tests:**
 
@@ -972,7 +972,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 - `src/core/plugin.ts`: `Stage` gains `roles`, `keys` and `markers`. `StageContext` gains `bindings`, `calendar`, `cell` and `marked`. `pluginReads(plugin)` is the union of the plugin's stages' declarations, and `createRegistry` checks it against the vocabulary and the plugin's id.
 - `src/core/analyze.ts`: after `readTree`, `bindVocabulary`, then the calendar when `project-start` is bound, with `hpd` from the effort column (8 if unset). The runner checks required roles, then required keys, then reads. `cell` returns the rows `Value` in the role's column. `marked` is rows' `readFlag` on the marker's column, so `done=true` counts, as for `ownDone`. `includesOf(text)` returns rows' include paths. `analyze` takes `files`, which is unused until M3.
 - `readTree` no longer reports `unknown-key`, which moved to `bindVocabulary`. Vocabulary diagnostics are listed after `readTree`'s and before the tab infos, then sorted by line as before.
-- `src/core/workspace.ts`: `Workspace`, `OpenedFile` (`path`, `text`) and `WriteResult`. `src/app/workspace.ts` (`createSingleFileWorkspace`) replaces `src/app/files.ts`. A native write that fails returns `failed` with the browser's message. `read` or `write` of any path other than the open file's fails, saying a folder workspace is needed. `resolve` joins a relative path to the file's folder.
+- `src/core/workspace.ts`: `Workspace`, `OpenedFile` (`path`, `text`) and `WriteResult`. `src/app/workspace.ts` (`createSingleFileWorkspace`) replaces `src/app/files.ts`. (Task 34 moved it to `src/app/workspace/single.ts`, and `src/app/files.ts` is now the open-files store.) A native write that fails returns `failed` with the browser's message. `read` or `write` of any path other than the open file's fails, saying a folder workspace is needed. `resolve` joins a relative path to the file's folder.
 - `src/app/includes.ts`: `createIncludes(workspace, onGathered)`, the cached include loop (see Decisions). The shell calls `snapshot(path, text)` before every `analyze`.
 - `src/app/main.ts`: the shell tracks the open file's `path`, and saves with `write(path)` or `saveAs(text, path ?? 'untitled.plan')`. It reports `failed` in the status line, as it reported a thrown error before, and it checks `can.saveInPlace`, not the kind of workspace.
 - rows: `readValue(text, type)` is exported, with `ValueType = Pick<Column, 'kind' | 'enumValues' | 'unit'>`. A `Column` is one, so cells call it as before, and a key passes `{ kind: 'date' }`. It is listed among DESIGN §4's helpers, with unit tests in `packages/rows/tests/values.test.ts`.
@@ -982,7 +982,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
 
 - **`project-start` is read by rows (an API change, not a spec change).** rows exports `readValue`, the function cells use, so frontmatter values of a declared type go through the same code: `project-start` now, plugin keys of date, number and text type later. There is no spec text, no conformance case and no version bump, since no rule changes. Date arithmetic (weekdays, adding days) stays in core's calendar. It is calendar logic, not grammar. `readValue` takes a type as `{ kind, enumValues?, unit? }`, because an enum needs its values and a duration its unit, so a `Column` passes as is.
 - **`role-type` only for a binding written in the file.** A profile's binding on the file's column of the wrong type is left unbound with no diagnostic, following rows' Q43. `Bindings.mistyped` records the reason, and a stage requiring the role is skipped with it: "the effort role's column est is text, not a duration or number". "needs a column with the effort role" is only for a role that isn't bound at all. PLUGINS.md §6 says so.
-- **Includes: a cached snapshot, and render stays synchronous.** The shell gathers only when the set of include paths differs from the last set gathered, and failures are cached with it. Each gather has a generation number, and a gather overtaken by a newer one is dropped. A finished gather re-analyzes the current buffer text. The loop follows includes of included files, never reads a path twice (so a cycle stops), and never reads the open file. With the single-file workspace every read fails, so it does nothing until M3. PLUGINS.md §6 says so.
+- **Includes: a cached snapshot, and render stays synchronous.** The shell gathers only when the set of include paths differs from the last set gathered, and failures are cached with it. Each gather has a generation number, and a gather overtaken by a newer one is dropped. A finished gather re-analyzes the current buffer text. The loop follows includes of included files, never reads a path twice (so a cycle stops), and never reads the open file. With the single-file workspace every read fails, so it does nothing until M3. PLUGINS.md §6 says so. (Changed by Task 35: `includesOf` and `src/app/includes.ts` are gone. The shell gathers mounted files instead (`src/app/mounts.ts`), from the model's mounts and a parse of each gathered file; nothing gathers `include:` until table imports arrive.)
 - **Leave-page prompt after a download:** the indicator stays on, but leaving prompts only when the buffer differs from the text last saved or downloaded. The shell keeps that text beside the last text saved in place.
 
 **Decisions taken** (by me, within the task):
@@ -1044,7 +1044,7 @@ This is spec first, as in Task 16, but small enough to implement in the same tas
     - `schedule-pin-equals-derived` when a start or duration pin equals its derived value, in `pinned` mode.
   - **Lag.** A lag is calendar time, so the schedule plugin converts it with the calendar's `hoursPerDay` and 5 days a week. It is a reading only this plugin needs, so it is a pure function in the plugin. A negative lag is treated as zero, with a warning, as in plan spec §2.6.
   - **Dependency targets.**
-    - A dependency on a parent (summary) row gets the warning `schedule-dep-on-summary`, and is ignored.
+    - A dependency on a parent (summary) row gets the warning `schedule-dep-on-summary`, and is ignored. (Changed by Task 35: a dependency may point at a parent row, and waits for its latest descendant's finish; `schedule-dep-on-summary` is gone.)
     - A dependency that can't be resolved is already a rows validation error; the schedule ignores it.
     - The dependencies in a cycle are ignored, and each row in the cycle gets the error `schedule-dep-cycle`. This must be deterministic.
   - **Finish.** Every finish is `calendar.add(start, duration)`. No stage adds hours itself.
@@ -1148,7 +1148,7 @@ Expected, in work hours, with the displayed dates:
 - `src/core/bindings.ts`: `Bindings.mistypedKeys`; `key-type`'s new message and fix; `no-project-start` for each core key that isn't written while a role in its `expectedWith` is bound. A key written with the wrong type never gets `no-…`.
 - `src/core/fixes.ts`: `todayFix(doc, key, label)` replaces the key's value when it is written, else inserts `KEY: ` + date + newline before the closing `---`; the date is left empty. `resolveFix(fix, date)` fills it in, in the edits, the value and the label, and drops `suggest`, so resolving twice changes nothing; it is pure, since the date is passed in. `inputEdit(input, value)` is the `before + value + after` edit both of them, and the confirm panels, use.
 - `src/core/types.ts`: `Fix.input` gains `suggest`, `before` and `after`; `Diagnostic.source`. `src/core/analyze.ts`: the runner sets `source` on stage diagnostics, a mistyped required key gives its reason, and `parsePlan` knows both profiles. `src/core/profile.ts`: `SCHEDULE_PROFILE`, published as `profiles/schedule.rows`.
-- `src/plugins/schedule/`: `fields.ts`; `lag.ts` (`lagHours`, a pure reading); `network.ts` (`readNetwork`: the links, the ignored ones with their diagnostics, Tarjan's strongly connected components over the links plus parent → child, and a topological order, a reverse post-order walk in document order); `forward.ts` and `backward.ts`, the two stages; `renderers/table.ts` and `table.css`; `index.ts`, the manifest. Both stages read the network: `schedule.backward` reads it again without reporting, rather than passing it through a field.
+- `src/plugins/schedule/`: `fields.ts`; `lag.ts` (`lagHours`, a pure reading); `network.ts` (`readNetwork`: the links, the ignored ones with their diagnostics, Tarjan's strongly connected components over the links plus parent → child, and a topological order, a reverse post-order walk in document order); `forward.ts` and `backward.ts`, the two stages; `renderers/table.ts` and `table.css`; `index.ts`, the manifest. Both stages read the network: `schedule.backward` reads it again without reporting, rather than passing it through a field. (Changed by Task 35: `schedule.forward` writes it as the document-scope field `network`, which `schedule.backward` reads.)
 - `src/ui/`, shared UI code for renderers and editors: `grid.ts` (`createGrid(className, headers)`, `addItemRow`, `mount`, `muted`) and `grid.css`, moved from estimate's `renderers/shared.*` unchanged. Estimate's `shared.css` keeps only the total row and level column rules. `today.ts` is the one UI function that reads the clock.
 - Editors: `src/editor/diagnostics.ts` and `src/grid/problems.ts` pass every fix through `resolveFix` with `today()` when they show it: the text editor when it builds lint actions, the grid on each model update. Their confirm panels call it too, and write a typed value with `inputEdit`, so they honour `before` and `after`.
 - Estimate: `rollup.ts` declares `roles: { optional: ['duration'] }` and leaves that column out of the roll-ups and totals, so its cells show as written, like a text column.
@@ -1195,6 +1195,10 @@ Expected, in work hours, with the displayed dates:
 
 **Spec:** plan-format-spec §2.1 (the schedule profile, `project-start` expected), §2.9 (`no-project-start`, the scheduling codes, `key-type`'s message, `source`), the new §2.11 Scheduling, §3.2 (estimate and the duration role, the schedule stages), §3.3 (`src/ui/`), §4b.6.2 (`Fix.input`, `resolveFix`, `inputEdit`), §5.2 and the new §5.4 Schedule table, and §7. PLUGINS.md §5 (`source`, fixes that need today), §6 (estimate's role, the missing start) and §8 (`src/ui/`, its lint rule). CLAUDE.md's repo layout and non-negotiable 5 name `src/ui/` and the schedule fields. VISION is unchanged. No rows spec is touched, and rows is unchanged.
 
+**Changed by Task 35:** a dependency may point at a parent row, so one project can follow another. Forward, it waits for the parent's finish, its latest descendant's, plus the lag; backward, the successor's late start less the lag limits the late finish of every descendant. `schedule-dep-on-summary` is deleted, with its code, its test and its spec rows. The network's points are now each row's start and finish, so a row that depends on its own ancestor is a cycle too. Rewritten tests: `tests/schedule/schedule.test.ts` "schedule-dep-on-summary: the dependency is ignored" became "a dependency on a parent waits for its latest descendant, plus the lag"; `tests/grid/refs.test.ts` "writes a dependency on a parent or on the row itself, and the schedule reports it" now expects only `schedule-dep-cycle`.
+
+**Changed by Task 38:** a milestone's start pin converts with `fromDate(d, 'end')`, not `'start'`, so a pinned milestone shows on its date; every other start pin still converts at `'start'`. A milestone's `start` carries `edge: 'end'` (PLUGINS.md §4), so Beta ready's expected `start` in the fixture test gains it, with every value unchanged. `toDate(0, 'end')` is hour 0's own day. Schedule messages show dates as the views do: `schedule-late` reads "finishes Tue 13 Oct, after its deadline Mon 12 Oct" (was "finishes 2026-10-13, after its deadline 2026-10-12"). Two new infos, `schedule-milestone-nonworking` and `schedule-milestone-undated`.
+
 ---
 
 ## Task 29 — Row alignment between panes
@@ -1219,12 +1223,13 @@ Expected, in work hours, with the displayed dates:
   }
   ```
 
-  - Helpers: `naturalLayout(model, version, viewport)` builds a follower's own layout, with one row per item at `--row-height`. `ScrollEcho` drops a reported scroll within 1px of the value the shell last set, comparing values rather than using a boolean guard.
+  (Changed by Task 35: a follower's natural layout gives a mounted row's file as `at.file`; a leader's rows are the root file's and have none.) (Changed by Task 36: every row carries its file, `at: { file, line }`, the root file's rows too; the composed text editor's rows come from every file it shows.)
+  - Helpers: `naturalLayout(model, version, viewport)` builds a follower's own layout, with one row per item at `--row-height`. (Changed by Task 41: an optional fourth argument, the filter, leaves out the rows it hides.) `ScrollEcho` drops a reported scroll within 1px of the value the shell last set, comparing values rather than using a boolean guard.
   - `--row-height` is one theme token, which the grid and followers share.
 
 - **Buffer and model versions:** `PlanBuffer` counts its changes, and `Model.version` records the version that `analyze` read.
 - **Leaders:** the grid and the text editor. `PlanEditor` gains optional `onRowLayout(cb)`, `scrollTo(top)` and `setMinBodyTop(px)`.
-  - The text editor uses CodeMirror's line blocks, which cover wrapped lines. Folded lines are absent.
+  - The text editor uses CodeMirror's line blocks, which cover wrapped lines. Folded lines are absent. (Changed by Task 41: so are a filter's hidden lines, whose block is a widget's, which is no row.)
   - The grid includes comment, blank and frontmatter rows, plus a draft row as `at: null`.
   - Both publish after a scroll, an edit, a fold, and a resize. Resizes use a `ResizeObserver` on the pane, so the problems list and settings banner opening or closing count.
 - **Followers:** `Renderer` gains `follows?: true`. A following renderer's `RenderContext` has `onRowLayout(cb)` and `reportScroll(top)`. It re-renders on a new model and repositions on a new layout, never re-rendering per scroll event.
@@ -1417,6 +1422,10 @@ Expected, in work hours, with the displayed dates:
 
 **Changed by Task 32:** the cursor band is no longer on the Gantt's `.gantt-row`, but on a separate `.gantt-band`, drawn below the week lines; `.gantt-row` holds an item's marks and takes its clicks. Every layout row with a line has a band, including a row with no item, which still has no marks. `ganttGeometry` returns those as `bands`. The deadline, finish and today lines are drawn over the marks. "bands the cursor row" in `tests/schedule/gantt.test.ts` now reads `.gantt-band.at-cursor`.
 
+**Changed by Task 38:** a milestone's start pin converts at `'end'`, so its pin mark (`pinX`) sits on its diamond when the pin holds. The pin review formats a date pin at its value's own edge (`formatPinnableDate`), so a milestone's pin shows on its date; a task's pin still shows at `'start'`. `formatDate` moved again, from `src/ui/dates.ts` to `src/core/dates.ts`, beside `formatPinnableDate`; `src/ui/dates.ts` is gone. The Gantt tooltip gives a start through `formatPinnableDate`. The geometry table is unchanged.
+
+**Changed by Task 39:** the Gantt has Day, Week, Month and Fit scales; `dayWidth` 24 is Day's. `ganttGeometry(model, layout, scale, today, chartWidth)` takes a named scale or an explicit `{ dayWidth, tiers }`, and this task's table is checked at `{ dayWidth: 1, tiers: 'day' }`, unchanged. Its `weeks` and `days` became the `top` and `bottom` tiers, with `lines` and `ticks`; at 1px a day the labels overlap, so each tier keeps only its first, and the scale test checks the separators at 0 and 5 there and the labels at Day. The scale is 54px, three rows (deadline dates, then the two tiers), and the week lines are `.gantt-period-line`. A bar's minimum 2px is the geometry's `drawn`, no longer a CSS `min-width`.
+
 **Spec:** plan-format-spec §2.11 (the `deadline` field), §3.2 (`fields()`), §3.3 and §3.4 (hosts at different heights, converted by the shell), §5.3 (the preview as a column), and the new §5.5 Gantt and §5.6 Pin review. PLUGINS.md §4 (`label`, `kind` for single keys only, `fields()`, `definePinnable`'s signature) and §8 (the Gantt in `renderers/`, `views/pins/`, dates in `ui/`). CLAUDE.md's non-negotiable 5 lists `deadline` and `projectFinish` among the schedule fields renderers read. No rows spec is touched, and rows is unchanged.
 
 ---
@@ -1521,7 +1530,7 @@ Expected, in work hours, with the displayed dates:
 
 - **`deleteRow` without the option is unchanged.** The task said "today's refusal stands" and that Task 24's message "goes", but `deleteRow` never refused a referenced row: it deleted it and left an `unresolved-ref`. Its one nearby refusal (the last anchor while other rows set `id=` by name) stays in both modes, and its message is reworded to say what it is. The grid confirms whenever other rows refer to the row, so a grid delete never leaves a dangling reference. The deliverables above are corrected.
 - **A third `setAnchor` refusal, mirroring `deleteRow`'s:** the file's first anchor, in a file without `key`, while a row has a cell written `id=…`. Without identity that cell reads as text (`owner` = `id=x`); with it, it becomes the row's key, changing another row's meaning. The generators contain `id=a`, so the "every other row unchanged" property found it, and it keeps that property with no exemption. In the grid, a ref edit needing such an anchor is refused as a whole: "Another task has a cell written as id=…, which would start to mean a task ID. Change that cell first." It counts the target row's own `id=` cell too, since that would also change.
-- **The confirm names the column,** since ref cells are generic: "Delete Review? API and UI refer to it in deps; those references will be removed.", and "… API and Docs in deps, UI and Docs in related refer to it …" across columns. One reference reads "UI refers to it in deps; that reference will be removed."
+- **The confirm names the column,** since ref cells are generic: "Delete Review? API and UI refer to it in deps; those references will be removed.", and "… API and Docs in deps, UI and Docs in related refer to it …" across columns. One reference reads "UI refers to it in deps; that reference will be removed." (Changed by Task 37: on a mounted row the question names its file, "Delete API from alpha.plan? UI refers to it in deps; …", and a mounted task deleted at once is reported on the status line, "Deleted API from alpha.plan."; a mount row always asks, "Delete Product A? teams/alpha.plan stays as it is; it just won't be shown here.", followed by the references when there are any. An outline number typed in a ref cell that belongs to another plan file is refused: "Dependencies between plan files come later.")
 
 **Decisions taken** (by me, within the task):
 
@@ -1562,6 +1571,7 @@ Expected, in work hours, with the displayed dates:
 - **Hover across panes,** a generic mechanism like the cursor line:
   - `RenderContext` gains `setHoverLine(line | null)` and `onHoverLine(cb)`.
   - `PlanEditor` gains optional `setHoverLine(line | null)` and `onHoverLine(cb)`.
+  - (Changed by Task 36: the hover relays, like the cursor's, take `{ file, line } | null`.)
   - The shell relays a hover line from either pane to the other, and never names a view.
   - **Implementers:** the grid (hovering a row reports its line, and a relayed line gets a hover band), the Gantt (both ways, hovering anywhere on a row) and the other views (show the band). The text editor stays out for now, since the interfaces are optional.
   - Leaving a pane reports `null`. The hover band is lighter than the cursor band, in both themes.
@@ -1624,3 +1634,1299 @@ Expected, in work hours, with the displayed dates:
 **New tests:** `tests/schedule/demo.test.ts` (6, above); `tests/grid/demo-polish.test.ts` (7: the row order, the keys, the current-row band, the grid's hover both ways); `tests/align/end-of-scroll.test.ts` (1); `tests/renderers/hover.test.ts` (one per non-following view: tree, table, schedule, pins); four in `tests/schedule/gantt.test.ts` (draw order, bands on empty rows, reporting hover, showing a relayed hover); and "hover across panes" in `tests/app/shell.test.ts`.
 
 **Spec:** plan-format-spec §3.3 (hover on `RenderContext`; the `RowLayout` comment names the new-task row), §3.4 (hover on `PlanEditor` and the grid's part; the new-task row as `at: null`; `contentHeight` includes the pinned total row), §4b.1 (the new-task row, then the pinned total row; the current-row band) and §5.5 (`bands`, the layers, and hover both ways). PLUGINS.md, VISION and rows are unchanged. There were no spec questions, so no version changes.
+
+---
+
+## Task 33 — rows: mount rows
+
+**Serves:** M3b (VISION §6). A row can name another file to mount beneath it. This task is rows only: the syntax, the parsed result and the errors. rows reads no files. Resolving mounts, composing the plan and editing segments are the plan tool's work, in later tasks. As in Task 25, it's spec first, but small enough to implement in the same task.
+
+**Deliverables**
+
+- **Extensions spec, new section "Mounts":**
+  - A new key, `mount: NAME`, names the mount column, following the same pattern as `nest: parent`.
+    - When the named column isn't declared, an implicit column is created, as `nest:` does for a missing parent column. Record this as settled by analogy, with the question that settled `nest:`.
+    - The column is never positional. It is written by name: `Product A {#a} | mount=teams/alpha.plan`.
+    - An empty `mount:` declares nothing (A1).
+  - **The value** is a **mount target**, read after rows' usual decoding, so a quoted value may hold spaces (`mount="Team Alpha/alpha.plan"`). It is a relative path, optionally followed by `#ID`:
+    - The path is segments separated by `/`. Each segment is non-empty and holds no `#` and no control character. `.` and `..` segments are allowed syntactically. Whether a path stays inside the workspace is for the host to decide, and the spec says so.
+    - Absolute paths are invalid: a leading `/`, or a drive prefix such as `C:`.
+    - A trailing `/`, an empty segment (`a//b`), an empty path before `#`, more than one `#`, and an ID not valid under Text Anchors are all invalid.
+    - `#ID` names a part, the subtree under the row with that anchor in the target file. rows parses it and resolves nothing. The spec says hosts may support whole-file mounts first.
+  - **An invalid target** is a validation error (`invalid-value`), and the row has no mount.
+  - **A mount row** is any row with a valid mount cell, at any depth. It may also have children of its own.
+  - **What the spec leaves to the host:** what a mount means, where its rows go, and how files are read. The spec also says that two mounts naming the same file are not an error in rows.
+- **DESIGN §4:** `Schema.mount` (the column, as `Schema.nest` gives its column) and `Row.mount` (`{ path, part?, span }`, absent when there's no valid mount), with spans for the path and the part.
+- **`tokenizeLine`:** a mount cell's value tokenises as a path, with the `#ID` part as an anchor-like token. The tokenizer and the parser still agree, by the existing property.
+- **Edit API:** nothing new. Writing and clearing a mount uses `setCell` on the mount column, and clearing it is how a host unmounts. Add `setCell` examples for both to DESIGN §6, and confirm a property test covers the implicit mount column.
+- **Errors:** settle each by analogy wherever an existing rule fits. Record these in `QUESTIONS.md` under Resolved, and list them in your end-of-task summary:
+  - a declared mount column with the wrong type;
+  - `mount:` naming the same column as `nest:` or a marker;
+  - a profile's `mount:` conflicting with the file's own declarations (Q42).
+
+  Open a question only for a genuinely new rule.
+
+- **Versions:** bump extensions and DESIGN, and update the version references in the conformance README and plan-format-spec, as before.
+
+**Acceptance criteria**
+
+- [x] Conformance cases, written by hand from the spec:
+  - a mount row at the top level, at depth 3, and with children of its own;
+  - a quoted path with spaces;
+  - a part (`#backend`);
+  - `..` segments;
+  - each invalid form above;
+  - an implicit mount column;
+  - a mount cell on a row in a file without `mount:`, which is an ordinary undeclared name, as today;
+  - each settled analogy.
+
+  Every case with a syntax or structural error has its strict variant. — 17 new cases, 11 of them with a strict variant (28 directories), listed in the notes. Expected rows gained an optional `mount` field, `{ path, part? }`, default `null`.
+
+- [x] Every conformance case passes, with no stage skipped. — the 18 cases that need mounts failed before the parser change; the four `undeclared` and `empty` ones passed already, since they describe today's behaviour. No case was changed to make it pass.
+- [x] The property generators produce mount columns and mount cells, valid and broken, and every existing property still holds. — a new property checks that every mount lies in its cell, and counts over 100 valid and over 100 broken mounts.
+- [x] No app code changes, and the app's tests pass unchanged.
+- [x] `npm test` is green at the root. — 2013 tests; typecheck and lint clean.
+
+**Not in this task:**
+
+- Reading files or resolving mounts.
+- The plan profiles gaining `mount: mount` (that comes with composition).
+- Loops and missing files, which are the host's to report.
+
+**Notes**
+
+- Base 0.12: `mount` joins the keys reserved in base §9. `base-9-reserved-base-only` (+ `--strict`) gained a `mount: mount` line, so its later line numbers moved down by one, edited by hand.
+- Extensions 0.10: a new §12 Mounts (§12.1 declaration, §12.2 targets, §12.3 mount rows), so §1–§11 and the case names citing them keep their numbers. The intro, §1 (canonical-form keys), §2 (implicit column order), §8 and §10 also changed. Base and extensions version references updated in DESIGN, the conformance README and `plan-format-spec.md`.
+- **Reading of "never positional":** the implicit mount column is never positional, as for every implicit column (ext §2). A _declared_ mount column is filled like any other declared column, by position or by name, so that canonical form (implicit columns declared) still reads back the same (`ext-12-mount-declared-column`). Making a declared column unfillable by position would be a new rule.
+- **Settled by analogy** (QUESTIONS.md A11–A15):
+  - A11, implicit `MOUNT:text`: by analogy with ext §6.1's `nest:`. No question settled `nest:`'s implicit column; it has been in the spec since the first draft. Q16 settled what a wrong nest column is.
+  - A12, empty `mount:` declares nothing: A1.
+  - A13, wrong type or options → `invalid-mount-column` (structural) on the `mount` line; `mount` ignored, column read as declared: Q16 (the nest column). "Without options" comes from the nest rule too, and keeps `unique` from making two mounts of one file an error.
+  - A14, `mount:` naming the nest column or a marker column: A13, since those columns are a `ref` and a `bool` and the implicit columns come first.
+  - A15, a profile's `mount:` against the file's declaration → on the file's declaration: Q42.
+- An invalid target is `invalid-value` (validation), raw text kept, no mount, as the task said; not an analogy. `""` is invalid (an empty path). A drive prefix is one ASCII letter then `:` at the start (`C:/x`, `c:x`). Control characters are U+0000–U+001F and U+007F–U+009F.
+- New error code `invalid-mount-column`. `mount` joins `KNOWN_KEYS`, so the plan's `unknown-key` info no longer fires on `mount:` (no app test covers it).
+- API: `Schema.mount: { column, valid } | null`; `Row.mount?: { path, part?, pathFrom, pathTo, partFrom?, partTo? }`. Path spans are inside any quotes, and the part span is the `#ID`, as an anchor's is. `LineContext.mount` (the column name) makes `tokenizeLine` split a cell named for it into `path` and `part` tokens. A declared mount column filled by position tokenises as a plain `value` (DESIGN §7).
+- **New cases:** `ext-12-mount-rows` (top level, depth 3, with children; implicit columns key, nest, mount), `ext-12-mount-quoted-path`, `ext-12-mount-part`, `ext-12-mount-dot-segments`, `ext-12-mount-invalid-targets` (leading `/`, `C:/`, `c:`, trailing `/`, `a//b`, `#backend`, two `#`, `#-x`, empty ID, `""`, a tab), `ext-12-mount-implicit-column` (+ `--strict`), `ext-12-mount-declared-column`, `ext-12-mount-undeclared` (+ `--strict`), `ext-12-mount-empty` (+ `--strict`), `ext-12-mount-column-not-text` (+ `--strict`), `ext-12-mount-column-with-options` (+ `--strict`), `ext-12-mount-names-nest-column` (+ `--strict`), `ext-12-mount-names-marker-column` (+ `--strict`), `ext-12-mount-column-not-text-from-profile` (+ `--strict`), `ext-12-mount-names-lead` (+ `--strict`), `ext-12-mount-names-key-column` (+ `--strict`), `ext-12-mount-names-key-column-without-identity` (+ `--strict`).
+- **Rewritten tests:** `conformance.test.ts` compares the new `mount` row field. In `properties.test.ts`, the token-boundary property takes a cell's value as its `value` token or its `path` and `part` tokens together, and the highlighter context passes `mount`. **New tests:** the mount-token check in that property; the mount-span property; a `tokenizeLine` test for mount cells; a `setCell` test that mounts and unmounts; and the `setCell` property now counts at least 20 writes to an implicit mount column. Generators gained `mount:` lines, mount-column declarations and mount cells, valid and broken. **Rewritten case:** `base-9-reserved-base-only` (+ `--strict`), for its new `mount:` line.
+- **Q44 (spec owner):** `mount:` naming the lead, or the key column's name whether or not identity applies (`key`'s value, or `id` when `key` is unset), is `invalid-mount-column`, always on the `mount` line, and `mount` is ignored, as in A13 and A14. The lead is a row's title and the key column its identity, so neither can also be a mount target. In its first version the key part applied only with identity. The `setAnchor` property then failed on `mount: id` with no `key:`: the file's first anchor turned identity on and added the error, so every mount was lost. A rule that changes when the first anchor appears would make anchor edits add or remove errors in other rows, so the name counts whether or not identity applies. The edit API is unchanged. Generators gained `mount: name` and `mount: id`.
+
+**Human review:** read the new spec section and the `expected.json` files first. Each one is a claim about what a mount means.
+
+---
+
+## Task 34 — Folder workspace and open files
+
+**Serves:** M3a (VISION §6, §7; PLUGINS.md §7.1). The app opens a folder in Edge, lists its plan files, keeps several of them open with their own undo history and unsaved state, and saves each one in place. Mounting and composing come in M3b. This task is the foundation they need: a store of open files that knows what's on disk.
+
+**Deliverables**
+
+- **`FolderWorkspace`** (`src/app/workspace/`), behind the existing `Workspace` interface. It reports `can: { list: true, watch: false, saveInPlace: true }`.
+  - `open()` picks a folder with `showDirectoryPicker` (read and write).
+  - `list()` returns the folder's `.plan` and `.rows` files, recursively, as paths relative to the folder. It skips dot-folders and `node_modules`.
+  - `read` and `write` take those paths.
+  - `resolve(from, ref)` joins a path relative to the file it appears in. It refuses a result outside the folder with a plain reason, which M3b turns into a diagnostic.
+  - **Remembering the folder:** the handle is kept in IndexedDB, as a per-viewer convenience, so "Reopen _Portfolio_" can ask Edge for permission again with one click. If permission is refused, the app falls back to the open buttons.
+- **Choosing a workspace:** the toolbar offers "Open file" (today's single-file workspace) and "Open folder". In a browser without `showDirectoryPicker`, such as Firefox, "Open folder" is disabled with a tooltip saying it needs Edge or Chrome. The shell checks capabilities, never browser names.
+- **Open files** (`src/app/files.ts`): a store of the files opened in this session.
+  - Each file holds:
+    - its path;
+    - its own `PlanBuffer`, so its undo history survives switching between files;
+    - the text as last read from or written to disk (`disk`);
+    - whether it's dirty;
+    - whether it changed on disk since then (`stale`).
+  - Exactly one open file is **active**. The editors, analysis and views follow it, and switching files swaps the buffer the shell hands them.
+  - `analyze` receives the active file's path as its filename, so a `.plan` file with no profile gets the plan profile, as now.
+  - The single-file workspace uses the same store, holding one file, so there is one code path.
+- **File panel:** a collapsible list on the left of the editor, shown only when the workspace can list files.
+  - Files are grouped by folder.
+  - Each file shows an unsaved marker, and a marker when it changed on disk.
+  - Clicking a file makes it active. Opening it the first time reads it.
+  - The panel is keyboard reachable: arrows move, Enter opens.
+- **Saving:**
+  - Ctrl+S saves the active file. **Save all** in the toolbar saves every dirty file.
+  - Before each write, the file is read again. If it no longer matches `disk`, the app asks "_alpha.plan_ changed on disk since you opened it. Overwrite it, or keep your changes unsaved?" and writes nothing unless told to overwrite.
+  - The leave-page prompt fires while any file is dirty, following the Task 27 rule per file.
+- **Re-reading on focus, and a Refresh button:** every open file is read again. For a file that changed on disk:
+  - If it isn't dirty, the change is applied to its buffer as a **line diff** (only the lines that differ), with origin `remote`, outside the undo history.
+  - If it is dirty, nothing is applied. The file is marked `stale`, and saving it asks, as above.
+
+  The line diff is a pure helper in `src/buffer/` with its own tests. M3b uses it for segments.
+
+- **Spec:** plan-format-spec §6 (folders, open files, saving, changes on disk), §3.7 (`remote` is now used), and PLUGINS.md §7.1 (the folder implementation).
+
+**Acceptance criteria** (with an in-memory fake of the File System Access handles)
+
+- [x] Opening a folder lists its plan files recursively with relative paths, and skips dot-folders and `node_modules`. — `tests/app/folder-workspace.test.ts`, "lists plan and rows files recursively"; a dot-file is listed (see Decisions).
+- [x] `resolve` joins relative paths, normalises `.` and `..`, and refuses a path outside the folder. — `tests/app/folder-workspace.test.ts`, "resolves relative paths".
+- [x] Two files open: edit A, switch to B, edit B, switch back to A. A's text and undo history are as they were, and Ctrl+Z undoes A's edit, not B's. — through the panel and a keydown in the mounted text editor, `tests/app/shell-folder.test.ts`, "keeps each file’s text and undo history"; on the store alone, `tests/app/files.test.ts`.
+- [x] Ctrl+S writes only the active file. Save all writes every dirty file and clears their markers. — `tests/app/shell-folder.test.ts`, "saving"; `tests/app/files.test.ts`, "save writes only the file it is given".
+- [x] A file changed on disk while clean: focusing the window applies only the changed lines. An undo after that doesn't revert the disk change, and the cursor on an unchanged line stays put. — `tests/app/shell-folder.test.ts`, "focusing the window applies a clean file’s change" (line and column of the cursor checked after a change to a line above it); the single edit and origin `remote` in `tests/app/files.test.ts`; the single file in `tests/app/shell.test.ts`.
+- [x] A file changed on disk while dirty: it's marked stale, nothing is applied, and saving asks. Keep writes nothing; Overwrite writes. — `tests/app/shell-folder.test.ts`, `tests/app/files.test.ts` and, for the single file, `tests/app/shell.test.ts`.
+- [x] The line diff helper is property-tested: applying its edits to the old text gives the new text, and lines that exist in both are left untouched. — `tests/buffer/line-diff.test.ts`, 400 seeds each: the edits rebuild the new text and leave exactly as many old lines untouched as the longest common subsequence has (checked by plain dynamic programming); and every line kept from the old text is outside every edit.
+- [x] Reopening the remembered folder asks for permission once, and a refusal falls back cleanly. — `tests/app/folder-workspace.test.ts`, "remembering the folder"; `tests/app/shell-folder.test.ts`, "reopening the remembered folder" and the last case of "replacing the open files".
+- [x] The single-file workspace's tests (Tasks 4 and 27) pass unchanged through the store. — apart from the fake file handle in `tests/app/shell.test.ts` and the `can` shape in `tests/app/workspace.test.ts` (see Rewritten tests); no case's expectations changed.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 2083 tests (2013 before); typecheck, lint and `vite build` clean.
+- [x] **Browser pass in Edge:** pending review. Also check there: Enter on a file in the panel opens it (a native button press, which jsdom doesn't simulate), and Reopen and Open folder after "Save all and continue" still show the browser's prompt (they need a recent click).
+  - Open a real folder (a OneDrive-synced one if you can).
+  - Switch between files.
+  - Save, then edit the same file in another editor and focus back.
+  - Reload, and reopen the folder.
+  - Check in Firefox that "Open folder" is disabled with its tooltip.
+
+**Visible changes:** "Open folder", the file panel, Save all, Refresh, and the changed-on-disk prompt.
+
+**Not in this task:**
+
+- Mounts and composition (M3b).
+- Tabs.
+- Creating, renaming or deleting files from the app.
+- Watching files (Edge has no API for it yet).
+- Tauri.
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **The single file gets the same checks.** The read before each write, and the re-read on focus and Refresh, apply whenever `can.saveInPlace`, so a single file in Edge gets them too. The download fallback skips them, since a download overwrites nothing.
+2. **The file shown first** is the folder's last-active file (remembered with the folder handle), else the first top-level file, else the first listed. An empty folder opens nothing, the open files stay, and the status reads "No plan files in folder".
+3. **Replacing the open files asks first.** Open file, Open folder and Reopen ask "_alpha.plan and beta.plan_ have unsaved changes." with Save all and continue, Discard and continue, and Cancel. Save all and continue goes through the normal save path, changed-on-disk prompt included, and continues only if every save succeeds.
+4. **`can.saveAs`** joins `can` (PLUGINS.md §7.1): true for the single-file workspace, false for a folder. The shell hides Save As without it, and a pathless file in a folder isn't saved ("Creating files comes in a later task"). (Changed by Task 40: a folder creates files with `workspace.create`, through the new plan wizard and the Portfolio template; Save As stays hidden in a folder.)
+5. **A file that can't be read** on a re-read keeps its buffer and stays open, marked missing, and the status line names it. Saving it asks "_alpha.plan_ is no longer on disk. Save it again at _teams/alpha.plan_?"; Yes writes it at its path, creating it (the only file creation in this task). If it reappears it is handled like any other file. Focus and Refresh also list the folder again.
+6. **Save all** is shown when `can.list`, **Refresh** when `can.saveInPlace`: the single file in Edge gets Refresh but not Save all, and the download fallback neither.
+7. **A refused Reopen** says "Permission to open _Portfolio_ was refused" and keeps Reopen. The handle is forgotten only when it no longer resolves (with a status line saying so) or when another folder is opened.
+
+**Decisions taken** (by me, within the task; please check):
+
+- **An empty folder is a `Notice`, not `null`.** Decision 2 said `open()` returns null. But null already means the picker was dismissed, and the shell couldn't tell the two apart to show the status without asking which kind of workspace it holds. So `open()` throws a `Notice` (`src/core/workspace.ts`), whose message the shell shows as is. A refused permission and a forgotten folder are notices too. The behaviour is as decided.
+- **Asked before the picker, not after.** The unsaved-changes question comes before the picker or permission prompt, so Cancel shows no picker, and the remembered folder changes only when an open goes ahead. If the user then dismisses the picker, or the folder is empty, nothing is replaced: Discard and continue has discarded nothing.
+- **The active buffer carries over.** The first file of the new open files is loaded into the outgoing active buffer (origin `load`, which clears its history), so the mounted editor stays mounted. That is today's Open, and it's why Task 4's tests pass unchanged. Every other file gets its own buffer. (Changed by Task 36: in a folder, the editors show each file through its composed view, which holds the file's one undo history; the file's own buffer is the store's record of its text and gets every change as `remote`, so own buffers no longer hold history there. Opening a folder mounts the editor on the new file's composed view. The single-file workspace is unchanged.)
+- **The changed-on-disk prompt** uses the same in-page dialog as decision 3, with **Overwrite** and **Keep**. In every dialog the last button is the one that changes nothing; it has the focus, and Escape picks it, so Enter never overwrites by accident.
+- **Save all and continue** counts a download as a success, since nothing is lost. A **Save all** where one file is kept still saves the others.
+- **Normalisation:** tabs and CRLF are normalised whenever a file is read (opening, the read before a write, a re-read), so normalising alone never counts as a change on disk. A save doesn't ask when the disk already holds the text being saved. A stale marker clears when the disk is back to the text last read.
+- **Dot-files are listed.** The task says to skip dot-folders, so `.x.plan` at any level is listed.
+- **Open folder in a cross-origin frame** is disabled, with the tooltip "Opening a folder does not work in an embedded browser frame", since "needs Edge or Chrome" would be wrong in a framed Edge.
+- **A leading `/` in a path** is treated as an empty segment, as the single-file `resolve` already does, so `/x.plan` resolves next to the file. Neither the task nor the spec defines it.
+- **Includes:** a path `resolve` refuses is left out of the include snapshot, like a failed read (`src/app/includes.ts`), until M3b makes it a diagnostic. Before this change, a throw there would have broken analysis. (Changed by Task 35: the include loop is replaced by gathering mounted files; a mount outside the folder is never read and gets `mount-outside`.)
+- **`InMemoryBuffer`** maps its undo and redo entries through a `remote` change, as CodeMirror's history does.
+- `src/app/workspace.ts` moved to `src/app/workspace/single.ts` with `git mv`, so the rename is staged. Nothing else is staged.
+
+**Visible changes:**
+
+- The toolbar's Open reads **Open file**, followed by **Open folder** and, while a folder is remembered, **Reopen _name_**. Open folder is disabled, with a tooltip, without `showDirectoryPicker` (Firefox) or in a cross-origin frame.
+- **File panel** left of the editor in a folder: grouped by folder, with ● unsaved, ↻ changed on disk and ✕ missing on disk; collapsible from its "Files" heading; the arrow keys move between files and Enter or a click opens one.
+- **Save all** (folders) and **Refresh** (folders and a single file saved in place). Save As is hidden in a folder.
+- **Re-reading on window focus**, also for a single file in Edge: an outside edit to a file with no unsaved changes now appears in the editor.
+- **The changed-on-disk prompt** and the **missing-on-disk prompt** on saving.
+- **Open file, Open folder and Reopen ask before replacing unsaved files.** Before this task, Open replaced an unsaved document silently.
+- The leave-page prompt counts every open file, not only the one showing.
+- New status lines: "No plan files in folder", "Permission to open _name_ was refused", "_name_ can no longer be found, so it was forgotten", "_file_ is no longer on disk", "_file_ was not saved", "Saved _a_ and _b_".
+
+**Rewritten tests:**
+
+- `tests/app/shell.test.ts`: the fake file handle's `getFile` returned the text last opened (`openText`), whatever was written. Saving now reads the file again first, so the fake would have reported a change on disk on the second save of "Ctrl+S on a new document". It now returns the text last written (`onDisk`), as a real file does, and the round-trip case sets `onDisk` instead of `openText`. No expectation changed. New cases: an outside edit to the clean file is applied on focus; an outside edit while unsaved makes saving ask (Keep, then Overwrite); and the toolbar.
+- `tests/app/workspace.test.ts`: the native workspace's `can` gains `saveAs: true`.
+
+**New tests:** `tests/buffer/line-diff.test.ts`, `tests/app/files.test.ts`, `tests/app/folder-workspace.test.ts`, `tests/app/shell-folder.test.ts`, and the fake handles in `tests/support/fs.ts`. Added cases: `remote` in `tests/buffer/shared.test.ts`; a refused include path in `tests/app/includes.test.ts`; the fallback's toolbar in `tests/app/shell-download.test.ts`.
+
+**Spec:** plan-format-spec §3.7 (one buffer per open file; `remote`) and §6 (workspaces, remembering the folder, open files, the file panel, replacing the open files, saving, changes on disk). PLUGINS.md §7.1 (`can.saveAs`, `Notice`, `resolve` refusing, the folder implementation). The working draft of PLUGINS.md in claude.ai needs the same §7.1 change. No rows change.
+
+**Human review:** read the open-files store and the save path first (`src/app/files.ts`, `save` and `confirmWrite`). Every later M3 task writes through them.
+
+---
+
+## Task 35 — Composed model: the portfolio view
+
+**Serves:** M3b (VISION §6). A master plan mounts team plans, and every view (tree, table, schedule) shows the whole portfolio: one tree, one roll-up, one schedule. In this task the editors still show and edit only the active file's own text; editing mounted plans in place comes in Tasks 36 and 37. This is the first task that gives the PMO the big picture.
+
+**Deliverables**
+
+- **Profiles:** `plan` and `schedule` gain `mount: mount`, in both copies, which a test keeps identical.
+- **Gathering files** (the shell):
+  - The paths the active file mounts come from its **model**, so it isn't parsed a second time. This is the Task 27 follow-up, done. Paths mounted by mounted files come from parsing those files once each, cached by their text.
+  - Gathering repeats until no new path appears, as in the Task 27 loop. A file **open in the store** contributes its current text, including unsaved edits. Any other file is read from disk.
+  - Paths resolve through `workspace.resolve`. A path that resolves outside the folder isn't read. In the single-file workspace nothing can be read, and mount rows say so (below).
+  - `analyze` receives the gathered texts as `files`, keyed by resolved path. `includesOf` goes, replaced by mounts from the model plus a parse of each gathered file.
+- **Composition** (`src/core/`):
+  - Each file is parsed and read once, by its own profile, and cached by text. The active file is the **root**.
+  - A mount row's children are its own children in its file, followed by the mounted file's roots. Mounts nest.
+  - `ItemNode` gains `file` (its resolved path) and keeps `line` within that file. Outline numbers run across the composed tree.
+  - `Model.files` maps each path to its rows document and lines. `Model.roots`, `lines` and `doc` stay the root file's.
+- **Columns across files** (core, so plugins stay unaware): the model's `columns` are the root file's. Each column maps to a mounted file's column by **role, then by name**, or to nothing.
+  - `ctx.hours(node, column)` takes a root column name and looks up the matching column in the node's own file.
+  - `ctx.cell(node, role)` uses the node's own file's bindings.
+  - **References resolve within the node's own file.** Core gains `ctx.targets(node, role): ItemNode[]`, and the schedule's dependencies use it, so two files can both have `#api`.
+  - Text cells shown in views are mapped the same way.
+- **Scheduling on the master's axis:** one calendar, from the root's `project-start`.
+  - A mounted file's own valid `project-start` becomes a floor on its roots, converted with `fromDate(d, 'start')`.
+  - The mount row is an ordinary parent, so a pin, deadline or dependency on it applies to every task under it, as Task 28 already does.
+  - **A dependency may now point at a parent row**, so one project can follow another. This lifts Task 28's `schedule-dep-on-summary`:
+    - **Forward:** the dependency waits for the parent's finish, which is its latest descendant's finish, plus the lag.
+    - **Backward:** the successor's late start, minus the lag, limits the late finish of every descendant of the parent.
+    - The fixture below relies on this. Delete the code, its tests and its spec rows, list each rewritten test, and add a "changed by Task 35" line to Task 28's notes.
+- **Mount diagnostics**, on the mount row in the file that holds it, from core. Each has a test.
+  - `mount-missing` (warning): the file isn't found or can't be read.
+  - `mount-outside` (error): the path resolves outside the folder.
+  - `mount-loop` (error): the file mounts itself, directly or through other files. The loop is reported once, on the mount that closes it.
+  - `mount-overlap` (warning): the same file is already mounted elsewhere in the tree, so this mount shows nothing. The first mount in document order wins.
+  - `mount-part-unsupported` (info): `#part` mounts come later. This mount shows nothing for now.
+  - `mount-needs-folder` (info): in the single-file workspace, "Open the folder to see mounted plans."
+
+  A mounted file's own diagnostics are in the model with their `file`. Editors show only the active file's diagnostics, and the problems list shows all of them, each naming its file. (Changed by Task 36: the composed text editor shows every file's, each in its segment.)
+
+- **Views:**
+  - Mounted rows have a shaded background. A mount row shows a file badge naming the file, which is a button that makes that file the active file ("Open").
+  - Clicking a mounted row doesn't move the cursor, because the active file's editor has no line for it. (Changed by Task 36: it moves the composed text editor's cursor to the row in its segment.)
+  - Tree, table and schedule show the whole portfolio. Totals include mounted plans.
+  - **The Gantt, until Task 36:** following an editor, it shows only the root file's rows. A mount row's summary bar still spans its whole plan. Standalone, it shows everything. Note this in the task notes as temporary. (Changed by Task 36: following the composed text editor, it draws every row.)
+- **Speed:** with ten files of 500 lines each, typing in the root stays below 20 ms per analysis (median, measured once and noted). Only changed files are parsed again.
+- **Spec:** plan-format-spec, a new section on mounts and composition, plus §2.1 (the profiles), §2.9 (the codes) and §3.1–3.2. PLUGINS.md §5 and §6 (`ctx.targets`, mapping columns across files).
+
+**The reference fixture: `examples/portfolio/`**
+
+It is written by hand. Its expected values below were worked out by hand, so never generate them from output.
+
+- **`portfolio.plan`** (`profile: schedule`, `project-start: 2026-10-05`, a Monday):
+
+  | #   | Row              | Cells                                    |
+  | --- | ---------------- | ---------------------------------------- |
+  | 1   | Product A `{#a}` | `mount=teams/alpha.plan`, due 2026-10-16 |
+  | 2   | Product B `{#b}` | `mount=teams/beta.plan`, deps `#a`       |
+  | 3   | `^`Tradeshow     | deps `#b`, due 2026-10-23                |
+
+- **`teams/alpha.plan`** (`profile: schedule`, `project-start: 2026-10-07`, a Wednesday): Design `{#design}` est 2d; Build est 3d, deps `#design`.
+- **`teams/beta.plan`** (`profile: plan`, its own `columns: work:duration unit=h hpd=8 dpw=5 | owner:text`, `roles: effort=work`, no `project-start`): Spec, work 1d; Code, work 4d. No dependencies.
+
+Hours run from Mon 5 Oct, 8 a day, weekends skipped. Day 0 is Mon 5, 2 is Wed 7, 4 is Fri 9, 6 is Tue 13, 7 is Wed 14, 9 is Fri 16, 10 is Mon 19 and 14 is Fri 23.
+
+| #   | Row       | est (roll-up)             | start | finish | late finish | slack | shown               | critical |
+| --- | --------- | ------------------------- | ----- | ------ | ----------- | ----- | ------------------- | -------- |
+| 1   | Product A | 5d                        | 16    | 56     |             | 0     | Wed 7 – Tue 13 Oct  | yes      |
+| 1.1 | Design    | 2d                        | 16    | 32     | 32          | 0     | Wed 7 – Thu 8 Oct   | yes      |
+| 1.2 | Build     | 3d                        | 32    | 56     | 56          | 0     | Fri 9 – Tue 13 Oct  | yes      |
+| 2   | Product B | 5d (by role, from `work`) | 56    | 88     |             | 0     | Wed 14 – Mon 19 Oct | yes      |
+| 2.1 | Spec      | 1d                        | 56    | 64     | 88          | 24    | Wed 14 Oct          | no       |
+| 2.2 | Code      | 4d                        | 56    | 88     | 88          | 0     | Wed 14 – Mon 19 Oct | yes      |
+| 3   | Tradeshow |                           | 88    | 88     | 88          | 0     | Mon 19 Oct          | yes      |
+
+Where the numbers come from:
+
+- **The totals:** the document total is 10d (80h), and `projectFinish` is 88.
+- **No late flags:** Product A's deadline is hour 80, and its finish of 56 is earlier. The Tradeshow's deadline is hour 120, against a finish of 88.
+- **Alpha's start:** it starts at its own `project-start`, hour 16, not the master's 0.
+- **Beta's start:** it has no start of its own and no dependencies inside it, so its rows start at the floor Product B's dependency on `#a` passes down, 56.
+- **The late finishes inside A:** they come from B's earliest late start (Code, 56), as Task 28 defines a parent as successor.
+
+**Acceptance criteria**
+
+- [x] The fixture test asserts every cell of the table above. It also checks the outline numbers, each node's `file`, and that `ctx.targets` resolves `#design` in alpha and nothing in beta. — `tests/composition/portfolio.test.ts`, written from the table. The est column is asserted in hours (5d is 40), and the tree's text separately: the tree shows 40h as `1w`, as `formatDuration` shows every whole week, so Product A and Product B read `1w` and the total `2w`. `ctx.targets` is read through a probe plugin's stage; it also gives `Product A` for Product B's `#a`.
+- [x] A second test opens `teams/alpha.plan` with an unsaved edit in the store: Build becomes est 4d. The master's view shows Build finishing at 64, and Product B moves to 64–96. Nothing is written to disk. — `tests/app/shell-portfolio.test.ts`, "shows a team file's unsaved edit in the master, and writes nothing", through the shell on in-memory folder handles: Build reads Fri 9 – Wed 14 Oct and Product B Thu 15 – Tue 20 Oct in the schedule table.
+- [x] Each mount diagnostic has a test asserting its row, severity and code: a missing file, a loop of three files, a path outside the folder, two mounts of one file, `#part`, and the single-file workspace. — `tests/composition/mounts.test.ts`, plus a file mounting itself and an overlap in composed order. The single-file case also goes through the shell (`tests/app/shell-portfolio.test.ts`).
+- [x] Columns: a mounted column matched by name only (no role) maps. One matched by neither shows blank, with no diagnostic. — `tests/composition/mounts.test.ts`, "columns across files", with the two-pass example (decision 2 below) and a mounted column's own `hpd`.
+- [x] Gathering: adding a mount gathers the new file, and removing it drops it. A file is read once while its path set is unchanged. Typing in the root parses no other file (counted). — `tests/app/mounts.test.ts`; the count wraps rows' `parseRows` and records each text parsed while typing eight keys into the root.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 2133 tests (2083 before); typecheck, lint and `vite build` clean.
+- [ ] **Browser pass in Edge, on a real folder** with a master and two or three team plans: pending review (there is no browser here). `examples/portfolio/` is such a folder.
+  - the views show the portfolio;
+  - Open on a badge switches files;
+  - unsaved team edits show in the master;
+  - the problems list names each file.
+
+**Visible changes:**
+
+- Mount rows and their badges. A mount row's title in the tree, table, schedule table and pin review has a file badge naming its file (`alpha.plan`), a button titled "Open teams/alpha.plan" that makes the file active. A mount whose path doesn't resolve (single-file workspace, outside the folder, `#part`) has none; Open on a missing file says "Could not open: …".
+- Shaded mounted rows in the views (new theme tokens `--mounted-row-bg`, `--badge-bg` and `--badge-fg`, light and dark). A mounted row has no cursor band, hover band or click-to-line. (Changed by Task 36: it has all three, by its own file and line.)
+- The mount diagnostics.
+- Portfolio totals and schedule: the tree, table, schedule table, pin review and TSV export show the whole composed tree, and the totals, including the grid's total row and a mount row's roll-up in the grid, include mounted plans.
+- A dependency on a parent row is scheduled (it waits for the whole subtree) instead of being ignored with a warning. A row that depends on its own ancestor now gets `schedule-dep-cycle`.
+- The grid's problems list groups by file, each group headed by its path when more than one file has problems; a mounted file's entry has no fix buttons and opens its file. (Changed by Task 37: its fixes are offered and apply in place, and clicking it focuses its row in the grid.)
+- **Temporary, until Task 36:** following an editor, the Gantt shows only the root file's rows; a mount row's bracket spans its whole plan. Standalone (no leader), it shows every row. (Ended by Task 36.)
+- Mounted files are read again on window focus and Refresh.
+- Every plan and schedule file has an implicit `mount` column, from the profiles. A file that declares its own column named `mount` with another type now gets rows' `invalid-mount-column` (A13).
+
+**Not in this task:**
+
+- Editing mounted rows (Tasks 36 and 37).
+- Gantt zoom (Task 38).
+- `#part` mounts.
+- Dependencies from one file into another file's rows.
+- Creating files.
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **Cells through an accessor.** `ItemNode.fields` stays in its own file's column order, with its own spans. Core adds `model.field(node, i)`: the node's field for root column `i` through the mapping, or null; for a root row it is the identity. Estimate, schedule's `spanOf` and every view use it. A lint rule (`no-restricted-syntax` on `.fields`, not a call) holds plugins, their renderers and exporters, `src/views/` and `src/ui/` to it, with probes in `tests/plugins/lint.test.ts`. PLUGINS.md §4.
+2. **Two passes, one owner per column.** By role first: each root column with a role takes the mounted column bound to that role. Then by name, among the mounted columns not taken. A mounted column maps to at most one root column, so no total counts a value twice; a blank root column has no diagnostic. Tested with the example (root `est` effort and `work` without a role; the team's `work` is its effort: root `work` is blank). PLUGINS.md §6.
+3. **`ctx.diagnose(node, d)`.** Core sets `d.file` from the node; null is a document-level diagnostic on the root file. A diagnostic's line and spans are in its node's own file. Every call site in estimate and schedule changed. Tested: a milestone with an estimate in a mounted file is reported on its line in that file, with its file, and nothing lands on the root's line of the same number. PLUGINS.md §5.
+4. **Mounted problems open their file.** An entry from a mounted file names its file, shows no fix buttons, and clicking it makes that file active with the cursor on the row, where its fixes work as usual. The root's problems come first, then each mounted file's in composed order. **Task 37** will offer these fixes in place, once mounted rows can be edited in the grid. (Changed by Task 37: fixes in place, and clicking an entry focuses its row in the grid.)
+
+**Decisions taken** (by me; settled by the nearest existing rule, and stated before coding with no objection):
+
+- **Done inherits through a mount row**, an ordinary parent: a done mount row makes its mounted rows done.
+- **A mounted file's `project-start`** joins the start's `derived` floor, not its `pin`, so the pin review doesn't list it. It applies to a row whose parent is in another file.
+- **`ctx.marked`** reads the node's own file's markers, as `ctx.cell` reads its bindings: `^` in an estimate-only team file is part of the title.
+- **What `analyze` is told.** `files` (text by resolved path, null when unreadable) and the workspace's `resolve`. The shell passes them only when the workspace can list files; without `files`, every mount gets `mount-needs-folder`. A path not gathered yet shows nothing and has no diagnostic, so `mount-missing` doesn't flash while files are read.
+- **Order.** "Document order" is composed order: within each file, and a mount row's own children before what it mounts. The mount that closes a loop is the first, in that walk, whose target is already on its own path. A `#part` mount gets only `mount-part-unsupported`; in the single-file workspace any other gets only `mount-needs-folder`.
+- **Gathering also runs on focus and Refresh** (VISION §6). A file is read once while it stays mounted, even when other mounts come and go, which is stronger than "while its path set is unchanged".
+- **Editors index only the root file's rows** (the grid, its levels and ref cells, the text editor's done lines, the cursor), since a mounted row's line is in another file. So `2.1` typed in a ref cell for a mounted row is "There's no task 2.1."; and the text editor and the grid's inline marks and settings banner show only the root's diagnostics. (Changed by Task 36: the text editor shows every file's rows and diagnostics, and its cursor names its file; the grid is as it was. Changed by Task 37: the grid shows and edits every composed file's rows, its inline marks show every file's diagnostics, ref cells resolve outline numbers within the row's own file, and one in another file is refused with "Dependencies between plan files come later."; the settings banner stays the root's.)
+- **The Gantt's natural layout** gives a mounted row's file as `at.file`, which the `RowLayout` comment anticipated ("can gain a file"); a leader's rows have none and mean the root file. (Changed by Task 36: `file` is always present.)
+- **Severities follow the task.** VISION §6 said "a missing file or a mount loop is an error"; it now says what the task does: a missing file is a warning (`mount-missing`), and a loop or a path outside the folder is an error.
+
+Also within the task, not asked:
+
+- **The model.** `Model.file` (the root's path, `''` for a new document); `Model.files` includes the root, first. `ItemNode.file` is `''` for a new document's rows, and `ItemNode.mount` is a mount row's resolved target, for the badge. `Diagnostic.file` is unset for the root file's, so no existing diagnostic changed. `StageContext.bindingsOf(node)` gives a file's own bindings, which the schedule uses for the `project-start` floor.
+- **Composition** (`src/core/compose.ts`) copies every item for each analysis, so a cached read never changes and an old model never changes under its holder. Each file is parsed, read and bound once per text, in a cache the analyzer keeps for the files of its last analysis.
+- **`mountsOf(model)` and `readMounts(text, path)`** replace `includesOf`. The shell analyzes the active file with the snapshot of its last mounts; when the model shows that its mounts changed, or another file became active, it analyzes once more with the new snapshot.
+- **The badge** shows the target's last path segment; it is disabled without `openFile`. Group headings in the problems list appear only when more than one file has problems, so a file without mounts looks as before.
+- **Speed.** The first composed version took 36.7 ms. To get under 20 ms: the schedule's network uses numbered points with an iterative Tarjan and walk, and is read once per analysis: `schedule.forward` reads it, reports its diagnostics and writes it as a document-scope field, `network`, owned by the schedule plugin, which `schedule.backward` declares in `reads`; node fields are stored in an array per key by each node's place in the composed tree, not a `Map` per key; role and marker columns are looked up once per file per analysis; the backward pass reads each deadline once. Outside the task's code, `identityFixes` in `src/core/fixes.ts` compared each ID with every earlier one (quadratic, 1.5 ms on a 500-ID root at every keystroke); it now keeps the first of each ID in a `Map`, with the same results.
+
+**Timing** (measured once; there is no timing test): ten files of 500 lines, a `profile: schedule` root with nine mount rows and nine team files, 4,960 items in all, phases of nine chained tasks with lags, pins and deadlines, 948 diagnostics. One character of the root changed per run, 300 runs, the first 50 dropped: **18.4 ms median** (p99 28 ms) in Vitest, 17.9 ms (p99 34 ms) in Node, measured after the network became a field. The root alone: 3.8 ms. Only the root is parsed again while typing (`tests/app/mounts.test.ts` counts it).
+
+**Rewritten tests:**
+
+- `tests/app/includes.test.ts` is deleted with the include loop, and replaced by `tests/app/mounts.test.ts`. Its cases carry over: gathering when a path is added and emptying when it is removed; a failed read not retried (now: kept as null while the file stays mounted); a read overtaken by a newer one dropped (now: by a reread); following nested mounts and stopping on a loop; never reading the open file; never reading a path outside the folder.
+- `tests/schedule/schedule.test.ts`: "schedule-dep-on-summary: the dependency is ignored" became "a dependency on a parent waits for its latest descendant, plus the lag (Task 35)".
+- `tests/grid/refs.test.ts`: "writes a dependency on a parent or on the row itself, and the schedule reports it" expects only `schedule-dep-cycle` (it expected `schedule-dep-on-summary` too).
+- `tests/core/fields.test.ts`: "lists the keys written in this analysis, in stage order" gains `schedule.network` after `schedule.project-finish`.
+
+**New tests:** `tests/composition/portfolio.test.ts` (the fixture), `tests/composition/mounts.test.ts` (mount diagnostics, composition, columns, a mounted file's diagnostics and markers), `tests/composition/gantt.test.ts` (following and standalone), `tests/app/mounts.test.ts` (gathering, the parse count), `tests/app/shell-portfolio.test.ts` (the shell on a folder holding `examples/portfolio/`), and `tests/support/portfolio.ts`. Added cases: in `tests/schedule/schedule.test.ts`, a descendant depending on its own parent, a parent depending on itself, and a parent as predecessor; in `tests/plugins/lint.test.ts`, the cell rule on five paths and the clock rule beside it.
+
+**Spec:** plan-format-spec §2.1 (`mount: mount` in both profiles), §2.9 (`file`, the mount codes), §2.11 (dependencies on parents, the points, a mounted file's floor, the late finish, the `network` field; `schedule-dep-on-summary` deleted), the new §2.12 Mounts and composition, §3.1–§3.3 (reading per file, the model's `file`, `files` and `field`, `analyze`'s `files` and `resolve`, `mountsOf` and `readMounts`, mounted rows and badges, `openFile`, `RowLayout`'s `at.file`), §3.6 (TSV), §4b.1 (the total row), §4b.6.3 (the problems list), §5.5 (the Gantt, temporary) and §6 (gathering). PLUGINS.md §1, §2, §4 (`file`, `files`, `field`; cells through `field`; storage), §5 (`bindingsOf`, `targets`, `diagnose(node, d)`, own-file reading), §6 (`analyze`'s options, gathering mounted files, columns across files) and §8 (`compose`, `mounts.ts`, the lint rule). VISION §6 (the mount severities). The working draft of PLUGINS.md in claude.ai needs the same changes. No rows change: rows and its specs are untouched. Task 27's, 28's, 29's and 34's notes say what this task changed.
+
+**Human review:** the fixture table first, then the column mapping in core. That mapping is the rule every portfolio total depends on.
+
+---
+
+## Task 36 — Composed text editor
+
+**Serves:** M3b (VISION §6). When the active file mounts other plans, the text editor shows one composed document. The master's own text is interleaved with each mounted file's text. Each mounted file appears as a shaded **segment**, editable in place, and every edit lands in the file it belongs to. It has one undo history, and one search across every file. The Gantt follows every row, which ends Task 35's interim case.
+
+**The model:** the composed text is for editing only, and is never saved or analysed. Analysis still reads each file's own text, as in Task 35. A **piece map** says which file and which offset range each run of composed text comes from. The editor translates positions through it in both directions, from file to composed text and back.
+
+**Deliverables**
+
+- **Piece map** (`src/buffer/pieces.ts`, pure, with its own tests):
+  - **Building it.** From the root file, the gathered files and the model's mounts, build the composed text and its pieces. A mounted file's text is placed after its mount row's whole subtree in its own file, so that the mount row's own children come first, as in the model. Mounts nest, so the root file appears as several pieces around its segments.
+  - **Positions.** `toComposed(file, offset)` and `toFile(composedPos)` translate positions. `toFile` returns the file and its offset, or `joint` for a character that belongs to no file.
+  - **Joints.** Pieces always break at line starts. If a file doesn't end with a newline, the composed text adds one, as a **joint**: it isn't in any file, and an edit can't touch it.
+  - Property tests: composing and then cutting out each file's pieces gives back every file's text exactly. `toFile(toComposed(p))` is `p` for every position.
+- **Composed buffer** (`src/buffer/composed.ts`): a `PlanBuffer` over one CodeMirror `EditorState` holding the composed text, with one undo history.
+  - **Routing.** A transaction filter splits each change by pieces and applies it to the file it falls in, through the open-files store, which holds each file's text. A transaction that has any change crossing a piece boundary, or touching a joint, is refused **whole**. The status line says "Edits can't cross from one plan file into another." The text editor's line operations (Alt+Up/Down, Tab over a selection, Ctrl+/) are refused the same way when they would cross a boundary.
+  - **`applyFile(file, edits, origin)`** writes edits given in one file's own offsets, mapped into the composed text. The grid uses it for the master's rows now, and for mounted rows in Task 37.
+  - **Keeping every view of a file in step:** the store is the one record of each file's text. When the composed view edits a file, that file's own buffer (from Task 34) gets the same change as `remote`, outside its own undo history. When a file's own buffer is edited while the master isn't showing, the composed view gets the change as `remote` the next time it's built or shown. Changes are mapped exactly, not diffed, since their offsets are known.
+  - **Recomposing.** When analysis finds the mounts have changed (a mount cell typed or deleted, a file appearing or disappearing), segments are inserted or removed as one change with origin `compose`, outside the undo history. Undoing the mount edit recomposes back.
+  - **Reloads from disk** (Task 34's focus and Refresh) apply their line diff to the store, and then reach the composed view as `remote`.
+- **The text editor over the composed buffer:**
+  - **Highlighting.** Each line is tokenised with the syntax of the file it belongs to, from that file's own document.
+  - **Shading.** Each segment line gets a class for its mount depth, shaded and bordered. Mounted rows are indented visually by their mount depth, as line padding. Their text is unchanged, and the cursor still moves through the real characters.
+  - **Gutter.** It shows each file's own line numbers.
+  - **Segment header.** A block widget above each segment shows the file's path, its unsaved marker, and an Open button that makes that file active. The header can't be selected or edited. (Changed by Task 37: the block widget is gone; the segment's mount line is its header, with the header's background and, at the line's end, ●, Open and Unmount.)
+  - **Folding.** A mount row folds its own children and its segment together.
+  - **Diagnostics.** Every file's diagnostics show at their composed positions, so mounted files' diagnostics now appear in the text editor too. Fixes apply through `applyFile`.
+  - **Search and replace** are CodeMirror's own, over the whole composed text, and open folded segments to show a match. Replace works inside each file. A replace-all touching several files is one transaction and one undo.
+- **Cursor and hover across files.** `RenderContext.setCursorLine` and the cursor and hover relays take `{ file, line }`, and the root file's lines are `{ file: root, line }`.
+  - Clicking a mounted row in a view now moves the editor's cursor to that row in its segment, replacing Task 35's no-op. The badge's Open still switches the active file.
+  - The text editor publishes its row layout keyed `{ file, line }`, so a following Gantt draws every row of every plan. Remove Task 35's interim case, and its note.
+- **Saving:** Ctrl+S in a composed view saves the root and every mounted file changed in it, each through Task 34's check that the file on disk is unchanged. Save all is unchanged.
+- **Spec and docs:**
+  - plan-format-spec §3.7 (`applyFile`, the `compose` and `remote` origins, the piece map) and §4 (the composed text editor).
+  - PLUGINS.md §8 for where the piece map lives.
+  - VISION §6 if anything here departs from it.
+
+**Acceptance criteria** (jsdom with CodeMirror, on `examples/portfolio/`)
+
+- [x] The composed text is the master's text, with alpha's text after Product A's line and beta's after Product B's line. The piece map's properties hold, including for a file with no final newline. — `tests/buffer/pieces.test.ts` (the fixture by hand; 400 seeded random compositions, with empty files and files without a final newline: cutting each file back out, both translations, accepted edits followed by the map, refusals, recomposing, settling) and `tests/app/shell-composed.test.ts`, the first case.
+- [x] Editing Build's estimate to 4d inside alpha's segment changes the store's alpha text only. Product B moves to 64–96 as in Task 35. Nothing is written to disk, and the master's text is unchanged. One Ctrl+Z restores it. — `tests/app/shell-composed.test.ts`: Build reads Fri 9 – Wed 14 Oct and Product B Thu 15 – Tue 20 Oct, alpha alone is marked unsaved, nothing is written; routing on its own in `tests/buffer/composed.test.ts`.
+- [x] Refusals:
+  - deleting a selection from beta's last line into the master's next line is refused, and nothing changes;
+  - Alt+Down on a segment's last row is refused, while Alt+Down inside a segment works;
+  - an edit on a joint is refused.
+
+  — `tests/app/shell-composed.test.ts` (the first two, with the status line, and Alt+Down on a mount row); the joint in `tests/buffer/composed.test.ts` and `tests/buffer/pieces.test.ts`.
+
+- [x] Search finds `Code` in beta. Replace-all `Code` with `Coding` changes only beta, and one undo restores it. — `tests/app/shell-composed.test.ts`, through `@codemirror/search`'s commands; also a match opening a folded segment.
+- [x] An unsaved edit made in alpha's own buffer shows in the composed view. An edit made in the composed view reaches alpha's own buffer without entering its undo history. — `tests/app/shell-composed.test.ts`: made in alpha's own view (its history), and Ctrl+Z in alpha's view leaving the master's edit; on the buffers alone in `tests/buffer/composed.test.ts`.
+- [x] Typing `mount=teams/beta.plan` on a new master row composes beta in. Undo removes the segment and the cell together. — `tests/app/shell-composed.test.ts`. Beta is already mounted by Product B, where it would be an overlap, so the test first deletes Product B's mount (its segment goes), then types the new row.
+- [x] Beta changed on disk while clean: focusing the window updates its segment. An earlier edit in alpha can still be undone. — `tests/app/shell-composed.test.ts`.
+- [x] Highlighting uses each file's own syntax: beta's `work` column is coloured as a duration. The gutter shows each file's own line numbers, and the header shows the path and the unsaved marker. — `tests/app/shell-composed.test.ts` (alpha's front matter is coloured as front matter too; the marker in the Build case).
+- [x] Folding Product A hides alpha's segment. — `tests/app/shell-composed.test.ts`: the fold runs from the end of Product A's line to the end of alpha's last line.
+- [x] A mounted file's diagnostic shows at its composed position, and its fix applies to that file. — `tests/app/shell-composed.test.ts`: `project-start: 2026-02-30` typed in alpha's segment gets `key-type` there, and its fix writes today's date into alpha.
+- [x] The Gantt, following the text editor, draws all seven rows aligned with their lines, using injected measurements as in Task 29. The interim case is gone. — `tests/align/composed.test.ts` (20px lines, 24px headers; tops worked out by hand) and `tests/composition/gantt.test.ts`. The `?? model.file` in the geometry and its comment are gone, and spec §5.5 no longer describes it.
+- [x] Clicking Code in the schedule table moves the cursor to Code in beta's segment. — `tests/app/shell-composed.test.ts`; Design in the tree in `tests/app/shell-portfolio.test.ts`.
+- [x] Ctrl+S saves the master and beta after an edit in each, each with the on-disk check, and leaves alpha alone if alpha wasn't changed. — `tests/app/shell-composed.test.ts`: with beta changed on disk, saving asks for beta, and Keep writes only the master; then both are written.
+- [x] Every existing test passes. In particular, a file without mounts behaves exactly as before. Rewritten tests are listed in the notes. — 3865 tests (2133 before; 1305 of the new ones are seeded property cases); typecheck, lint and `vite build` clean.
+- [x] **Browser pass in Edge on `examples/portfolio/`** and a real folder: pending review (there is no browser here). Also check there: the header's Open button, the search panel's look in both themes and in a single file, and that segment padding lines up under the mount row in the editor's font.
+  - typing in segments;
+  - a refused edit across a boundary;
+  - search and replace across files;
+  - folding;
+  - the Gantt beside the text editor;
+  - saving.
+
+**Visible changes:** segments in the text editor (shading, headers, their own line numbers), editing in place, search across files, the Gantt showing mounted rows when following the text editor, and clicking a mounted row moving the cursor.
+
+**Not in this task:**
+
+- Editing mounted rows in the grid (Task 37).
+- Moving a task from one file to another.
+- `#part` mounts.
+- Adjusting the indentation of pasted lines to where they're pasted.
+- Gantt zoom (Task 38).
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **Every file shown in a folder goes through its own composed view.** It has no segments when the file mounts nothing, and it holds the file's one undo history. The file's own buffer is the store's record of its text, and gets every change as `remote`. The single-file workspace is unchanged. Task 34's notes say so.
+2. **A segment goes after the mount row's subtree extent as §4.2 defines it** (`subtreeEndLine`, now in `src/editing/lines.ts`, which folding uses too), so a comment indented under the last child stays with it.
+3. **Line operations act on composed lines.** Alt+Down on a mount row is refused, since its next line is its segment's. Reordering projects is done in the grid (Task 37) or by cut and paste. (Changed by Task 37, after its browser pass: line operations act on the lines of the file the cursor is in. A move swaps with the previous or next line in that file and the segments recompose; on a file's first or last line it does nothing; only a selection spanning two files is refused.)
+4. **Segment lines are padded to the mount row's own indent plus one level** (4 characters); a nested segment adds its mount row's padding.
+5. **Ctrl+S saves the root and every file in the composed text with unsaved changes**, wherever the change was made.
+6. **Core records the segment on the row:** `ItemNode.composes`, set only when the file is composed under it. The shell never repeats core's rules.
+7. **Boundary positions** follow the rules now in `src/buffer/pieces.ts`'s comment and spec §3.7. `toFile(toComposed(p)) = p` holds except at the end of a file that ends with a newline and is followed by another piece. Deleting the newline that ends a piece, when another file's piece follows, is refused. A joint stays while its segment stays.
+8. **`RowLayout` rows are `at: { file, line }`**, with `file` always present.
+9. **The known limitation** (an edit in a segment, then its mount removed and restored by undo) is accepted, and written up in spec §3.7 with the case that triggers it.
+
+Also agreed: the `@codemirror/search` devDependency (6.7.2); the lint exemption for `src/buffer/composed.ts`, recorded in spec §3.7; routing in the buffer's dispatch, so undo and redo are routed too; following the files' own buffers live, which gives what "the next time it's built or shown" asks; bands and click-to-line on mounted rows; the "near" highlight within the same file.
+
+**Decisions taken** (by me, within the task; please check):
+
+- **Changed by Task 37**, found when the grid moved a mount row with Alt+Down and one Ctrl+Z didn't bring it back:
+  - **`PieceMap.place`:** a deletion that starts on the newline ending a piece, when another piece of the same file follows the segment after it (`\nline`, as rows deletes a line), is moved one character on (`line\n`). Before, it was split around the segment and left the piece ending inside a line, and its undo entry was lost. Tested by hand and over 200 seeds in `tests/buffer/pieces.test.ts`.
+  - **`recomposition`:** the root file's lines are matched first, and the other lines only between them, so a segment that changes place moves around the root's lines. Before, the line diff could carry a root line (the moved mount row) with a segment, and an undo entry on it collapsed. Tested in `tests/buffer/pieces.test.ts`.
+- **Settling changes off the boundaries** (`PieceMap.settle`). This was found by the shell test, not foreseen. Alt+Down on a segment's second-last line deletes the last line up to the master's next line start; its undo then re-inserts that line exactly on the boundary, where position alone gives it to the master. Undo and redo skip transaction filters, so the fix comes earlier: a change that ends where another file's piece starts, taking or adding whole lines at its piece's end, is moved back one character before it enters the history. That's in a transaction filter for typed edits, and in `place` for `applyFile`. The text is the same, but the undo then lands inside the piece. Seeded tests check that the text and the file stay the same. Selecting a segment's last line and deleting it, then undoing, is covered by the same rule. An undo of an edit that emptied a segment's file entirely can still go astray; that is written up with the known limitation.
+- **The refusal is a change filter**, which drops a transaction's changes and maps its selection back, so nothing at all happens.
+- **Line operations run on the piece's own text** (`onPiece` in the keymap), after the crossing check. Their edits never reach past the piece, so moving the last line of a file without a final newline works, instead of touching the joint.
+- **A file a composed view shows is opened in the store** (`OpenFiles.adopt`) with the text the analysis read, so its edits have a buffer. It stays open after it's unmounted, like any file opened this session; the panel marks it unsaved when it is.
+- **Search is in every text editor**, composed or not, so it behaves the same everywhere (asked for after review). The single-file workspace's Ctrl+F now opens CodeMirror's panel instead of the browser's find: a visible change there, the one exception to "a file without mounts behaves exactly as before".
+- **The grid edits through the composed view** (`fileBuffer`): its text and changes are the root file's own buffer's, its edits go through `applyFile`, and its undo is the composed history. So in a folder both editors share one history, as the task's `applyFile` line implies. The grid ignores a cursor or hover line of another file until Task 37. (Changed by Task 37: the grid shows the composed view itself, every file's rows, and writes each row with `applyFile` in its own file; `fileBuffer` is gone.)
+- **A file's own change that would join two files' lines** (possible only from another view with different segments) rebuilds the composition line by line instead of being placed.
+- **Each recompose installs the freshly built map**, even when the text doesn't change, so a mount row's padding follows its indentation.
+- **Small API additions:** `FileLine` in `src/core/types.ts`; `PlanEditor.showUnsaved?(files)` for the headers, called whenever the title updates; `TextEditorHooks.root` (a plain buffer's file until a model names it) and `onOpenFile`. The `CodeMirrorBuffer` constructor takes extensions, and its `state`, `as` and `dispatch` are protected, for the composed buffer, which extends it.
+- **Analysis in a folder records the composed view's version**, the buffer the editors show, so a following Gantt draws when the layout and model agree.
+- **New theme token** `--segment-border`, light and dark.
+- **Timing** (measured once; no timing test): a recompose of a ten-file, 5,001-line composition after a keystroke in the root takes 1.6 ms median (p99 2.5 ms) in Vitest.
+- The plan spec has no draft version, so none was bumped.
+
+**Visible changes:**
+
+- In a folder, the text editor shows the active file with every file it mounts as a **segment**:
+  - shaded, with a border on the left;
+  - padded under its mount row;
+  - each file's own line numbers in the gutter;
+  - a header with the file's path, ● when it has unsaved changes, and **Open**. (Changed by Task 37: the mount line is the header, with ●, Open and Unmount at its end.)
+- **Editing in place.** Typing in a segment changes that file, and the panel and header mark it unsaved.
+- **Refusals.** An edit across files is refused with the status line "Edits can't cross from one plan file into another.", and so are Alt+Up/Down, Tab and Ctrl+/ over lines of two files. Alt+Down on a mount row or a segment's last row is refused.
+- **Search and replace** (Ctrl+F, CodeMirror's panel) across every file, in a folder. Replace-all is one undo.
+- **Search in the single-file workspace too.** Ctrl+F opens the same panel over the one file, in place of the browser's find.
+- **Diagnostics.** Mounted files' diagnostics show in the text editor, in their segments, with working fixes.
+- **Folding** a mount row folds its children and its segment.
+- **Cursor and hover.**
+  - Clicking a mounted row in the tree, table, schedule table, pin review or Gantt moves the text editor's cursor to it.
+  - Mounted rows get cursor and hover bands.
+  - Following the text editor, the Gantt draws every row of every plan.
+- **Saving.** Ctrl+S in a folder also saves every shown file with unsaved changes, each checked on disk. The status line reads "Saved portfolio.plan and beta.plan".
+- **Undo after opening a folder.** Opening a folder mounts the editor on the new file's view; its undo history starts empty, as before.
+
+**Rewritten tests:**
+
+- `tests/app/cursor.test.ts`: the four cases take `{ file, line }` and `itemLines` gives lines per file; no expectation changed. New case: a portfolio's lines per file, and the nearest item within the same file.
+- `tests/app/shell-folder.test.ts`: "Save all and continue stops when a save is kept" finds the editor view again first. Opening the other folder now mounts the editor on its file's composed view, so the old view is stale. No expectation changed.
+- `tests/app/shell-portfolio.test.ts`: "a click on a mounted row moves no cursor" became "a click on a mounted row moves the cursor to it, in its segment (Task 36)".
+- `tests/buffer/boundary.test.ts`: `src/buffer/composed.ts` joins the files allowed to import CodeMirror.
+- `tests/composition/gantt.test.ts`: "following an editor: the root file's rows only, by line; Product A's bracket spans alpha's plan" became "following the composed text editor: every row of every plan, keyed by file and line (Task 36)". The standalone case expects `file` on every row.
+- The cursor, hover and layout API, `{ file, line }` in place of a line number, with no behaviour expectation changed:
+  - `tests/grid/grid.test.ts`, "focuses a row when the preview asks for a line…" and "reports the line of the cell that was clicked": the cursor hook gets `{ file: '', line }`.
+  - `tests/grid/demo-polish.test.ts`: both hover cases.
+  - `tests/renderers/hover.test.ts`, `tests/renderers/scroll-to-cursor.test.ts`, `tests/renderers/table.test.ts`, `tests/renderers/tree.test.ts`, `tests/schedule/table.test.ts`, `tests/views/pins.test.ts`.
+  - `tests/schedule/gantt.test.ts`: the leader layouts, "moves the cursor…", "bands the cursor row" and both hover cases.
+  - `tests/schedule/gantt-geometry.test.ts`, `tests/ui/row-layout.test.ts` and `tests/align/connect.test.ts`: the layouts' `at` carry a file.
+- Support:
+  - `tests/support/stub-follower.ts` keys items by file and line, and records the file.
+  - `tests/support/layout.ts`'s `editorLayout` counts segment headers as blocks (24px by default). Nothing measured before had one. (Changed by Task 37: there are no header blocks, and it no longer counts them.)
+
+**New tests:**
+
+- `tests/buffer/pieces.test.ts`: the piece map.
+- `tests/buffer/composed.test.ts`: the composed buffer on its own buffers, including undo at a boundary.
+- `tests/app/shell-composed.test.ts`: the acceptance criteria through the shell.
+- `tests/align/composed.test.ts`: the Gantt following the composed text editor.
+- In `tests/app/shell.test.ts`, the case "search in the single-file workspace (Task 36)": Ctrl+F opens the panel, and replace-all is one undo.
+
+**Spec:**
+
+- plan-format-spec:
+  - §2.12: what the editors show, `composes`, the composed text editor's diagnostics.
+  - §3.3: `FileLine`; the cursor and hover relays; mounted rows' bands and clicks; `RowLayout`'s `at`.
+  - §3.4: `PlanEditor`, the composed buffer for both editors, rows keyed by file.
+  - §3.7: the composed buffer, the piece map and its rules, joints, routing, settling, `applyFile`, keeping files in step, recomposing, the `remote` and `compose` origins, the lint exemption and the known limitation.
+  - §4.1–§4.4: per-file syntax, folding, line operations and diagnostics in a composed text.
+  - The new §4.5, the composed text editor.
+  - §5.5: the Gantt, interim case removed.
+  - §6: saving, open files, changes on disk reaching segments.
+- PLUGINS.md:
+  - §8: `buffer/`, the piece map and the composed buffer.
+  - §4: the grid, not "the editors", reads `node.fields`.
+  - The working draft of PLUGINS.md in claude.ai needs the same changes.
+- VISION §6: no change; nothing here departs from it.
+- No rows change.
+- Tasks 29, 32, 34 and 35's notes say what this task changed.
+
+**Human review:** the piece map and its property tests first, then the transaction filter. Every edit in a portfolio passes through those two.
+
+---
+
+## Task 37 — Composed grid
+
+**Serves:** M3b (VISION §6). The grid shows and edits the whole composed plan. Mounted rows are edited where they appear, and every edit goes through the rows edit API against the row's own file, written with `applyFile`. After this task a PMO can run the portfolio from the grid alone. M3b is then complete, apart from Gantt zoom (Task 38).
+
+**Deliverables**
+
+- **Rows.** In a folder workspace, the grid shows the composed lines in composed order, from the piece map:
+  - the root's rows;
+  - each mounted file's rows, including its comment and blank lines;
+  - a mounted file's frontmatter as one collapsed, read-only row, like the root's.
+
+  Each row carries its `{ file, line }`.
+  - **Look:** mounted rows are shaded by mount depth, as in the text editor. Titles are indented at the row's composed tree depth, and outline numbers run across the whole plan, as in the views.
+  - **Alignment:** the grid publishes its layout keyed `{ file, line }`, so a following Gantt draws every row.
+  - **One file:** with no mounts, or in the single-file workspace, the grid behaves exactly as it does today.
+
+- **Cell edits on mounted rows.** Each edit calls the rows edit API against the row's own file's document (`model.files`), with `withRepairs` for that file, and is written with `applyFile`.
+  - The grid's columns are the root's. A cell writes to the column in the row's own file that the root column maps to, by role and then by name (`model.field`).
+  - A root column that maps to nothing in that file shows blank. Typing into it is refused: "_alpha.plan_ has no column for **owner**." Adding columns comes with the settings editor.
+  - **Markers.** A toggle writes the marker by name in the row's file. A file that doesn't declare the marker refuses it: "_beta.plan_ has no milestone marker."
+  - **Dependencies on mounted rows** resolve outline numbers within the row's own file. Missing IDs are minted in that file. An outline number that belongs to another file is refused: "Dependencies between plan files come later."
+  - **Comment and blank rows** of a mounted file are edited as raw lines, as today, written with `applyFile`.
+  - Every refusal leaves the cell as it was and shows its plain note, as today.
+- **Structure operations.** They work within the row's own file, through the rows edit API: insert above, delete, indent, outdent, move up, move down.
+  - **Insert above** a mounted row inserts into that row's file, at its level.
+  - **Outdent** of a mounted root is refused: "That would move it out of _alpha.plan_."
+  - **Move up and down** swap with a sibling in the same file only. They are disabled when the only neighbour is in another file, or is the segment's edge.
+  - **The new-task row** at the end of the grid adds to the root file, as now.
+  - The toolbar's enabled states follow these rules.
+  - **Moving a mount row** with Alt+Up/Down swaps it with its sibling in the root, and the segments recompose. This is how projects are reordered in the master.
+- **Mount rows:**
+  - The file badge's **Open** makes that file active, as in Task 35.
+  - **Unmount** is an action on the mount row (a toolbar button, and a menu on the badge). It clears the `mount=` cell, so the segment goes and the file on disk is untouched. It is one undo step, with no confirm.
+  - **Deleting a mount row** asks first: "Delete _Product A_? `teams/alpha.plan` stays as it is; it just won't be shown here." Its own children are promoted, as with any delete.
+- **Deleting a mounted task** needs no confirm, as with any delete without references, and is one undo step. The status line names the file: "Deleted _API_ from _alpha.plan_." Task 31's reference confirm also names the file when the row is mounted.
+- **Problems list and settings banner:**
+  - **Fixes in place.** Fix buttons now appear on entries from mounted files and apply with `applyFile`. Clicking an entry focuses its row in the grid, replacing Task 35's switch to the file. The grouping by file stays.
+  - **Banner.** The settings banner stays the root's. A mounted file's settings diagnostics appear in its group in the problems list, with their fixes.
+- **Speed.** Measure a committed cell edit on a ten-file, 5,000-line composition, in jsdom, the median of a few runs. If a full rebuild of the grid takes more than 150 ms there, stop and report the numbers with options (reusing unchanged rows, or virtualising) before choosing. Below that, note the figure and continue.
+- **Spec and docs:** plan-format-spec §4b (composed rows, the refusals, Unmount, the delete wording) and §3.7 if `applyFile` changes. Add "changed by Task 37" lines to the notes of Tasks 31 and 35.
+
+**Acceptance criteria** (on `examples/portfolio/`)
+
+- [x] The grid shows the master's rows, then alpha's and beta's rows in composed order, with outline numbers 1 to 3 and their children as in Task 35's table, and shading on mounted rows. With no mounts the grid is unchanged (existing tests). — `tests/app/shell-grid-composed.test.ts`, the first case: every body row by file, line and outline number, the `mounted` and `segment-depth-1` classes, titles indented at their composed depth, alpha's and beta's settings rows and the badge. Every existing grid test passes unchanged.
+- [x] Editing Build's estimate to `4d` in the grid writes `alpha.plan`'s text only. Product B moves to 64–96, which is Task 35's hand-worked value. One Ctrl+Z restores it. — the second case: Build reads Fri 9 – Wed 14 Oct and Product B Thu 15 – Tue 20 Oct in the schedule table, alpha alone is marked unsaved, nothing is written, the composed text differs only in alpha's line, and one Ctrl+Z gives back Wed 14 – Mon 19 Oct and the original text.
+- [x] Beta's `est` cell writes beta's `work` column, which is matched by role. Beta's `owner` cell writes beta's `owner`, which is matched by name. Typing into beta's `notes` cell is refused with "_beta.plan_ has no column for **notes**", since beta declares no notes column. — the third case: `Spec    | 2d | sam` in beta; a double-click and a printable key on the notes cell both open no editor and show "beta.plan has no column for notes.".
+- [x] The milestone toggle on a beta row is disabled with its tooltip, and Space gives the note, because beta uses the plan profile. Toggling done on a beta row writes `~` in `beta.plan`. _(Reworded after review: "is refused" became "is disabled with its tooltip, and Space gives the note".)_ — the fourth case: "beta.plan has no milestone marker." as the cell's tooltip and as Space's note; alpha's toggle is enabled; done writes `~Spec`.
+- [x] Dependencies: retyping Build's `deps` as `1.1` writes `#design` in alpha, reusing the anchor that's already there. Typing `2.1` there (Spec, which is in beta) is refused. — the fifth case. The cell already shows `1.1`, and committing it unchanged writes nothing (§4b.2), so the test clears the cell first, then types `1.1`: alpha's text is exactly as it was, `deps=#design` with no new anchor. `2.1` gives "Dependencies between plan files come later.", and so does `1.1` typed in Tradeshow's deps, a root row.
+- [x] Structure:
+  - insert above Spec inserts into beta;
+  - outdenting Design is disabled with its tooltip, and its key gives the note; _(reworded after review: it was "is refused")_
+  - Move up on Code swaps it with Spec within beta;
+  - Move up on Spec is disabled;
+  - Alt+Down on Product A swaps it with Product B in the master, and the segments follow.
+
+  — cases six to nine: `Review` before Spec in beta, then undone; Outdent disabled with "That would move it out of alpha.plan." as its tooltip and as Alt+Shift+Left's note; Code above Spec in beta, undone; Move up disabled on Spec with no tooltip; Alt+Down gives the master Product B then Product A, beta's segment after Product B and alpha's after Product A, outline numbers 1 Product B … 2.2 Build, and one Ctrl+Z restores the text exactly (this needed the two fixes to Task 36's buffer below).
+
+- [x] Unmount on Product B clears its cell: beta's rows leave the grid, and `beta.plan` is unchanged. One undo brings them back. — the Unmount case, from the toolbar; after the browser pass, a later case does it from alpha's header, and another opens the file from the header and from the badge.
+- [x] Deleting Product A asks with the wording above. Cancel changes nothing. Apply removes the row only. — the twelfth case. Product A is referred to by Product B's `deps=#a`, so the question goes on as Task 31's does: "Delete Product A? teams/alpha.plan stays as it is; it just won't be shown here. Product B refers to it in deps; that reference will be removed." Apply removes the row and that reference (decision 2 below), and alpha's file is untouched.
+- [x] A diagnostic in `beta.plan` (for example `4 hours` typed into a work cell) shows on that cell. Its entry in the problems list sits under beta's group and focuses the row, and its fix applies to `beta.plan`. — the fourteenth case. `4 hours` is typed in the text editor, since the grid normalises it to `4h`. Beta's work column also loses its units there, which gives a settings diagnostic with a fix. The cell has the warning, every entry names beta (it is the only group, so it has no heading, as in Task 35), clicking the warning focuses the cell, the settings banner stays hidden (it is the root's), and "Add unit=h hpd=8 dpw=5" puts beta's settings back.
+- [x] The Gantt, following the grid, draws all rows aligned, using injected measurements as in Task 29. — `tests/align/grid-composed.test.ts`: the grid's layout has all fourteen body rows in composed order, keyed by file and line, and the Gantt draws the seven item rows at their tops.
+- [x] The speed figure is recorded, or the task stopped to ask. — It stopped and asked (4,457 ms for a full rebuild); reusing rows was chosen. Figures under Timing below.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 4,090 tests (3,866 before); typecheck, lint and `vite build` clean.
+- [x] **Browser pass in Edge, on `examples/portfolio/` and a real folder:** pending review (there is no browser here). Also check there: the mount rows as headers in both editors and both themes, and the segment border from the mount row down.
+  - edit cells in two team files from the master;
+  - reorder two projects;
+  - Unmount, then undo;
+  - delete a mount row;
+  - apply a fix to a team file from the problems list;
+  - check grid and Gantt alignment;
+  - save.
+
+**Visible changes:**
+
+- In a folder, the grid shows every file the active file mounts, in composed order:
+  - mounted rows shaded, with a border on the left;
+  - each mounted file's settings as one collapsed row;
+  - titles indented at their depth in the whole plan, and outline numbers across it.
+- **Editing in place.** Mounted rows' cells, markers, dependencies and structure operations edit their own file, and the file panel marks it unsaved.
+- **Refusals and disabled controls** that name the file:
+  - "beta.plan has no column for notes.";
+  - the milestone toggle disabled with "beta.plan has no milestone marker.";
+  - Outdent disabled on a mounted file's root with "That would move it out of alpha.plan.";
+  - the keys give the same notes.
+- "Dependencies between plan files come later." for an outline number in another file, from any row; it was "There's no task 2.1." before.
+- **The file badge** on a mount row's title, with a menu: Open and Unmount. Unmount is also a toolbar button. _(Changed after the browser pass: the menu moved to the header below, and the badge opens its file, as in the views.)_
+- **The mount row is the segment's header** _(after the browser pass; this replaces the header row that was first added here, and the text editor's header block widget from Task 36)_:
+  - **In the grid,** the mount row whose file is shown under it has the header background, and its title cell shows the badge, then ● when that file has unsaved changes, then Open and Unmount.
+  - **In the text editor,** the mount line has the same background, with ●, Open and Unmount as an inline widget at the line's end. The block widget above the segment is gone, so segments sit directly under their mount line, and the Gantt following the text editor moves up with them.
+  - **The border** starts at the mount row and runs to the segment's last row. The mount row's own master children are inside it, unshaded.
+  - **The controls** in a cell are out of the tab order, as the checkboxes are. The row stays focusable and editable.
+  - Mounted rows are shaded with the text editor's segment tokens, `--mounted-row-bg` and `--segment-border` from `theme.css`, at every depth.
+  - The hover and cursor bands now show over that shading; before, the shading hid them on mounted rows.
+  - Switching editors now marks unsaved files at once: the shell tells a newly mounted editor which files are unsaved.
+- **Deletes:**
+  - a mount row asks first;
+  - a mounted task's delete names its file on the status line;
+  - the reference question names the file of a mounted row.
+- **The problems list:** fixes for mounted files' problems in place, and a click focuses the row instead of opening the file. Inline marks show every file's diagnostics.
+- **The Gantt** following the grid draws every row of every plan.
+- **Moving a mount row** reorders projects, and one undo puts them back.
+- **Mounting from the grid** _(added after the browser pass)_:
+  - A toolbar button, **Mount plan…**, enabled on an item row in a folder workspace. It reads **Change mounted plan…** on a row that already mounts. In the single-file workspace it is disabled with "Open the folder to mount plans.".
+  - It opens a picker of the folder's `.plan` files, with a filter, below the toolbar.
+  - Disabled, each with its reason as the tooltip:
+    - the row's own file;
+    - a file that would make a loop, above the row or through its own mounts;
+    - a file shown elsewhere in the plan;
+    - the file the row mounts now.
+  - Choosing a file writes `mount=` with the path relative to the row's file, as one undo step.
+- **Line operations in the composed text editor** _(added after the browser pass; this replaces Task 36's decision 3)_:
+  - Alt+Up/Down, and Tab and Ctrl+/ on a selection, act on the lines of the file the cursor is in, not on composed lines.
+  - A move swaps with the previous or next line in that file, and the segments recompose: Alt+Down on Product A gives Product B, beta's segment, Product A, alpha's segment.
+  - Moves stay raw: the line, not its subtree.
+  - On a file's first or last line a move does nothing, without a message; before, Alt+Down on a segment's last row or on a mount row was refused with "Edits can't cross from one plan file into another."
+  - Only a selection spanning two files is refused.
+  - When a segment comes in at the start of the cursor's line, the cursor stays on that line, after the segment.
+- **The single-file grid** rebuilds much faster: a 5,000-line file took about 3.3 s per rebuild in jsdom, and a commit is now under 150 ms.
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **The column mapping is visible to editors.** Core adds `Model.column(node, index)`: the row's own declared column for a root column, or null. `field` stays as it was. Plan spec §3.2, PLUGINS.md §4 and §6.
+2. **Deleting a mount row others refer to** asks one combined question, the mount-row sentence and then Task 31's, and Apply removes the row and those references. "Apply removes the row only" means it leaves the file alone.
+3. **Wording.**
+   - A file is named by its last path segment, unless two files in the composed plan share it; those are named by their path in the folder (`tests/grid/file-names.test.ts`, with two `plan.plan` files).
+   - The mount-row confirm names the mount's path.
+   - Messages are plain text; the task's italics and bold were emphasis.
+   - A mounted row's reference question: "Delete API from alpha.plan? UI refers to it in deps; that reference will be removed."
+4. **The status line** is a `GridHooks.status` hook. Only a mounted task's delete reports: "Deleted API from alpha.plan.". A root task's delete stays silent, as before.
+5. **The badge and Unmount.** _(Changed after the browser pass: the badge's menu went; the badge opens its file, as in the views; Open and Unmount are on the segment's mount row, its header; the toolbar's Unmount stays.)_
+   - The grid's mount rows get the file badge. Clicking it opens a menu with Open and Unmount.
+   - The toolbar's Unmount is enabled on any row with a `mount=` cell: a mount that shows nothing, and a nested mount row in a team file, which is cleared in its own file.
+   - Unmount is `setCell(doc, row, mountColumn, null)`, so rows doesn't change.
+6. **An outline number in another file is refused from any row**, root rows included.
+7. **Controls follow §4b.5** _(changed after review)_: no control is enabled so that its refusal can show.
+   - Outdent on a mounted root and a milestone toggle on a file without the marker are disabled, with a tooltip saying why.
+   - Their keys give the same note.
+   - A mounted file without a done marker gets the same treatment for done.
+8. **The grid shows the composed view itself.** It builds its rows from the piece map and writes every edit with `applyFile(file, …)`, line operations on comment and blank rows included, on that file's own text. Before writing, it checks that the model read the file's current text. `fileBuffer` is removed, as nothing uses it. The single-file workspace is unchanged.
+9. **Speed: reuse rows** _(chosen after the stop)_.
+   - Each row element is kept by its `{ file, line }`, followed through the edits since the last build. That way, a row inserted above a row doesn't make it new.
+   - Every cell is described as a spec, and only cells whose spec changed are redrawn.
+   - Checkbox and badge handling moved to the table (the checkbox's `change` in the capture phase), so a kept cell acts on the current model's row.
+   - Safety net: `tests/grid/reuse.test.ts`. Over 40 seeded sequences of 12 edits on the portfolio, and 20 each on `example.plan` and `schedule.plan`, the kept grid's DOM equals a freshly mounted grid's after every step. The edits are commits, inserts, deletes, moves, indent and outdent, done, unmount, undo and redo. The comparison sorts attributes and leaves out the place and hover.
+   - More than half the steps change the text (417 of 720 and 493 of 720 when measured), and the test asserts that.
+   - A planted bug (the total row not updated after the first build) fails both cases at seed 1.
+
+**Decisions taken** (by me, within the task; please check):
+
+- **The live row list** _(accepted after the stop)_. The grid walked `table.tBodies[0].rows` (hover, layout) and built with `insertRow` and `insertCell`. In jsdom every read of that live collection scans it, so each rebuild was quadratic. It now keeps its body rows in an array, and creates rows and cells directly.
+- **Two fixes to Task 36's buffer** _(accepted after the stop)_: see Task 36's notes, "Changed by Task 37".
+- **Opening a draft** places only the draft row among the kept rows, instead of rebuilding the grid.
+- **`lineAt`** in the grid finds newlines with `indexOf` instead of reading every character.
+- **What the grid keeps across a rebuild.**
+  - Notices and the badge menu go on each build, as they did when the table was rebuilt.
+  - An open cell editor whose cell is unchanged stays open; before, a rebuild removed it.
+  - The header and total rows are built afresh each time.
+- **Small API changes:**
+  - `GridHooks.onOpenFile(path)` (the badge's Open) has no line now;
+  - `GridHooks.status`;
+  - `mountGrid` takes `PlanBuffer & Partial<ComposedSource>`;
+  - `ProblemsHooks.write(host, file, make)` returns whether the edit was made, and `open` is gone;
+  - `Problems.run(host, fix, file, { onCancel, onApply })`.
+  - In `src/grid/edits.ts`: `docIn`, `docOf`, `fileLabel`, `cellColumn`, `noColumn`, `hasMarker`, `unmount`; `levels`, `canMarkDone` and `insertItem` take an optional file; `isRefColumn` takes the node.
+- **New CSS** in `src/grid/grid.css` for mounted rows, the badge and its menu, using existing theme tokens.
+- **Mounting from the grid** _(after the browser pass)_:
+  - **Core:** `src/core/mounting.ts`.
+    - `relativePath(from, to)`, the inverse of the workspace's `resolve`.
+    - `mountRefusal(model, row, target, mountsOf)`, which applies composition's rules to a mount not yet written: the row's own file, a file above the row (mount-loop), a file shown elsewhere except what the row shows now (mount-overlap), and a file whose own mounts reach a file above the row. Its messages are composition's, now shared as `mountWhy` in `src/core/compose.ts`; the mount diagnostics read the same.
+  - **Grid:**
+    - `GridHooks.plans()`, which the shell gives only in a folder: the `.plan` files, each with its mounts, read the way gathering reads them.
+    - `mountOn` in `src/grid/edits.ts`.
+    - The picker shows where the delete confirm does, and is dropped by any model update, as that confirm is.
+  - **Decided here:**
+    - only `.plan` files are offered, though `workspace.list()` also returns `.rows` files;
+    - the file the row mounts now is disabled, "This row mounts it already.";
+    - the reasons are core's own wording.
+  - **The truncated instruction** "including ..." was read as paths that go up with `..`: they are tested by hand and over every pair in a small tree.
+  - **Seen while testing, not changed:** CodeMirror's history joins two edits that carry no user event when they touch and are less than 500ms apart, so a grid edit made right after another, on the same line, can share its undo step. This is as before, in the single-file grid too. The test waits past it, since a person takes longer.
+- **Line operations on a file's lines** _(after the browser pass)_:
+  - The keymap finds the file the selected lines are in, runs the line operation on that file's text, and dispatches the edits placed through the piece map with `placeInFile` (new in `src/buffer/composed.ts`). That is the same placement and annotation as `applyFile`, so routing, settling and undo are the same.
+  - Two details found by the tests:
+    - A recompose maps the selection with the segment before the cursor: Alt+Down with the cursor at the start of Product A's line had left it on beta's `---`.
+    - A file's last line has no line below, even when the file ends with a newline.
+  - A single file keeps its exact old path.
+
+**Timing** (jsdom, Vitest, ten files with 5,009 composed lines and 4,979 grid rows, medians of 20 commits and 10 inserts; no timing test):
+
+| Measurement                                            | Edit  | Analysis | Rebuild  | Total  |
+| ------------------------------------------------------ | ----- | -------- | -------- | ------ |
+| Before reuse: full rebuild, as stopped                 |       |          | 4,457 ms |        |
+| Committing a cell (Task 30.3's estimate in team 5)     | 60 ms | 22 ms    | 56 ms    | 138 ms |
+| Inserting a row near the top (above team 1's Task 0.1) | 41 ms | 21 ms    | 74 ms    | 136 ms |
+
+- Each total is under 150 ms in three runs, the highest 144 ms.
+- **First opening the portfolio:** analysis 145 ms, and the first build of the grid about 1,030 ms. The first build creates every row.
+- **For comparison:** before this task, one rebuild of a single 5,000-line file took about 3.3 s.
+
+**Rewritten tests:**
+
+- `tests/app/shell-portfolio.test.ts`: "the problems list names each file; a mounted file's problem offers no fix and opens its file" became "the problems list names each file; a mounted file's problem focuses its row in the grid (Task 37)". The master stays active, and the place is on Test in alpha's segment.
+
+- After the browser pass, for the mount row as header:
+  - `tests/app/shell-grid-composed.test.ts`: "the badge's menu opens the file, or unmounts it" became five cases:
+    - the mount row as header: no header rows, its class, its title cell's badge, ●, Open and Unmount out of the tab order, ● after an edit in beta and gone after the undo, the border's rows, and its title still edited as before;
+    - the mount row's own master children inside the border, unshaded;
+    - ArrowDown from the mount row going straight into the segment;
+    - its Unmount undone with one Ctrl+Z;
+    - its Open, and the badge, making the file active.
+  - `tests/align/grid-composed.test.ts`: the grid's layout has no header rows; the Gantt's rows have no empty rows between them.
+  - `tests/app/shell-composed.test.ts` (the text editor):
+    - "numbers each file's lines as its own, and heads each segment with its path and an Open button" now checks that there is no header block, and that each mount line has the header class and Open and Unmount, out of the tab order;
+    - the unsaved marker is looked for on alpha's mount line;
+    - a new case: the mount line's Unmount undone with one Ctrl+Z, and its Open.
+  - `tests/align/composed.test.ts`: the tops lose the 24px header above each segment: alpha's line 1 is at 120, not 144, and so on.
+  - `tests/support/layout.ts`: `editorLayout` no longer counts header blocks, which no longer exist.
+  - `tests/grid/reuse.test.ts` is unchanged and still holds.
+- After the browser pass, for mounting from the grid:
+  - `tests/app/shell-portfolio.test.ts`: the single-file case also checks Mount plan… disabled, with its tooltip.
+  - `tests/app/shell-grid-composed.test.ts`: the test folder gains `teams/gamma.plan` and `teams/loop.plan`, which mounts `../portfolio.plan`. New cases:
+    - mounting `teams/beta.plan` on a new master row composes it, and one Ctrl+Z undoes it;
+    - changing Product B's mount to gamma, and its undo;
+    - the disabled files with their reasons, and the filter and Escape;
+    - a nested mount written from Build, in alpha, as `mount=gamma.plan`.
+  - New: `tests/core/mounting.test.ts`, for `relativePath` (round trips through `resolve`, including `..`) and `mountRefusal`.
+- `tests/app/shell-composed.test.ts` _(after the browser pass)_: "refuses Alt+Down on a segment's last row and on a mount row; inside a segment it works" became the group "line operations act on the lines of the cursor's file (Task 37)", with six cases, each undone with one Ctrl+Z:
+  - Alt+Down on Product A gives Product B, beta's segment, Product A, alpha's segment, with the cursor still on Product A;
+  - Alt+Up on Product B gives the same;
+  - a move inside a segment is as before;
+  - Alt+Down on a segment's last row does nothing, with no message;
+  - a selection spanning the master and a segment is refused, for Alt+Down and for Tab;
+  - a mount row with its own master child moves without it.
+
+No other existing test changed.
+
+**New tests:**
+
+- `tests/app/shell-grid-composed.test.ts`: the acceptance criteria through the shell, plus the badge menu and saving the master and beta.
+- `tests/align/grid-composed.test.ts`: the Gantt following the composed grid.
+- `tests/grid/reuse.test.ts`: the reuse property.
+- `tests/grid/file-names.test.ts`: two `plan.plan` files.
+- In `tests/buffer/pieces.test.ts`:
+  - the deletion moved one character on, by hand and over 200 seeds;
+  - recomposing that keeps the root's lines.
+
+**Spec and docs:**
+
+- plan-format-spec:
+  - §2.12: the grid's inline diagnostics;
+  - §3.2: `Model.column`;
+  - §3.3: a click on a mounted row moves the grid's place;
+  - §3.4: the grid over the composed buffer, its rows keyed by file and line;
+  - §3.7: `place` moving a line's deletion, recomposing root lines first, and the grid writing every row;
+  - §4b.1: composed rows, and the new-task row in the root;
+  - §4b.4 and §4b.5: Unmount, mount rows, disabled controls with tooltips;
+  - §4b.6.3: fixes in place;
+  - the new §4b.7, mounted rows: columns, markers, dependencies, structure, mount rows, deletes, file names, rebuilding;
+  - §5.5: the Gantt following the grid;
+  - after the browser pass, §4.3 (line operations on the lines of the cursor's file, and the cursor across a recompose) and §4b.6.4 (text-editor keys in a composed text);
+  - after the browser pass, §3.4 (no header rows or blocks), §4b.1 (shading), §4b.7 (the mount row as the segment's header) and §4.5 (the mount line as the header, in the text editor);
+  - after the browser pass, §4b.5 and §4b.7 (Mount plan…); PLUGINS.md §8 (`mounting.ts` in core).
+- PLUGINS.md §4 and §6: `Model.column`, and the grid reading cells through `field`.
+- VISION §6: no change; nothing here departs from it.
+- No rows change.
+- Tasks 31, 35 and 36's notes say what this task changed.
+- The plan spec has no draft version, so none was bumped.
+
+**Human review:** the routing of cell edits through column mapping first. It decides which file and which column every portfolio edit lands in.
+
+---
+
+## Task 38 — Dated milestones
+
+**Serves:** M3b, from Task 37's browser pass (VISION §5). A milestone can now be placed on a date, for a tradeshow, a release date or a board meeting. Today, a milestone's start pin converts at the start of its day, while a milestone shows the end of its day, so a pinned milestone displays a day early. A milestone with no date and no dependency also silently sits at the project start.
+
+**Rules**
+
+1. **A milestone's start pin converts at the end of its day**, `fromDate(d, 'end')`. The milestone then shows on the pinned date, and work that depends on it starts the next working day. Other rows' pins are unchanged (`'start'`). Add a one-line comment at the conversion saying why the edge differs.
+2. **It's still a floor**, as every pin is. If its predecessors finish later, the milestone moves with them and gets `schedule-pin-no-effect`, as any pin does.
+3. **A fixed event is a pin plus a deadline on the same date.** No new rule is needed for it: the deadline also converts at `'end'`, so a milestone kept on its date isn't late, and one pushed past it is.
+4. **A pin on a non-working day.** A milestone pinned to a Saturday or Sunday converts to the end of the last working day before it, and gets the info `schedule-milestone-nonworking`: "_Show_ falls on Sat 24 Oct, so it's shown on Fri 23 Oct."
+5. **An undated milestone** gets the info `schedule-milestone-undated`, "_Some task_ has no date or dependency, so it sits at the project start." A milestone counts as undated when it has no dependency of its own, no start pin of its own, and no ancestor with either. When the row has a `due` and the file has a column bound to `start`, the info carries the click fix **"Use its due date as its date"**. The fix writes the `due` value into the `start` cell with `setCell` (through `applyFile` when the row is mounted), as one undo step.
+
+**Deliverables**
+
+- The rules above, in the schedule plugin, each with its diagnostic codes in spec §2.9.
+- `fromDate` for a non-working day at `'end'`, defined as in rule 4. Check that the calendar already does this, and add the case to the calendar tests if it doesn't.
+- **`toDate(0, 'end')` is hour 0's own day**, since there is no working hour before hour 0: `project-start`'s day, or the Monday after a weekend `project-start`, the same as `toDate(0, 'start')`. This is how a milestone at the project start shows its date. Add it to the calendar tests.
+- **Spec:** §2.11 for milestone pins, fixed events and undated milestones; §5.5, the Gantt places a pinned milestone's diamond at its date.
+- **Notes:** add "changed by Task 38" lines to the notes of Tasks 28 and 30, which describe milestone pins converting at `'start'`. VISION is already updated (§5, Milestones and Deadlines).
+
+**The test file:** written by hand, `tests/fixtures/milestones.plan`, with `profile: schedule` and `project-start: 2026-10-05` (Monday, hour 0, 8 hours a day).
+
+| Row            | Cells                                               |
+| -------------- | --------------------------------------------------- |
+| Prep `{#prep}` | est 16d                                             |
+| `^`Show A      | start 2026-10-23                                    |
+| `^`Show B      | start 2026-10-23, deps `#prep`                      |
+| `^`Show C      | start 2026-10-23, deps `#prep`, due 2026-10-23      |
+| `^`Show D      | start 2026-10-24                                    |
+| `^`Some task   | due 2027-11-29                                      |
+| After A        | est 1d, deps `#showa` (anchor Show A as `{#showa}`) |
+
+Expected values, worked out by hand. Never take them from output, and if one disagrees, stop and report it. Fri 23 Oct is day 14, so its end is hour 120. Mon 26 Oct is day 15, and its end is hour 128.
+
+| Row       | start / finish | Shown               | Gantt x (days) | Diagnostics                                |
+| --------- | -------------- | ------------------- | -------------- | ------------------------------------------ |
+| Prep      | 0 / 128        | Mon 5 – Mon 26 Oct  | 0, width 16    |                                            |
+| Show A    | 120            | Fri 23 Oct          | 15             |                                            |
+| Show B    | 128            | Mon 26 Oct          | 16             | `schedule-pin-no-effect`                   |
+| Show C    | 128            | Mon 26 Oct, late    | 16             | `schedule-pin-no-effect`, `schedule-late`  |
+| Show D    | 120            | Fri 23 Oct          | 15             | `schedule-milestone-nonworking`            |
+| Some task | 0              | Mon 5 Oct           | 0              | `schedule-milestone-undated`, with its fix |
+| After A   | 120 / 128      | Mon 26 – Mon 26 Oct | 15, width 1    |                                            |
+
+Applying Some task's fix writes `start=2027-11-29` on its row. The row then sits at the end of Mon 29 Nov 2027 and loses the info. One Ctrl+Z restores it.
+
+**Acceptance criteria**
+
+- [x] The fixture test asserts every cell of the table above, including each diagnostic's code, row and severity, and the Gantt geometry. — `tests/schedule/milestones.test.ts`, written from the table: start and finish, the schedule table's two date cells and late outline, the Gantt mark's kind, x and width (dayWidth 1), and the exact diagnostics list with code, row, severity and source. The code agreed with every value on the first run. The fix's result is checked too: one changed line, `start=2027-11-29` on Some task's row, start hour 2408 (day 300's end, worked by hand: 60 weeks after Mon 5 Oct 2026), shown as Mon 29 Nov 2027, and no undated info.
+- [x] The fix applies in the grid and the text editor, and in a mounted file through `applyFile`. It's absent when the row has no `due`, and when no column is bound to `start`. — `tests/editing/milestone-fix.test.ts`: the text editor and the grid on a file of their own, then the composed text editor and the composed grid writing a mounted team file only. Each is undone by one Ctrl+Z. The two absences are in `milestones.test.ts`.
+- [x] Unchanged: Task 28's fixture, Task 30's geometry table, Task 35's portfolio and `examples/demo.plan`. None of them pins a milestone. — Every value is unchanged, and every milestone in them has a dependency, so none gets a new info. Task 28's fixture test (and `tests/grid/m1.test.ts`, which rebuilds it) gains `edge: 'end'` on Beta ready's `start`, and its `schedule-late` message is reworded (below).
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 4,171 tests (4,128 before); typecheck, lint and `vite build` clean.
+- [x] **Browser pass in Edge:** pending review (there is no browser here). Put a tradeshow in the portfolio master as a pin plus a deadline on the same date. Make a team's work push past it, and check that it shows late on the Gantt. Apply the undated fix.
+
+**Visible changes:**
+
+- Pinned milestones show on their date.
+- The two new infos and the fix.
+
+**Not in this task:**
+
+- Pinning a finish date.
+- Hard (must-start-on) pins.
+- Gantt zoom (Task 39).
+
+**Decisions taken** (asked and answered before any code was written):
+
+- **How a stage builds a fix:** a new `StageContext.cellEdit(node, role, text): TextEdit[] | null`. It returns the edits that write that cell in the node's own file, from rows' `setCell`, in that file's offsets, or null when the role is unbound there or rows refuses. It never applies anything. PLUGINS.md §5 documents it as the way a stage builds a fix, and says a stage diagnostic's fixes go through `applyFile` by its `file`.
+- **A date's edge travels on the value:** `Pinnable` gains `edge?: 'start' | 'end'`, meaningful for `kind: 'date'`, with unset meaning `'start'`. The forward stage sets `'end'` on every milestone's `start`, pinned or not. Core's `formatPinnableDate(t, edge, calendar)` formats it, and the pin review, the schedule table's shown and muted dates, and the Gantt tooltip all use it. `schedule-pin-no-effect` gives a milestone's date at the same edge. PLUGINS.md §4 documents it.
+- **`toDate(0, 'end')` is hour 0's own day**, the same as `toDate(0, 'start')`, so with a weekend `project-start` it is the Monday after it. The deliverable is reworded to match.
+- **Dates in messages read as the views show them.** `formatDate` moved from `src/ui/dates.ts` to `src/core/dates.ts`, beside `formatPinnableDate`. `src/ui/dates.ts` is removed, and the `src/ui` lint rule is unchanged (it may import only core types). Every schedule message that shows a date uses it, `schedule-late` included.
+
+**Decisions taken** (by me, within the task; please check):
+
+- **"A dependency of its own" means a filled `deps` cell,** a reference value in the column bound to `deps`, whether or not the link survives cycle removal. A milestone whose only link is in a cycle already has `schedule-dep-cycle`, and telling it that it has no dependency would be wrong.
+- **Non-working is detected through the calendar,** with no weekday arithmetic in the stage: the pin's day is not worked when `toDate(pin, 'end')` comes before the pinned date. A holiday calendar would then report holidays too. A weekend pin before `project-start` (Sat 3 Oct with a Mon 5 Oct start) gets no info: it converts to hour 0, which shows on Mon 5 Oct, later than the pin, not earlier.
+- **The undated info has no span**: it is about the row, not a cell. The non-working info's span is the start cell.
+- **The messages use the task's wording**, with the row's title written plainly ("Show D falls on Sat 24 Oct, so it's shown on Fri 23 Oct."). They are the plugin's only messages written as sentences with the title, as the task gives them; the others stay lower-case fragments.
+- **The schedule table's muted derived date follows its existing rule**: it shows whenever a start is pinned, even when equal to the shown date. So Show B reads `Mon 26 Oct ⟨Mon 26 Oct⟩`, and Show A `Fri 23 Oct ⟨Mon 5 Oct⟩`.
+- **`cellEdit` shares the role-column lookup with `cell`** (`roleColumn` in `analyze.ts`), so both read the same column in the node's own file.
+
+**Visible changes:**
+
+- A milestone with a start pin shows on its pinned date in the schedule table, the Gantt (diamond and pin mark) and the tooltip. Work that depends on it starts the next working day.
+- A milestone pinned to a Saturday or Sunday shows on the Friday before, with the info `schedule-milestone-nonworking` on its start cell.
+- A milestone with no date or dependency, its own or an ancestor's, gets the info `schedule-milestone-undated`. When the row has a `due` and the file has a start column, the info carries the click fix "Use its due date as its date", in the text editor (a lint action) and the grid (the problems list), on a mounted file too.
+- The pin review shows a milestone's pin, derived and effective dates at the end edge: Show A's pin reads Fri 23 Oct (it would have read Mon 26 Oct).
+- The schedule table shows a pinned milestone's muted derived date at the end edge: Show B reads `Mon 26 Oct ⟨Mon 26 Oct⟩` (it would have been `⟨Tue 27 Oct⟩`).
+- In the composed text editor, a segment's line numbers are in the segment's colour, dimmer than the root's, on the segment's shading (from the browser pass): alpha's last line, 7, no longer reads as a duplicate of Product B's 7. A new theme token, `--segment-gutter-fg`, has a light and a dark value; the gutter cells take the class `cm-segment-gutter`.
+- A row at hour 0 shown at the end edge (a milestone or a zero-length row at the project start) shows `project-start`'s day, not the working day before it.
+- `schedule-late` reads "finishes Tue 13 Oct, after its deadline Mon 12 Oct" (was "finishes 2026-10-13, after its deadline 2026-10-12"). `schedule-pin-no-effect` names its date the same way ("…; the row starts Tue 6 Oct", was "…; the row starts 2026-10-06"), and gives a milestone's at the end edge: Show B's reads Mon 26 Oct.
+
+**Rewritten tests:**
+
+- `tests/schedule/fixture.test.ts`: Beta ready's expected `start` gains `edge: 'end'` (its numbers are unchanged), and the `schedule-late` message is "finishes Tue 13 Oct, after its deadline Mon 12 Oct" (was "finishes 2026-10-13, after its deadline 2026-10-12").
+- `tests/grid/m1.test.ts`: Beta ready's expected `start` gains `edge: 'end'`, as above.
+- `tests/schedule/schedule.test.ts`: "schedule-late: the finish passes the row's own deadline" expects "finishes Tue 6 Oct, after its deadline Mon 5 Oct" (was "finishes 2026-10-06, after its deadline 2026-10-05").
+- `tests/composition/mounts.test.ts`: "keep its file, with lines in it…": the team's `^M | 1d` has no date or dependency, so it also gets `schedule-milestone-undated`, in `t.plan` on line 5.
+- `tests/app/shell-composed.test.ts`: "numbers each file's lines as its own…" also checks which gutter numbers carry `cm-segment-gutter`: alpha's 1–7 and beta's 1–8, and none of the master's.
+- `tests/schedule/demo.test.ts` and `tests/grid/m1.test.ts` import `formatDate` from `src/core` (was `src/ui/dates`). No assertion changed.
+
+**New tests:**
+
+- `tests/schedule/milestones.test.ts` on `tests/fixtures/milestones.plan`: the table; the messages; the fix and its result; the fix's absence with no `due` and with no start column; which milestones count as dated (a dependency or pin of their own or an ancestor's); no info on a task; the pin review, the table's muted date and the Gantt tooltip at the milestone's edge, with a task's pin still at `'start'`; and `ctx.cellEdit` on a mounted row, whose edits are in the team file's offsets and change nothing in the model or the files until applied.
+- `tests/editing/milestone-fix.test.ts`: the fix in the text editor and the grid, and on a mounted file through `applyFile` in the composed text editor and the composed grid, each undone by one Ctrl+Z.
+- `tests/core/calendar.test.ts`: Sat 24 Oct and Sun 25 Oct at `'end'` are hour 120 (end of Fri 23 Oct); `toDate(0, 'end')` is hour 0's own day, Mon 5 Oct, and the Monday after a weekend `project-start`. The calendar already converted a weekend day's end to the Friday before (an existing test checks Sat 10 Oct); the 24 Oct case is added.
+
+**Moved imports:** `formatDate` is imported from `src/core` (was `src/ui/dates`) in `src/plugins/schedule/renderers/table.ts`, `src/plugins/schedule/renderers/gantt/index.ts`, `src/plugins/schedule/renderers/gantt/geometry.ts`, `src/views/pins/index.ts` (which now imports `formatPinnableDate` only), `tests/schedule/demo.test.ts` and `tests/grid/m1.test.ts`. The schedule stages import `formatDate` and `formatPinnableDate` from core.
+
+**Spec and docs:**
+
+- plan-format-spec §2.11: a milestone's start pin converts at `'end'`; dates in messages as §5.4 shows them; the new milestone bullets (pins, non-working days, fixed events, undated milestones and the fix); `schedule-late`'s example message; `schedule-pin-no-effect` names the effective start at its edge; two rows in the diagnostics table. (§2.9 has no schedule example of its own; its table points at §2.11.) §4.5: a segment's gutter numbers in `--segment-gutter-fg`. §5.4: starts at their own edge, `toDate(0, 'end')`, a milestone's muted derived date. §5.5: a pinned milestone's diamond and pin mark. §5.6: date pins at the value's edge.
+- PLUGINS.md §4: `Pinnable.edge` and `formatPinnableDate`. §5: `cellEdit`, and fixes from a stage go through `applyFile` by their file. §7.2: a milestone's start pin converts at `'end'`, and `toDate(0, 'end')`. §8: dates in core, not `ui/`.
+- Tasks 28 and 30: "Changed by Task 38" notes.
+
+**Human review:** read `tests/schedule/milestones.test.ts` against the table first, then `forward.ts`'s pin conversion and the two infos.
+
+---
+
+## Task 39 — Gantt zoom
+
+**Serves:** M3b, for the 18-month portfolio view (VISION §6, §7). The Gantt gets Day, Week and Month scales, plus Fit, which makes the whole plan fit the pane. The time axis is unchanged: working days, with weekends taking no space. Only the width of a working day and the scale's labels change. This task completes M3b.
+
+**Deliverables**
+
+- **Scales**, each a `dayWidth` (px per working day) and two tiers of labels. The geometry function returns all of it:
+
+  | Scale | `dayWidth`                                  | Top tier                                                        | Bottom tier                                               |
+  | ----- | ------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------- |
+  | Day   | 24                                          | each week's first working day, `Mon 5 Oct` (today's scale)      | day letters                                               |
+  | Week  | 6                                           | each month, `Oct 2026`, at its first working day                | each week's first working day, its day number (`5`, `12`) |
+  | Month | 1.5                                         | each year, `2027`, at its first working day                     | each month, `Oct`, at its first working day               |
+  | Fit   | the pane's chart width ÷ the extent in days | as Day, Week or Month, whichever `dayWidth` is nearest by ratio | as the chosen tier                                        |
+  - **Where labels go.** A month or year label sits at the first working day on or after its 1st, from `calendar.fromDate(d, 'start')`. The period that holds hour 0 is labelled at x = 0, so the chart always has a label at its left edge.
+  - **Overlap.** A label that would overlap the one before it in its tier is left out, by the geometry function rather than the renderer.
+  - **Header height.** The two-tier header keeps the same height at every scale, so the height reported with `reportHeaderHeight` doesn't change.
+
+- **Marks at small widths:**
+  - A bar is at least 2px wide, so short tasks stay visible.
+  - Milestone diamonds, pin marks and deadline markers keep their size at every scale.
+  - A summary bracket narrower than its end caps draws as a bar.
+  - The vertical lines (deadlines, project finish, today) and the cursor and hover bands are unchanged.
+- **`ganttGeometry(model, layout, scale, today, chartWidth)`.** It stays pure, with scale and width passed in, and the `dayWidth = 1` tests from Task 30 still hold through it. The extent rule from Task 30 is unchanged.
+- **Control:**
+  - **Picker.** A segmented control in the Gantt's header: **Day · Week · Month · Fit**. It's keyboard reachable, and arrow keys move between the options.
+  - **Remembered.** The choice is kept per viewer in `localStorage`, like the last-used editor, and defaults to Fit.
+  - **Switching keeps your place.** The date at the left edge of the view stays at the left edge after the switch. With Fit there's nothing to keep, since everything shows.
+  - **Resizing.** Fit recomputes when the pane is resized, through a `ResizeObserver`.
+- **Alignment:** vertical alignment is untouched, so every Task 29 and Task 37 alignment test passes unchanged. Horizontal scrolling stays the Gantt's own.
+- **Spec:** plan-format-spec §5.5 (scales, tiers, label placement, the minimum width, the control).
+
+**Hand-worked values.** Never take them from output. If one disagrees, stop and report it.
+
+On `examples/schedule.plan` (Task 28), with its extent of 8 days (Task 30):
+
+- **Week:**
+  - Wireframes at x 0, width 6. UI at x 30, width 12. Beta ready's diamond at x 42. The deadline line at x 36.
+  - Top tier: `Oct 2026` at 0.
+  - Bottom tier: `5` at 0, `12` at 30.
+- **Month:**
+  - UI at x 7.5, width 3. Review's 0.5 days is 0.75px, shown at the minimum 2px.
+  - Top tier: `2026` at 0.
+  - Bottom tier: `Oct` at 0.
+- **Fit at a chart width of 480px:** `dayWidth` is 60. By ratio it's nearest Day (2.5× its 24, against 10× Week's 6), so it uses Day's tiers.
+
+On a new fixture, `tests/fixtures/long.plan`, with `profile: schedule`, `project-start: 2026-10-05`, and one row `Long | 400d`:
+
+- The extent is 401 days.
+- **At Month:**
+  - Bottom tier: `Oct` at 0, `Nov` at 30 (2 Nov is day 20), `Dec` at 61.5 (1 Dec is day 41), `Jan` at 96 (1 Jan 2027, a Friday, is day 64).
+  - Top tier: `2026` at 0 and `2027` at 96.
+- **At Week:** the 2 Nov week's label is at x 120.
+- **Fit at a chart width of 802px:** `dayWidth` is 2. By ratio it's nearest Month (1.33× its 1.5, against 3× Week's 6), so it uses Month's tiers.
+
+**Acceptance criteria**
+
+- [x] The geometry tests assert every value above. Task 30's table and Task 38's milestone geometry still pass at `dayWidth` 1. — `tests/schedule/gantt-zoom.test.ts`, written from the values above. The code agreed with every one on the first run. Task 30's table and Task 38's geometry pass at `{ dayWidth: 1, tiers: 'day' }`, checked on `width`, unchanged.
+- [x] Label overlap: at Month with `dayWidth` 0.5, no two labels in a tier overlap, and the dropped ones are the later of each clashing pair. — "label overlap" in `gantt-zoom.test.ts`, at `{ dayWidth: 0.5, tiers: 'month' }` on `long.plan`. It is checked against the same labels at 100px a day, where none are dropped.
+- [x] Switching from Day to Month keeps the left-edge date (the scroll position is checked). Fit recomputes after a simulated resize. — `tests/schedule/gantt-picker.test.ts`: `scrollLeft` 120 at Day (Mon 12 Oct) becomes 7.5 at Month and 30 at Week, the scale's transform follows, and Fit returns to 0. A stubbed `clientWidth` going from 0 to 480 moves UI from 120px (Day) to 300px, width 120.
+- [x] The chosen scale survives a reload, and a missing or unreadable `localStorage` falls back to Fit. — `gantt-picker.test.ts`: a second Gantt opens at Month. With nothing stored, an unknown value, or `getItem` and `setItem` throwing, it opens at Fit, and switching still works.
+- [x] The header height is the same at every scale. The alignment tests pass unchanged. — 54px at all four scales (`gantt-picker.test.ts`). No alignment test changed.
+- [x] The colour-token test passes. — No new tokens. The picker, ticks and as-bar summaries use existing ones.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 4,209 tests (4,172 before); typecheck, lint and `vite build` are clean.
+- [x] **Browser pass in Edge, after a hard reload:** pending review (there is no browser here).
+  - on `examples/portfolio/` and on a real 12–18-month master, each scale reads well and Fit shows the whole plan;
+  - switching scales keeps your place;
+  - row alignment with the grid and the text editor still holds;
+  - check both themes;
+  - at Month and Week on the real master, no two labels touch in the real font. If they do, raise `CHAR_WIDTH` rather than adding measurement.
+
+**Visible changes:** the scale control, the Week, Month and Fit scales, the two-tier header labels, and the minimum bar width.
+
+**Not in this task:**
+
+- Quarter or year scales.
+- Zooming with Ctrl+wheel.
+- Showing weekends as calendar time.
+- Dependency arrows.
+- Printing or exporting the chart.
+
+**Decisions taken** (asked and answered before any code was written):
+
+- **The scale argument** is a named scale (`'day' | 'week' | 'month' | 'fit'`) or an explicit `{ dayWidth, tiers }`. The app passes only names. Tests use the explicit form: `{ dayWidth: 1, tiers: 'day' }` for Task 30's table and Task 38's geometry, and `{ dayWidth: 0.5, tiers: 'month' }` for the overlap test. `chartWidth` is read only for `'fit'`, and it is optional (0 when left out). A test checks that each named scale gives the same chart as its explicit pair.
+- **The 2px minimum is the geometry's.** A bar or summary keeps its true `width` and gains `drawn`, which is `max(width, 2)`. A summary narrower than its two 3px caps gets `asBar: true`. The renderer draws `drawn` and reads `asBar`. `.gantt-bar { min-width: 2px }` is removed from `gantt.css`, so the minimum is enforced once. At Month, Review is `width` 0.75 and `drawn` 2.
+- **Label widths are estimated**: `chars × CHAR_WIDTH + LABEL_PADDING` (7px and 6px), named constants in `geometry.ts` beside the 12px font size they assume. If the browser pass shows labels touching, the constant is raised.
+- **Lines by weight.** Full-height lines run down the chart at each top-tier period (Day: each week, as before; Week: each month; Month: each year), drawn even when the period's label was dropped. Short ticks in the header mark each bottom-tier period. Both come from the geometry, as `lines` and `ticks`. The lines use the existing week-line token, and the ticks use `--gantt-scale-line`.
+- **Task 30's labels at 1px a day overlap.** So at `{ dayWidth: 1, tiers: 'day' }` that test asserts the lines (0, 5), the ticks (0–7) and one label in each tier (`Mon 5 Oct` at 0, `M` at 0). It asserts `Mon 5 Oct` at 0, `Mon 12 Oct` at 120 and the day letters every 24px at Day.
+- **Fit on a tie takes the coarser tiers:** 12px a day is Week, and 3px is Month, since the finer ones would already be dropping labels at that width.
+- **Fit with a chart width of 0 or less is Day** (24px, Day's tiers), and it recomputes when the `ResizeObserver` reports a width.
+- **Deadline dates get their own row** in the header, above the two tiers, each right-aligned to its line as before. They take no part in the tiers' overlap, and two that overlap are both kept. The header is three rows at every scale. (Deadlines taking part in the overlap pass was considered and dropped: on the fixture, the `Mon 12 Oct` label would have dropped `Oct 2026` at Week, `2026` at Month, and both week labels at Day, contradicting the hand values.)
+
+**Decisions taken** (by me, within the task; please check):
+
+- **The header is 54px**: three 18px rows (was 40px, two rows). The Gantt reports 54 as its header height, so with the Gantt showing, the editor's body starts 14px lower than before.
+- **The picker is in the preview toolbar** (changed before commit; it first sat at the right of the deadline row, where it could cover a deadline's date at the chart's right edge). Its buttons are radios in a `radiogroup`. Only the chosen one is a tab stop, and an arrow key both moves and chooses, wrapping at the ends, as a radio group does. The `localStorage` key is `plan.gantt-scale`, beside `plan.editor`.
+- **Keeping your place** converts `scrollLeft` through working days: `scrollLeft / old dayWidth × new dayWidth`. Fit sets it to 0.
+- **The chart is redrawn** when the model, the `dayWidth` or the tiers change, so a resize at Fit that leaves the width the same redraws nothing. A resize at a named scale is ignored.
+- **Week's bottom tier** is the week's first working day's day of the month. Day's week labels keep §5.4's format, with the year when it isn't `project-start`'s.
+- **Months and years are found through the calendar**: each 1st goes through `fromDate(d, 'start')`, starting from the month of hour 0's own day.
+
+**Visible changes:**
+
+- A **Day · Week · Month · Fit** picker in the preview toolbar, beside the exporter buttons, shown only while the Gantt is showing, and keyboard reachable. It defaults to Fit, so the Gantt now opens fitted to its pane, not at 24px a day.
+- Week (6px a day) and Month (1.5px a day) scales, and Fit, which picks Day, Week or Month labels by width.
+- A three-row header (54px, was 40px): deadline dates on top, then the top tier, then the bottom tier. Deadline dates no longer share a row with the week labels.
+- Week lines become period lines (weeks at Day, months at Week, years at Month), and short ticks in the header mark each day, week or month.
+- Labels that would overlap the one before them are left out.
+- Bars are at least 2px wide at every scale, and summaries narrower than their caps draw as a solid bar in the summary colour.
+
+**Rewritten tests:**
+
+- `tests/schedule/gantt-geometry.test.ts`: every call passes `{ dayWidth: 1, tiers: 'day' }` (or `{ dayWidth: 24, tiers: 'day' }`) in place of the bare `dayWidth`. The marks table is unchanged. "has week separators at 0 and 5…" now asserts `lines` [0, 5], `ticks` [0–7], and one label in each tier (`Mon 5 Oct`, `M`), since at 1px a day the others overlap and are dropped. A new test in the same file checks the two week labels at 0 and 120, and the letters every 24px, at Day. "spans a folded parent's bracket…" uses `toMatchObject`, since the mark now also carries `drawn` and `asBar`.
+- `tests/schedule/milestones.test.ts`: "Gantt geometry" passes `{ dayWidth: 1, tiers: 'day' }` and compares the mark's `kind`, `x` and `width`, leaving out the new `drawn`. The table's values are unchanged.
+- `tests/composition/gantt.test.ts`: both calls pass `{ dayWidth: 1, tiers: 'day' }`. No assertion changed.
+- `tests/schedule/gantt.test.ts`: "reports its scale's height as its header" expects 54 (was 40). "draws the marks' kinds and flags, the lines and the scale" reads the week labels as `.gantt-scale-top .gantt-top` (was `.gantt-week`), and checks that the deadline label sits in `.gantt-scale-deadlines`, its own row. The layer test reads `.gantt-period-line` (was `.gantt-week-line`). Its pixel values are unchanged: in jsdom the pane has no width, so Fit is Day.
+
+**New tests:**
+
+- `tests/schedule/gantt-zoom.test.ts`: the hand-worked values at Week, Month and Fit on the schedule fixture and on `long.plan`; the year lines and month ticks at Month; both Fit ties; Fit at 0px; named scales equal to their pairs; `chartWidth` ignored at a named scale; summaries drawn as bars; label overlap.
+- `tests/schedule/gantt-picker.test.ts`: the radio group, clicks and arrow keys; the 2px bar and as-bar summary in the DOM; the tiers' rows and ticks; the header height at every scale; the scale remembered across a reload and the fallbacks to Fit; the place kept across a switch; Fit's resize, and a resize ignored at a named scale.
+- `tests/fixtures/long.plan`: `profile: schedule`, `project-start: 2026-10-05`, and `Long | 400d`.
+
+**Changed before commit — the picker moves to the toolbar.** `RenderContext` gains an optional `toolbar(el): () => void`, which places a renderer's control in the preview toolbar, beside the exporter buttons, and returns its removal. The shell (`src/app/main.ts`) makes a `#view-tools` box just before `#exporters` and appends there. It empties the box when another view is chosen, or when no view can show the document, and names no renderer. The Gantt places its picker once, when the picker isn't already in the document, and removes the old one when it mounts afresh in its host. The scale header now holds only its three rows, so the deadline row is free across its whole width. The header stays 54px. The picker's buttons take the toolbar's button style, joined into one segment, with the chosen one in the active tab's colours (`--accent-bg`, `--accent-border`).
+
+- `tests/schedule/gantt-picker.test.ts` (new in this task) passes a `toolbar` and reads the picker from it. It now also checks that the picker isn't in the chart, that one picker is placed however often the Gantt renders, that a fresh mount replaces it, and that the header holds only its three rows with the deadline row holding only the deadline's label. The keyboard test is unchanged.
+- `tests/app/shell.test.ts`: a new test, "shows the Gantt's scale picker in the toolbar…": no picker on the Table; one in `#view-tools`, just before `#exporters`, on the Gantt, still one after an edit; none on the Schedule; one again on the Gantt; and an empty `#view-tools` on the Table.
+- 4,212 tests; typecheck and lint are clean.
+
+**Spec:** plan-format-spec §3.3: `RenderContext.toolbar`. §5.5: the geometry's signature and scale argument, the scales table, Fit's ties and zero width, label placement and overlap with the width estimate, the three-row header, the deadline row, lines and ticks, the picker, the minimum width and as-bar summaries. Task 30 has a "Changed by Task 39" note. PLUGINS.md and VISION.md are unchanged.
+
+**Human review:** read `tests/schedule/gantt-zoom.test.ts` against the hand-worked values first, then `resolveScale` and the tiers in `geometry.ts`.
+
+---
+
+## Task 40 — Start screen, templates, new file, close
+
+**Serves:** M3 follow-up, before real use (VISION §6, §7). The app opens on a start screen instead of a sample file, offers templates, creates new plan files through a short wizard, and can close a file or a folder. Together these make it possible to set up and leave a real portfolio without touching the file system by hand.
+
+**Deliverables**
+
+- **Start screen,** shown on every load, and after closing a folder or file. It's a page in the shell, keyboard reachable, in both themes. Its choices, in order:
+  1. **Reopen _Portfolio_.** Only when a folder is remembered (Task 34). Refusal and a missing folder behave as today.
+  2. **New plan…** opens the wizard below.
+  3. **Open folder…** and **Open file…**, today's actions. Open folder is disabled with its tooltip where the browser lacks it.
+  4. **Templates:** Estimate, Schedule and Portfolio, each with a one-line description.
+
+  The app no longer starts on `examples/example.plan`. The shell's boot takes an optional initial document, which tests use; a real load always shows the start screen. VISION §3.1's single-file boot test uses that option.
+
+- **Templates** are bundled with the app (`?raw` imports of the example files), so they work on GitHub Pages:
+  - **Estimate** is `examples/example.plan`, and **Schedule** is `examples/demo.plan`. Each opens as an unsaved, untitled document in the single-file workspace, so Ctrl+S goes to Save As.
+  - **Portfolio** is `examples/portfolio/` (the master and two team plans). It asks for a folder and writes the three files there, keeping their relative paths. If any of them already exists, it stops and names the file, without overwriting. It then opens that folder with `portfolio.plan` active.
+- **New plan wizard.** Reachable from the start screen and from a **New…** toolbar button that's always present. Three steps:
+  1. **Type:** Estimate (`profile: plan`) or Schedule (`profile: schedule`), each with a one-line description. The list comes from the built-in profiles, so a future profile slots in.
+  2. **Name and location** (folder workspace only):
+     - **Name:** defaults to `untitled.plan`, and `.plan` is added if missing. It must be non-empty, contain no `/`, and not already exist in the chosen folder. Each refusal is a plain note beside the field.
+     - **Location:** the workspace root, or one of its subfolders, from the workspace's file list.
+  3. **Project start** (Schedule only): a date field defaulting to today. The wizard is UI code, so it may read the clock.
+
+  **What it writes:** `---\nprofile: plan\n---\n`, or for Schedule `---\nprofile: schedule\nproject-start: YYYY-MM-DD\n---\n`.
+  - **In a folder workspace:** the file is created through a new `workspace.create(path, text)`, which fails if the file exists and creates subfolders as needed. Add it to PLUGINS.md §7.1 and the `Workspace` interface. The single-file workspace's `create` is unavailable (`can.create: false`).
+  - **Elsewhere:** the wizard opens an untitled document in the single-file workspace, after the usual unsaved-changes dialog.
+  - **Mount it under _row_:** a checkbox, shown when a folder workspace's active file has an item row selected in the grid, or the text cursor on an item row. When ticked, after creating the file the wizard writes `mount=` with the path relative to that row's file, with `setCell` through `applyFile`, as one undo step. The master stays active and the new plan appears as its segment. Without the checkbox, the new file becomes the active file.
+
+- **Close:** a **Close** toolbar menu.
+  - **Close file** (folder workspace): closes the active file. It also closes the files that were opened only to show this file's mounts, unless another open file shows them too. The next open file in panel order becomes active. It's disabled, with a tooltip saying to use Close folder, when no other file would remain open, because exactly one file is always active (Task 34).
+  - **Close folder**, or **Close** in the single-file workspace: closes everything and returns to the start screen. The remembered folder stays, for Reopen.
+  - Every close first runs Task 34's dialog (Save all and continue, Discard and continue, Cancel), listing every unsaved file it would close, including mounted ones.
+- **Spec:** plan-format-spec §6 (start screen, templates, new file, close) and §2.1 ("the tool writes `profile:` into every file it creates" is now true, through the wizard). PLUGINS.md §7.1 (`create`, `can.create`).
+
+**Acceptance criteria**
+
+- [x] Boot with no option shows the start screen. Reopen appears only when a folder is remembered. The keyboard reaches every choice. — `tests/app/shell-start.test.ts`, "the start screen": the panes hidden, the choices in order with their descriptions, the toolbar down to New…, Open file and Open folder, every choice an enabled button with the first focused; Reopen _Portfolio_ is first after Close folder ("Close").
+- [x] The Estimate and Schedule templates open untitled and unsaved, with their text exactly the bundled example's. Ctrl+S offers Save As. — `tests/app/shell-start.test.ts`, "single-file templates": the text is `examples/example.plan` and `examples/demo.plan` exactly, the title is "Untitled — Plan", and Ctrl+S calls the save picker with `untitled.plan`.
+- [x] The Portfolio template writes three files with their relative paths into an empty fake folder, and opens it with `portfolio.plan` active. Its schedule matches Task 35's table. Into a folder where `teams/alpha.plan` already exists, it writes nothing, names that file, and opens the folder as Open folder would. A `create` that fails partway keeps what was written, names the file, and opens the folder too. (Changed in review: the clash first left nothing open.) — `tests/app/shell-start.test.ts`, "the Portfolio template": the writes, in order, with each bundled text; start, finish, slack and critical of all seven rows, copied from Task 35's table, from the model the shell built; the clash writes nothing, says "teams/alpha.plan already exists, so the template wasn't written. Opened the folder instead." and opens `teams/alpha.plan` (no top-level file); a `teams/beta.plan` that appears after the listing (hidden from it by a proxy) stops it after two writes, with "…wasn't fully written. Opened the folder instead." and `portfolio.plan` active. Each checks the remembered folder: a dismissed picker and a failed open (the first file blocked, so no plan files) remember nothing; the clash, the partial write and the full write remember their folder.
+- [x] Wizard, folder workspace: — `tests/app/shell-wizard.test.ts`, on a fake folder whose master's Product B mounts nothing (see the decisions).
+  - Estimate at the root creates `untitled.plan` with exactly the text above, and it becomes active.
+  - Schedule in `teams/` creates the file with `project-start` set to a faked today.
+  - The name checks: empty, a `/`, and an existing name each refuse with their note.
+  - With the mount box ticked on Product B's row, the new file appears as a segment under it, the master stays active, and one Ctrl+Z removes the mount while leaving the file on disk.
+- [x] Wizard, single-file workspace: it shows no step 2, and opens an untitled document after the unsaved dialog. Cancel changes nothing. — `tests/app/shell-start.test.ts`, "the wizard outside a folder", with today faked as 2026-10-02; also Estimate as a one-step wizard, and Escape.
+- [x] Close: — `tests/app/shell-start.test.ts`, "Close", in the folder the Portfolio template wrote; the store's `close` in `tests/app/files.test.ts`.
+  - Close file with two open files activates the other.
+  - It's disabled when only one would remain.
+  - Close folder returns to the start screen and Reopen is offered.
+  - With unsaved changes in a mounted file, the dialog lists that file, and Cancel changes nothing.
+- [x] Every existing test passes. Tests that relied on starting with `example.plan` now use the boot option, and each is listed as rewritten. — 4245 tests (4212 before); typecheck, lint and `vite build` clean.
+- [x] **Browser pass in Edge, after a hard reload:** pending review (there is no browser here).
+  - the start screen, in both themes;
+  - each template;
+  - a new Schedule plan created in a real folder's subfolder and mounted under a master row;
+  - Close file and Close folder, with unsaved changes;
+  - Reopen.
+
+**Visible changes:** the start screen, templates, New…, the wizard, the Close menu, and the app no longer opening on a sample file. In detail:
+
+- **The app opens on the start screen**, never on `examples/example.plan`. It replaces the editor, the preview and the file panel; the toolbar shows only New…, Open file, Open folder and Reopen (when a folder is remembered), with no editor tabs or file name, and the tab title is "Plan". Its choices: Reopen _name_, New plan…, Open folder… (disabled with its tooltip where the browser lacks it), Open file…, and under "Templates" Estimate, Schedule and Portfolio with a description each. The first choice has the focus. Closing returns to it.
+- **Templates.** Estimate and Schedule open the bundled example as an untitled document; it shows no ● until edited, and Ctrl+S goes to Save As. Portfolio asks for a folder, writes `portfolio.plan`, `teams/alpha.plan` and `teams/beta.plan`, and opens it; it is disabled with Open folder's tooltip where Open folder is. A file already there, or one that blocks a write partway: the folder opens as Open folder opens it, with "_teams/alpha.plan_ already exists, so the template wasn't written. Opened the folder instead." ("wasn't fully written" after a partial write).
+- **New…**, first in the toolbar and always shown, opens the wizard: a dialog titled "New plan · _step_ (step _n_ of _m_)" with Back, Next or Create, and Cancel; Escape cancels and Enter in a field goes on. Step 1 lists Estimate and Schedule with a description each. In a folder, step 2 has Name (`untitled.plan`), Location, a combobox offering `.` ("The folder's top level") and every folder the listing reaches, which takes a typed relative path and creates its missing folders; its refusals show beside it: "The location must be relative to the folder.", "The location can't go up a folder (..).", "The location can't have empty parts." and, on an item row that mounts nothing, "Mount it under _row_"; refusals show beside the name: "Enter a name.", "A name can't contain /.", "_path_ already exists.". Step 3, for Schedule, is a date field set to today ("Enter a date." when it is cleared). In a folder the status reads "Created _path_".
+- **Saving a pathless file in a folder**, and the folder workspace's `saveAs`, now fail with "Use New… to create a file in this folder." in place of "Creating files comes in a later task".
+- **Close**, last in the toolbar's file buttons, hidden on the start screen. In a folder it opens a menu (Escape or a click elsewhere closes it) with Close file and Close folder; Close file is disabled, titled "This is the only open file; use Close folder.", when no other file would stay open, and the status reads "Closed _path_". In the single-file workspace Close closes at once. Each asks the unsaved-changes question about the files it closes.
+- **`index.html`** loads `src/app/start.ts`, which calls `boot()`.
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **Around the start screen** the panes and the file panel are hidden, and the toolbar keeps only New…, Open file, Open folder and Reopen; the title is "Plan".
+2. **A fresh template is not marked unsaved** until it is edited, like any new document; leaving the page with it untouched doesn't prompt.
+3. **The Portfolio template and the workspace.** `Workspace.open` takes `{ allowEmpty: true }`, which picks a folder without refusing an empty one and returns no file (`{ path: null }`). The shell checks the three paths against `list()` and, if any is there, says so and writes nothing; otherwise it `create`s each file and opens `portfolio.plan`. A `create` that still fails stops there, names the file, and leaves the files already written. The workspace knows nothing of templates. Disabled with Open folder's tooltip where Open folder is. (Changed in review: a clash or a partial write then opens the folder as Open folder would, and the folder is remembered only once that open succeeds.)
+4. **Closing a file another open file shows** (alpha while the portfolio is open): it stops being an open file, and the next becomes active, but it stays in the store as that segment, unsaved edits included, so the dialog doesn't list it.
+5. **No mount box on a row that mounts a file already**, since ticking it would replace that mount.
+
+Also agreed with them: `main.ts` exports `boot({ document? })` and `src/app/start.ts` calls it; behind the start screen the store holds a blank untitled single-file document, so exactly one file stays active; a file is open (`OpenFile.shown`) when the user opened it, chose it in the panel or created it, not when it was read only for a segment; Save all and continue saves only the files being closed; Close is a menu in a folder and a plain button in the single-file workspace; the wizard is a modal with Back, Next and Create, Location defaults to the top level and the mount box starts unticked; the type list is core's `PROFILES` (label, description, text), which `analyze` also reads, and step 3 shows for a type whose new file would get `no-project-start`, not for the name "schedule"; `create` returns a `WriteResult`, failing with "_path_ already exists".
+
+**Decisions taken** (by me, within the task; please check):
+
+- **The mount criterion runs on a master whose Product B mounts nothing.** In the Portfolio template Product B mounts `teams/beta.plan`, so by decision 5 it gets no mount box. `tests/app/shell-wizard.test.ts` uses a master with Product A mounting alpha and Product B mounting nothing, and checks both: no box on Product A, and the mount on Product B, selected in the grid.
+- **"Every folder in the workspace" is every folder the listing reaches**: each listed plan file's folder and the folders above it. `list()` lists only plan files, so a folder holding none isn't offered; it can be typed. Listing folders as well would widen the `Workspace` interface, which review didn't ask for.
+- **Finishing an `allowEmpty` open is a second `open()`** on the same folder workspace: with a folder already picked it shows no picker, picks the file by the usual rule and remembers the folder. That keeps "remember only once an open succeeds" inside the workspace, and the template's clash opens the folder exactly as Open folder does. PLUGINS.md §7.1 says so.
+- **The status line wording.** A partial write says "wasn't fully written" where a clash says "wasn't written". When the folder still can't be opened (the first file blocked in an otherwise empty folder), it gives both: "_portfolio.plan_ already exists, so the template wasn't written. No plan files in folder", and the start screen stays. A blocked `create` names the file through its own reason, "_path_ already exists".
+- **The location.** Empty or `.` is the top level, `.` is how the combobox offers it (a datalist can't show an empty option), and a trailing `/` is dropped. A lone `/` is refused as not relative.
+- **Closing works on the store's files, using the composed views.** A file's segments are the files its composed view shows (`pieces().files()`); Close file drops the closed file and the unshown files in its segments, except those in another open file's segments, and destroys the closed files' views. `OpenFiles.close(file, drop)` picks the next active file in the panel's order: the listing, then any open file not in it.
+- **Close folder** loads an empty text into the active buffer, outside the history, and opens a blank single-file store behind the start screen, as boot does.
+- **The mount** is written with the grid's `mountOn` and `withRepairs`, the edit Mount plan… makes, through the composed view's `applyFile` with origin `wizard`. The wizard reads the model again first if an analysis is pending, and finds the row by its file and line.
+- **Messages use a straight apostrophe**, as the shell's others do.
+
+**Changed in review** (asked for before commit):
+
+1. **A folder is remembered only once an open succeeds.** `open({ allowEmpty: true })` remembers nothing; the open that follows it does. A dismissed picker, a refused permission or a failed open leaves the remembered folder as it was. Tested in `tests/app/folder-workspace.test.ts` and, through the template, in `tests/app/shell-start.test.ts`.
+2. **The location is a combobox** (`<input list>` with a datalist): the top level and every folder are offered, and a typed relative path is accepted, with no `..` and no empty parts; `create` makes missing folders. Tested with a new `teams/gamma` folder in `tests/app/shell-wizard.test.ts`, plus `locationOf` directly.
+3. **Both "Creating files comes in a later task" messages** now read "Use New… to create a file in this folder."
+4. **A Portfolio template that is blocked opens the folder anyway**, as Open folder would, with a status note naming the file; files written before a partial failure stay. The acceptance criterion above says so.
+
+**Rewritten tests:**
+
+- `tests/app/shell.test.ts` (VISION §3.1's single-file boot test): boots with `boot({ document: example })`. "offers Open file, Open folder (disabled without a directory picker), Save, Save As and Refresh" expects `new` first and `close` last.
+- `tests/app/shell-download.test.ts`: boots with the example. "offers neither Save all nor Refresh, and disables Open folder with a tooltip" expects `new` and `close` too.
+- `tests/app/shell-folder.test.ts`: boots with the example, since it types into the untitled document before opening a folder. "offers Reopen beside the open buttons…" and "asks before replacing an unsaved document…" expect New… first and Close last.
+- `tests/app/shell-portfolio.test.ts`: boots with the example, since its first test types a mount row into the untitled document.
+- `tests/app/shell-composed.test.ts` and `tests/app/shell-grid-composed.test.ts`: call `boot()`, a real load, and open the folder from there; nothing else changed.
+- `tests/app/folder-workspace.test.ts`: "can list and save in place, and cannot save as" is now "can list, save in place and create, and cannot save as", with `create: true`.
+- `tests/app/workspace.test.ts`: "opens a file and writes back to the same handle without prompting" expects `create: false`, and that `create` fails.
+- `tests/app/files.test.ts`: its setup casts `workspace.open()`'s result to `OpenedFile | null`, for the wider return type; no behaviour changed. "a file with no path in a folder workspace is not saved: creating files comes later" is now "…: New… creates files there", expecting "Use New… to create a file in this folder."
+- `tests/app/folder-workspace.test.ts`: "save as creates nothing: that comes later" is now "save as creates nothing: New… creates files in a folder", with the new message.
+
+**New tests:** `tests/app/shell-start.test.ts` (start screen, templates, the Portfolio template's clash, partial write and failed open with what each remembers, the wizard outside a folder, Close, Reopen) and `tests/app/shell-wizard.test.ts` (the wizard in a folder: Estimate at the top level, the name and location checks, Schedule in `teams/`, a typed new folder `teams/gamma`, the mount box and its undo, and `locationOf`). Added cases: in `tests/app/folder-workspace.test.ts`, `create` (folders made, an existing file refused with nothing written) and `allowEmpty` with the open that finishes it (nothing remembered until then, nor after a failed open); in `tests/app/files.test.ts`, "closing (Task 40)": `shown`, `close`'s next active file and dropped files, and `saveAll(only)`.
+
+**Spec:** plan-format-spec §2.1 (the tool writes `profile:` through the wizard) and §6 (the start screen, the templates, the wizard, Close; Replacing the open files, Saving and the new-document line follow). PLUGINS.md §7.1: `create`, `can.create`, `open({ allowEmpty })` and the open that finishes it, remembering only on success, `OpenedFolder`, each implementation's `create`. plan-format-spec §6 also says when a folder is remembered. Task 22's and Task 34's notes say what this task changed. VISION.md is unchanged. The plan format spec has no draft version line, so there is nothing to bump.
+
+**Not in this task:**
+
+- Renaming or deleting files from the app.
+- A list of recent files.
+- Custom or user-defined templates.
+- The filter (Task 41).
+- The settings editor.
+
+**Human review:** the start screen and the wizard in the browser first. They are the first thing every new user sees.
+
+---
+
+## Task 41 — Filter
+
+**Serves:** working in large plans and portfolios (VISION §6). One filter box narrows every pane to the rows that match, with their ancestors kept for context. It's display only: nothing in the file, the totals or the schedule changes.
+
+**Deliverables**
+
+- **Matching** (core, pure): `filterRows(model, query)` returns which rows show, keyed `{ file, line }`, split into matches and their ancestors, plus a count of matches and of all item rows.
+  - The query is split on whitespace into terms. A row matches when **every** term appears, case-insensitively, somewhere in its cells: the title and every declared cell's text as written (decoded), in the row's own file.
+  - Outline numbers, IDs and anchors are not searched.
+  - Mounted plans' rows are included.
+  - **Shown:** matches, plus every ancestor of a match. Non-item lines (comments, blank lines, frontmatter) are hidden while a filter is active.
+- **When it applies:** the visible set is computed when the query changes, when the active file changes, and when **Enter** is pressed in the box. It is **not** recomputed on every edit.
+  - Between recomputations, the shown rows are tracked through edits with `mapPos`, so a row being edited never disappears under the cursor, and new lines typed among shown rows stay visible.
+  - Switching the active file or closing clears the filter.
+- **The box:** in the app toolbar, whenever a document is open.
+  - **Ctrl+Shift+F** focuses it. **Esc** in it clears the filter and returns focus to the editor. A ✕ button also clears it.
+  - While it's active, it shows "Showing 4 of 23 tasks", counting matches only.
+- **Every pane follows it**, through the shell, which names no pane:
+  - **Text editor:** the hidden lines are replaced by block decorations, so their text is untouched. The cursor and selections skip them, and an edit can't reach into them. Ctrl+F search ignores matches in hidden lines (`SearchQuery`'s `test`). Folding still works on the lines shown.
+  - **Grid:** hidden rows aren't drawn. The new-task row stays. The total row still sums the whole plan, and is labelled "Total (all rows)" while filtering.
+  - **Views (tree, table, schedule, pin review):** hidden rows aren't drawn. Totals are unchanged.
+  - **Gantt:** it follows the leader's layout, which now holds only shown rows. Standalone, its natural layout uses the same visible set.
+  - **Ancestors** shown only for context are dimmed in every pane. Matches are drawn normally.
+- **Interfaces:**
+  - `PlanEditor.setFilter(visible | null)` and `RenderContext.filter`, both optional. A pane without them simply shows everything.
+  - Spec §3.3, §3.4 and a new §5.7.
+  - PLUGINS.md §6 for `filterRows`.
+
+**Hand-worked values** on `examples/demo.plan` (23 tasks). Never take them from output. If one disagrees, stop and report it.
+
+| Query       | Matches                                      | Ancestors (dimmed)  | Count shown           |
+| ----------- | -------------------------------------------- | ------------------- | --------------------- |
+| `carol`     | UX wireframes, Web app, User guide, Training | Design, Build, Docs | Showing 4 of 23 tasks |
+| `carol web` | Web app                                      | Build               | Showing 1 of 23 tasks |
+| `CAROL`     | as `carol`                                   | as `carol`          | Showing 4 of 23 tasks |
+| `2026-11`   | Go-live                                      | Release             | Showing 1 of 23 tasks |
+| `zzz`       | none                                         | none                | Showing 0 of 23 tasks |
+
+On `examples/portfolio/`: `code` matches Code in beta, with Product B as its dimmed ancestor ("Showing 1 of 7 tasks").
+
+**Acceptance criteria**
+
+- [x] `filterRows` tests assert every row of the table above. — `tests/core/filter.test.ts`: each row of the table and the portfolio's `code`, each match and ancestor by title and the count as the box words it; every value agreed with the code. Also: `web` matches Web app and not User guide, whose deps are `#web` (decision 1); `#web` and `4.3` match nothing, `integ` matches.
+- [x] Every pane with `carol` (text editor, grid, tree, schedule table, Gantt following each editor) shows exactly the matches and ancestors, with the ancestors dimmed, and the rows stay aligned (injected measurements). — `tests/align/filter.test.ts`: the text editor's lines and its leader rows (lines 11, 13, 15, 17, 27, 28, 29 at 20px each), the grid's body rows (those, then the new-task row), the Gantt following each with a mark row on exactly those lines, each at its editor row's top on screen (54 + 20n beside the text editor, 62 + 22n beside the grid), Design, Build and Docs dimmed in every pane; the tree and the schedule table with the same rows. Through the shell too, in `tests/app/shell-filter.test.ts`.
+- [x] Editing Web app's title to "Mobile app" while filtered by `carol web` keeps the row visible. Pressing Enter in the box then recomputes, and the row disappears with its ancestor Build: "Showing 0 of 23 tasks". (Corrected before any code was written to it: the criterion said "Website", which still contains `web`, so Enter couldn't remove it; see the corrections.) — `tests/app/shell-filter.test.ts`, through the text editor, the box and the tree; the tracking itself in `tests/app/filter-tracking.test.ts`.
+- [x] Typing a new line after a shown row keeps it visible. An edit can't reach a hidden line, and Ctrl+F doesn't land in one. — `tests/editor/filter.test.ts`: a new line after Web app shows; typing into a hidden line, and joining one to Web app from either side, are refused; deleting a whole shown line leaves the hidden line after it whole; a change from disk goes through; Ctrl+F through the panel finds `carol` on lines 13, 17, 28, 29 then wraps, `bob` (hidden rows only) moves nothing, and a query set by a command gets the test too; folding Build hides Web app and unfolding brings it back. The tracking of new lines, edits at a shown line's start and deleted lines in `tests/app/filter-tracking.test.ts`.
+- [x] Totals and the schedule are identical with and without a filter, and the grid's total row says "Total (all rows)". — `tests/align/filter.test.ts` and `tests/app/shell-filter.test.ts`: each tree and schedule-table row reads as it does unfiltered, the totals too, and the grid's total row is the unfiltered one with "Total" read as "Total (all rows)".
+- [x] Esc clears the filter, and so does switching files. — `tests/app/shell-filter.test.ts`: Esc empties the box and the count, shows all 30 lines and gives the focus back to the editor; ✕ clears it too; in the portfolio folder, `code` reads "Showing 1 of 7 tasks", then choosing `teams/alpha.plan` in the panel clears it, and so does Close folder, which hides the box. Ctrl+Shift+F focuses the box.
+- [x] Filtering a 5,000-line composition takes under 20 ms (median, measured once and noted). — `tests/core/filter.test.ts`, a root mounting ten 500-line files (5,013 lines): median of 21 runs, `filterRows` 0.71 ms; with the shell's lines shown (`trackFilter(…).visible`) 2.69 ms. Measured once, not a test: the text editor's `setFilter` on that composition as a composed buffer took about 12 ms in jsdom (27 ms the first time), CodeMirror's update included.
+- [x] Every existing test passes, and rewritten tests are listed in the notes. — 4307 tests (4245 before); typecheck, lint and `vite build` clean. No existing test was rewritten (see below).
+- [ ] **Browser pass in Edge, after a hard reload,** on `examples/demo.plan` and a real portfolio: pending review (there is no browser here). Please also check moving the cursor up and down across hidden lines, which jsdom can't lay out (`tests/editor/filter.test.ts` checks only that it lands on a shown line).
+  - filter while editing in each editor;
+  - check the Gantt beside each;
+  - check the dimmed ancestors in both themes;
+  - clear the filter.
+
+**Visible changes:** the filter box, its count, hidden and dimmed rows in every pane, the total row's label while filtering, and the default view. In detail:
+
+- **The filter box,** at the right end of the app toolbar, after the status line, hidden on the start screen: a search field with the placeholder "Filter" (titled "Filter rows (Ctrl+Shift+F)"), a ✕ button ("Clear the filter"), and while a filter is active the count, "Showing 4 of 23 tasks", in the muted colour. While active the field has the accent background and border. It filters as you type; Enter computes it again; Esc or ✕ clears it, Esc returning the focus to the editor where it was. Ctrl+Shift+F focuses it and selects its text. Switching files, opening and closing empty it.
+- **Text editor:** hidden lines take no space and have no line numbers; the cursor and selections skip them; typing, deleting, undo or a line move that would change one, or join one to a shown line, does nothing; Ctrl+F's matches in them are skipped. A cursor on a hidden line when the filter is set moves to the next shown line.
+- **Grid:** only the shown rows, with no front matter row; the new-task row stays; the total row reads "Total (all rows)" and still sums the whole plan. Keyboard moves go between shown rows. Move up, Move down, Indent and Outdent are disabled, titled "Clear the filter to reorder rows.", and Alt+↑, Alt+↓, Alt+Shift+→ and Alt+Shift+← show that note instead of acting; Insert row and Delete row stay. In the problems list, a problem on a hidden row ends with "hidden by filter", in muted italics; clicking it clears the filter and then focuses its row.
+- **Tree, table, schedule table, pin review:** only the shown rows; totals unchanged.
+- **Gantt:** only the shown rows, beside either editor or standalone.
+- **The default view is chosen by rank:** a schedule file opens on the Gantt, an estimate file on the tree, when it is opened or becomes active; within a file the view stays while it can show it. A view you pick is kept across files while it can show them, falls back to the highest-ranked one when it can't, comes back when it can, and is remembered across reloads. Before, the preview opened on the tree and kept whatever view was showing.
+- **Ancestors shown for context** are drawn at half opacity (0.5 light, 0.55 dark: `--filter-context-opacity`) in every pane: the text editor's lines, the grid's and the views' cells, and the Gantt's marks.
+
+**Decisions taken** (asked and answered while working):
+
+1. **Ref cells aren't searched**, qualifiers included, for the same reason as IDs and outline numbers: the grid doesn't show their text. The table stands; §5.7 states the rule, and a test shows `web` matches Web app but not User guide, whose deps are `#web`. (Asked before any code: as first written, every declared cell's text was searched, which made User guide match `carol web` against the table.)
+2. **The edit criterion retitles Web app to "Mobile app"** (see the corrections).
+
+**Decisions taken** (by me, within the task; please check):
+
+- **`Visible` answers by line,** `shows(at)` and `dims(at)`, plus the `version` its lines are numbered at, rather than sets of keys: `src/ui` may import only core's types, so the views can't build a key. The key is private to `src/app/filter.ts`.
+- **The key column's cells aren't searched,** as IDs; nor is a mount row's `mount=` path, which is no declared cell.
+- **The shell follows the shown lines in each file's own text,** through that file's buffer's changes, which the composed view routes to it, so mapping needs no piece map and lines come out keyed `{ file, line }`. Each run of hidden or dimmed lines holds one of the line breaks around it, so text typed at either end of it lands outside, and deleting its lines leaves it empty. Text typed at the start of a run's first line stays on that line. `BufferChange.mapPos` takes an optional `assoc`, with CodeMirror's meaning, in both buffers (spec §3.7).
+- **What can't change a hidden line in the text editor** is a change with a user event: typing, deleting, undo, redo and the line operations. A change with none passes: from disk, another file's segment, a recomposition, and a diagnostic's fix, which writes to its own line. An undo that would reach a hidden line does nothing.
+- **The grid draws a filter only with the model of its version;** the shell calls `setFilter` before `update`, with the filter numbered as that model. The text editor places a filter in its own text and maps it through edits until the next call, so its decorations need no version.
+- **A cursor or selection end that lands on a hidden line goes on to the next shown line, the way it moved,** or back to the line before at the document's end: atomic ranges alone let it rest on a hidden run's first or last line, and on the document's edges when hidden lines start or end it.
+- **Esc gives the focus back to the editor element that had it** before the box (a grid cell, or CodeMirror's content), or else to the editor's own tab stop, with no new `PlanEditor` member.
+- **A grid with no shell to clear the filter** (mounted on its own, as in tests) drops its own filter when a hidden row's problem is clicked.
+- **The count always says "tasks"** ("Showing 1 of 7 tasks"), as the table words it. An empty or blank query is no filter.
+
+**Corrections:**
+
+- **The edit criterion said "Website".** Matching is by substring, and "Website" still contains `web`, so pressing Enter couldn't make the row disappear under `carol web`. Agreed with them: the edit retitles Web app to "Mobile app"; the row stays while it is edited, and after Enter it goes with Build, and the count reads "Showing 0 of 23 tasks". The criterion's wording above is updated.
+
+**Changed in review** (asked for before commit):
+
+1. **No reordering while filtered.** In the grid, Move up, Move down, Indent and Outdent are disabled while a filter is active, titled "Clear the filter to reorder rows.", and their keys show that note instead of acting, since hidden rows would move with the row unseen. Insert row and Delete row stay. (This replaces my first choice, which left them working.) Tested in `tests/grid/filter.test.ts`: the four disabled with the tooltip and the two enabled, each key giving the note and leaving the text as it was, and all four enabled again once the filter is cleared.
+2. **Problems on hidden rows** are marked "hidden by filter" in the problems list, and clicking one clears the filter, through a new optional `GridHooks.clearFilter` the shell gives, and then focuses the row. (This replaces my first choice, where focusing one did nothing.) The list now takes a root row's title from the model rather than from the rows drawn, so a hidden row's problem is still named ("Go-live", not "Line 26"). Tested in `tests/grid/filter.test.ts` (the mark only on hidden rows' problems; the click with a shell hook and without one) and, through the shell, in `tests/app/shell-filter.test.ts` (the box and its count empty, every view row back, the focus on Go-live's row).
+3. **`InMemoryBuffer.mapPos`** maps a position inside a replaced range as CodeMirror does: to the replacement's start, or with `assoc` 1 its end, shifted by the earlier edits in the same change. Before, it returned the replacement's end in the old text's coordinates. Added to `tests/buffer/shared.test.ts`, which both buffers pass. (This was under "Noticed, not changed".)
+
+4. **The box is at the right end of the app toolbar**, after the status line, with its ✕ and count beside it, so it reads as applying to the whole window rather than one pane; it was after the file name. Its keys are unchanged.
+
+5. **The default view is chosen by rank.** `Renderer` gains an optional `rank` (0 when absent): the Gantt 20, the schedule table 10, the tree and the others 0. The shell shows the view last chosen while it's available, otherwise the highest-ranked available one, ties going to registration order, and still names no renderer. A choice (a click on a view's tab) is kept across file switches, isn't replaced by a fallback, and is remembered per viewer in `localStorage` (`plan.view`); unreadable storage, or a stored id no renderer has, means no choice. With no choice, the view is picked by rank only when a file is opened or becomes active (boot, opening, closing and switching files); within a file the view shown stays while it's available and otherwise falls back by rank. (Corrected in review: at first rank was applied on every analysis, so typing `project-start` into an estimate file switched it to the Gantt mid-edit.) Spec §3.3. Tested in `tests/app/shell-views.test.ts` (a schedule file on the Gantt and an estimate file on the tree, with a stale stored id; Tree picked on a schedule file sticks across files and is stored; a chosen Gantt falls back to the tree on the estimate file and returns on the schedule file) `tests/app/shell-views-storage.test.ts` (storage that throws: the Gantt by rank, and a pick still applies) and `tests/app/shell-views-rank.test.ts` (with nothing chosen: typing `project-start: 2026-10-05` into an estimate file character by character leaves it on the Tree after every analysis; switching away and back shows the Gantt; deleting the line again falls back to the Tree).
+
+**Rewritten tests:** `tests/grid/reuse.test.ts`, "kept rows draw exactly what a fresh build draws": a 20 s timeout. Its two property tests take about 3.3 s each alone, as on `main` before this task, and with this task's new shell test files running alongside, the portfolio one passed vitest's 5 s default in three full runs out of three; nothing in it changed. `tests/app/shell-portfolio.test.ts`, "opens the folder on portfolio.plan, and the tree shows the whole portfolio…": the portfolio is a schedule file, so it now opens on the Gantt, and the test picks Tree first. `tests/app/shell-filter.test.ts`, the box's first test (written in this task): it now expects the box last in the toolbar, after the status line, not after the file name. `tests/support/layout.ts`'s `editorLayout` now measures a filter's hidden lines as one block with no height, as a browser does; no existing test has one.
+
+**New tests:** `tests/core/filter.test.ts` (the table, the portfolio, ref cells, anchors and outline numbers, and the 5,000-line timing), `tests/app/filter-tracking.test.ts` (following the shown lines through edits), `tests/editor/filter.test.ts` (the text editor: the cursor, the edit guard, Ctrl+F, folding), `tests/align/filter.test.ts` (every pane with `carol`, and the Gantt level with each editor), `tests/app/shell-filter.test.ts` (the box, its count and keys, every pane through the shell, a hidden row's problem in the grid, "Mobile app" and Enter, switching files and closing) `tests/grid/filter.test.ts` (no reordering while filtered; problems on hidden rows), and `tests/app/shell-views.test.ts`, `tests/app/shell-views-storage.test.ts` and `tests/app/shell-views-rank.test.ts` (the default view by rank, when it is picked, and the view chosen). Added cases in `tests/buffer/shared.test.ts`: `assoc`, and a position inside a replaced range after earlier edits.
+
+**Spec:** plan-format-spec §3.3 (`RenderContext.filter`, `Visible`, `naturalLayout`'s filter, `Renderer.rank` and which view shows), §3.4 (`PlanEditor.setFilter`, and which rows the text editor and the grid publish while filtering), §3.7 (`mapPos`'s `assoc`), §4b.1 (the total row's label), §5.5 (the Gantt's natural layout) and a new §5.7, the filter. PLUGINS.md §6: `filterRows`. Task 21's and Task 29's notes say what this task changed. VISION.md is unchanged. The plan format spec has no draft version line, so there is nothing to bump.
+
+**Not in this task:**
+
+- Field filters (`owner:alice`).
+- Regular expressions.
+- Saved filters.
+- Showing the descendants of a match.
+- Filtering comment lines by their text.

@@ -138,9 +138,11 @@ export function identityFixes(doc: RowsDocument, diagnosticOf: (e: RowsError) =>
   const refs = (id: string) =>
     doc.rows.flatMap((r) => r.cells).filter((c) => c?.value?.type === 'ref' && c.value.refs.some((ref) => ref.id.toLowerCase() === id.toLowerCase())).length;
 
-  declared.forEach((d, i) => {
-    const earlier = declared.slice(0, i).find((x) => x.id.toLowerCase() === d.id.toLowerCase());
-    if (!earlier) return;
+  // The first declaration of each ID, ignoring case: one pass, since every analysis of the file runs this.
+  const first = new Map<string, (typeof declared)[number]>();
+  declared.forEach((d) => {
+    const earlier = first.get(d.id.toLowerCase());
+    if (!earlier) return void first.set(d.id.toLowerCase(), d);
     const code = earlier.id === d.id ? 'duplicate-id' : 'id-case-conflict';
     const error = d.row.errors.find((e) => e.code === code);
     if (!error) return;

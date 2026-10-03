@@ -1,0 +1,8 @@
+---
+profile: plan
+columns: work:duration unit=h hpd=8 dpw=5 | owner:text
+roles: effort=work
+---
+// Team Beta's plan, mounted by portfolio.plan. An estimate-only file with its own columns.
+Spec    | 1d
+Code    | 4d

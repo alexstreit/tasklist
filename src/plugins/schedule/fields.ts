@@ -4,6 +4,7 @@
 
 import { defineField, definePinnable } from '../../core';
 import type { WorkHours } from '../../core';
+import type { Network } from './network';
 
 /**
  * `derived` is the floor the rest of the file gives the row: hour 0, each dependency's finish plus
@@ -36,6 +37,9 @@ export const milestone = defineField<boolean>('schedule', 'milestone', 'node');
 
 /** The row's deadline, at the end of its date: set on each row whose deadline cell is. */
 export const deadline = defineField<WorkHours>('schedule', 'deadline', 'node');
+
+/** The dependency network the forward pass read, so the backward pass doesn't read it again. Internal to the plugin. */
+export const network = defineField<Network>('schedule', 'network', 'document');
 
 /** The latest finish of all. */
 export const projectFinish = defineField<WorkHours>('schedule', 'project-finish', 'document');

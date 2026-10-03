@@ -104,6 +104,19 @@ describe('tokenizeLine', () => {
     expect(tokenizeLine(' ---', { ...ctx, state: 'start' }).kind).toBe('row');
   });
 
+  it("splits a mount cell's value into a path and a #ID part (ext §12.2)", () => {
+    const mount = (line: string, name: string | null = 'mount') =>
+      tokenizeLine(line, { ...ctx, ...(name !== null ? { mount: name } : {}) }).tokens.map((t) => [t.type, line.slice(t.from, t.to), ...(t.quoted ? ['quoted'] : [])]);
+    expect(mount('A | mount=teams/a.plan#core').slice(2)).toEqual([['name', 'mount'], ['equals', '='], ['path', 'teams/a.plan'], ['part', '#core']]);
+    expect(mount('A | mount="Team A/a.plan"').slice(4)).toEqual([['path', '"Team A/a.plan"', 'quoted']]);
+    expect(mount('A | mount="a\\b#x"').slice(4)).toEqual([['path', '"a\\b', 'quoted'], ['part', '#x"', 'quoted']]);
+    expect(mount('A | mount=#x').slice(4)).toEqual([['part', '#x']]);
+    // Only a cell named for the mount column; without one, every value is a value.
+    expect(mount('A | notes=a#b').slice(4)).toEqual([['value', 'a#b']]);
+    expect(mount('A | mount=a#b', null).slice(4)).toEqual([['value', 'a#b']]);
+    expect(tokenizeLine('A | mount=a#b', { ...ctx, mount: 'mount', extensions: false }).tokens.at(-1)?.type).toBe('value');
+  });
+
   it('reads a first line that is not --- as body', () => {
     expect(tokenizeLine('A | b', { ...ctx, state: 'start' })).toMatchObject({ kind: 'row', next: 'body' });
   });

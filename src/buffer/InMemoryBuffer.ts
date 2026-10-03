@@ -8,15 +8,19 @@ function ordered(edits: readonly TextEdit[]): TextEdit[] {
   return [...edits].sort((a, b) => a.from - b.from);
 }
 
-function mapper(edits: readonly TextEdit[]): (pos: number) => number {
-  return (pos) => {
+function mapper(edits: readonly TextEdit[]): (pos: number, assoc?: -1 | 1) => number {
+  return (pos, assoc = -1) => {
     let delta = 0;
     for (const e of edits) {
       // An edit starting at or after pos leaves it alone; an insertion at pos
-      // keeps it on the near side, as CodeMirror's default association does.
-      if (e.from >= pos) break;
-      if (e.to <= pos) delta += e.insert.length - (e.to - e.from);
-      else return e.from + e.insert.length;
+      // keeps it on the near side, as CodeMirror's default association does, or with `assoc` 1 moves it past.
+      if (e.from > pos || (e.from === pos && (e.to > pos || assoc < 0))) break;
+      if (e.to <= pos) {
+        delta += e.insert.length - (e.to - e.from);
+        continue;
+      }
+      // Inside a replaced range: to the replacement's start, or with `assoc` 1 its end, after the edits before it.
+      return e.from + delta + (assoc < 0 ? 0 : e.insert.length);
     }
     return pos + delta;
   };
@@ -43,6 +47,14 @@ export class InMemoryBuffer implements PlanBuffer {
 
   apply(edits: readonly TextEdit[], origin: string): void {
     const inverse = this.run(edits, origin);
+    // A remote change stays out of the history: the entries before it are moved past it.
+    if (origin === 'remote') {
+      const map = mapper(ordered(edits));
+      for (const stack of [this.undone, this.redone]) {
+        for (const entry of stack) entry.forEach((e, i) => (entry[i] = { from: map(e.from), to: Math.max(map(e.from), map(e.to)), insert: e.insert }));
+      }
+      return;
+    }
     this.redone.length = 0;
     // Loading a file replaces the document; the old history no longer describes it.
     if (origin === 'load') this.undone.length = 0;

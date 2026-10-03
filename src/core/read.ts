@@ -150,6 +150,7 @@ export function readTree(doc: RowsDocument, reparse?: (text: string) => RowsDocu
       fields,
       children: [],
       outlineNumber: '',
+      file: '',
     };
   };
 

@@ -10,7 +10,7 @@ import { InMemoryBuffer } from '../../src/buffer';
 import { analyze } from '../../src/app/registry';
 import { mountGrid } from '../../src/grid';
 import type { ItemNode, Model, Pinnable } from '../../src/core';
-import { formatDate } from '../../src/ui/dates';
+import { formatDate } from '../../src/core';
 import { critical, duration, finish, late, lateFinish, lateStart, projectFinish, slack, start } from '../../src/plugins/schedule/fields';
 import example from '../../examples/schedule.plan?raw';
 
@@ -158,7 +158,8 @@ const TABLE: Record<string, Expected> = {
     shown: ['Mon 12 Oct', 'Tue 13 Oct'],
   },
   'Beta ready': {
-    start: { derived: 56, effective: 56, mode: 'derived' },
+    // Task 38: a milestone's start shows at the end edge.
+    start: { derived: 56, effective: 56, mode: 'derived', edge: 'end' },
     duration: { derived: 0, effective: 0, mode: 'derived' }, // 0, a milestone
     finish: 56, lateStart: 48, lateFinish: 48, slack: -8, critical: true, late: true,
     shown: ['Tue 13 Oct', 'Tue 13 Oct'],

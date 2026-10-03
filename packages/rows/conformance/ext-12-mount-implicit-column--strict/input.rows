@@ -1,0 +1,9 @@
+---
+key: id
+nest: parent
+markers: done=~
+mount: mount
+columns: est
+---
+A {#a} | 1 | mount=teams/a.plan
+    ~B | 2 | teams/b.plan

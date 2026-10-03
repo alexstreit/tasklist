@@ -1,0 +1,7 @@
+---
+profile: schedule
+project-start: 2026-10-07
+---
+// Team Alpha's plan, mounted by portfolio.plan.
+Design {#design}    | 2d
+Build               | 3d | deps=#design

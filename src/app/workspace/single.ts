@@ -2,7 +2,7 @@
 // interface. File System Access API where available, otherwise <input type="file"> for open and a
 // download for save. Spec §6.
 
-import type { OpenedFile, Workspace, WriteResult } from '../core';
+import type { OpenedFile, Workspace, WriteResult } from '../../core';
 
 // Open takes plan and rows files; Save As offers .plan first (spec §6).
 const TYPES = [{ description: 'Plan and rows files', accept: { 'text/plain': ['.plan', '.rows'] } }];
@@ -22,7 +22,7 @@ export function createSingleFileWorkspace(win: Window = window): Workspace {
 }
 
 /** Resolves null when the user dismissed a picker. */
-async function cancellable<T>(promise: Promise<T>): Promise<T | null> {
+export async function cancellable<T>(promise: Promise<T>): Promise<T | null> {
   try {
     return await promise;
   } catch (e) {
@@ -31,12 +31,13 @@ async function cancellable<T>(promise: Promise<T>): Promise<T | null> {
   }
 }
 
-const message = (e: unknown): string => (typeof e === 'object' && e !== null && 'message' in e ? String(e.message) : String(e));
+export const message = (e: unknown): string => (typeof e === 'object' && e !== null && 'message' in e ? String(e.message) : String(e));
 const needsFolder = (path: string) => new Error(`${path} is not the open file; reading other files needs a folder workspace`);
 
-/** The parts every single-file workspace shares: it lists and resolves only relative to the one file. */
-function singleFile(current: () => string | null): Pick<Workspace, 'list' | 'resolve'> {
+/** The parts every single-file workspace shares: it lists and resolves only relative to the one file, and creates nothing. */
+function singleFile(current: () => string | null): Pick<Workspace, 'list' | 'resolve' | 'create'> {
   return {
+    create: async () => ({ outcome: 'failed', reason: 'Creating a file at a path needs a folder workspace' }),
     list: async () => {
       const path = current();
       return path === null ? [] : [path];
@@ -66,7 +67,7 @@ function nativeWorkspace(win: PickerWindow): Workspace {
     }
   };
   return {
-    can: { list: false, watch: false, saveInPlace: true },
+    can: { list: false, watch: false, saveInPlace: true, saveAs: true, create: false },
     ...singleFile(() => handle?.name ?? null),
     async open(): Promise<OpenedFile | null> {
       const picked = await cancellable(win.showOpenFilePicker!({ types: TYPES }));
@@ -108,7 +109,7 @@ function fallbackWorkspace(document: Document): Workspace {
     return { outcome: 'downloaded' };
   };
   return {
-    can: { list: false, watch: false, saveInPlace: false },
+    can: { list: false, watch: false, saveInPlace: false, saveAs: true, create: false },
     ...singleFile(() => opened?.name ?? null),
     open() {
       return new Promise((resolve) => {

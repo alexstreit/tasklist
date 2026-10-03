@@ -16,7 +16,7 @@ function header(column: Column): string {
 function row(model: Model, node: ItemNode, level: number): string {
   const values = model.columns.map((column, i) => {
     const cell = model.get(node, rollup)?.get(column.name);
-    if (!cell) return clean(node.fields[i]?.text ?? '');
+    if (!cell) return clean(model.field(node, i)?.text ?? '');
     return model.get(node, hasValue)?.get(column.name) ? String(cell.effective) : '';
   });
   // A leading apostrophe makes spreadsheets keep the outline number as text; pasted bare, 1.10 becomes the number 1.1.

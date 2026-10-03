@@ -1,0 +1,6 @@
+---
+mount: mount
+columns: est | mount
+---
+A | 2d | teams/a.plan
+B | mount=teams/b.plan

@@ -46,7 +46,7 @@ export function parseRows(input: string, options: ParseOptions = {}): RowsDocume
   }
 
   errors.push(...uniqueness(schema, rows));
-  errors.push(...applyExtensions(schema, rows));
+  errors.push(...applyExtensions(schema, rows, text));
 
   return {
     text,

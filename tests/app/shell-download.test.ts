@@ -5,6 +5,7 @@
 
 import { EditorView } from '@codemirror/view';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import example from '../../examples/example.plan?raw';
 
 let view: EditorView;
 const downloads: string[] = [];
@@ -31,7 +32,7 @@ beforeAll(async () => {
     '<button id="open"></button><button id="save"></button><button id="save-as"></button><nav id="editors"></nav><span id="filename"></span><span id="status"></span>' +
     '<div id="editor"></div><section id="preview"><nav id="renderers"></nav><nav id="exporters"></nav><div id="host"></div></section>';
   vi.useFakeTimers();
-  await import('../../src/app/main');
+  (await import('../../src/app/main')).boot({ document: example });
   view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
 });
 
@@ -39,6 +40,16 @@ describe('saving by download', () => {
   it('offers Download in place of Save and Save As', () => {
     expect(document.getElementById('save')!.textContent).toBe('Download');
     expect(document.getElementById('save-as')!.hidden).toBe(true);
+  });
+
+  // Task 34: no Save all or Refresh, as a download writes nothing in place to read back; Open
+  // folder is disabled, with why, as in Firefox.
+  it('offers neither Save all nor Refresh, and disables Open folder with a tooltip', () => {
+    const shown = [...document.querySelectorAll<HTMLButtonElement>('body > button')].filter((b) => !b.hidden).map((b) => b.id);
+    expect(shown).toEqual(['new', 'open', 'open-folder', 'save', 'close']);
+    const openFolder = document.getElementById('open-folder') as HTMLButtonElement;
+    expect(openFolder.disabled).toBe(true);
+    expect(openFolder.title).toBe('Opening a folder needs Edge or Chrome');
   });
 
   it('keeps the unsaved indicator on after a download, and leaving does not prompt', async () => {

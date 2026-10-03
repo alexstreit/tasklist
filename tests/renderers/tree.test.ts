@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { analyze } from '../../src/app/registry';
-import type { RenderContext } from '../../src/core';
+import type { FileLine, RenderContext } from '../../src/core';
 import { treeRenderer } from '../../src/plugins/estimate/renderers/tree';
 import { hasValue, rollup, totals } from '../../src/plugins/estimate/fields';
 import { cursorItemFor, itemLines } from '../../src/app/cursor';
@@ -11,8 +11,9 @@ import example from '../../examples/example.plan?raw';
 
 Element.prototype.scrollIntoView = vi.fn();
 
-function render(text: string, cursorLine: number | null = null, setCursorLine = (_line: number) => {}, scrollToCursor = false) {
+function render(text: string, line: number | null = null, setCursorLine = (_at: FileLine) => {}, scrollToCursor = false) {
   const host = document.createElement('div');
+  const cursorLine = line === null ? null : { file: '', line };
   const ctx: RenderContext = { cursorLine, cursorItem: cursorItemFor(itemLines(analyze(text)), cursorLine), scrollToCursor, setCursorLine };
   treeRenderer.render(analyze(text), host, ctx);
   const rows = [...host.querySelectorAll('tbody tr')] as HTMLTableRowElement[];
@@ -133,7 +134,7 @@ describe('tree renderer', () => {
     const setCursorLine = vi.fn();
     const { row } = render(example, null, setCursorLine);
     row('Consent screen').click();
-    expect(setCursorLine).toHaveBeenCalledWith(9);
+    expect(setCursorLine).toHaveBeenCalledWith({ file: '', line: 9 });
   });
 
   it('renders a 500-line file', () => {

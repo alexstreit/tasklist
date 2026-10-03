@@ -1,0 +1,8 @@
+---
+profile: schedule
+project-start: 2026-10-05
+---
+// The portfolio reference fixture (Task 35). Its expected values were worked out by hand.
+Product A {#a}  | mount=teams/alpha.plan | due=2026-10-16
+Product B {#b}  | mount=teams/beta.plan  | deps=#a
+^Tradeshow      | deps=#b                | due=2026-10-23

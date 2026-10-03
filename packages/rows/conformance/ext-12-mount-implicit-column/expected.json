@@ -1,0 +1,73 @@
+{
+  "spec": [
+    "ext §2, §12.1: the implicit mount column follows key, nest and markers, and unnamed cells never fill it (A11)"
+  ],
+  "stage": "extensions",
+  "failed": false,
+  "errors": [
+    {
+      "class": "structural",
+      "code": "too-many-cells",
+      "line": 9
+    }
+  ],
+  "columns": [
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "est",
+      "type": "text"
+    },
+    {
+      "name": "id",
+      "type": "text",
+      "implicit": true
+    },
+    {
+      "name": "parent",
+      "type": "ref",
+      "implicit": true
+    },
+    {
+      "name": "done",
+      "type": "bool",
+      "implicit": true
+    },
+    {
+      "name": "mount",
+      "type": "text",
+      "implicit": true
+    }
+  ],
+  "rows": [
+    {
+      "line": 8,
+      "lead": "A",
+      "values": {
+        "est": "1",
+        "mount": "teams/a.plan"
+      },
+      "id": "a",
+      "mount": {
+        "path": "teams/a.plan"
+      }
+    },
+    {
+      "line": 9,
+      "indent": 4,
+      "lead": "B",
+      "values": {
+        "est": "2"
+      },
+      "overflow": [
+        "teams/b.plan"
+      ],
+      "markers": [
+        "done"
+      ],
+      "parent": 8
+    }
+  ]
+}

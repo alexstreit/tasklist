@@ -2,7 +2,8 @@
 // editor mounts its view on that same state, so every edit — typed, undone,
 // or applied by another editor — arrives here. Spec §3.7.
 //
-// This file and src/editor/ are the only places that may import CodeMirror.
+// This file, the composed buffer (./composed.ts) and src/editor/ are the only places that may
+// import CodeMirror.
 // EditorState, Transaction and ChangeSet never leave it.
 
 import { history, redo, undo } from '@codemirror/commands';
@@ -12,7 +13,7 @@ import { EditorView } from '@codemirror/view';
 import type { BufferChange, PlanBuffer, TextEdit } from './types';
 
 export class CodeMirrorBuffer implements PlanBuffer {
-  private state: EditorState;
+  protected state: EditorState;
   private view: EditorView | null = null;
   /** Extensions of whichever editor is mounted; empty when none is. */
   private readonly mounted = new Compartment();
@@ -21,8 +22,9 @@ export class CodeMirrorBuffer implements PlanBuffer {
   private origin = 'text-editor';
   private changes = 0;
 
-  constructor(doc: string) {
-    this.state = EditorState.create({ doc, extensions: [this.historyConfig.of(history()), this.mounted.of([])] });
+  /** `extensions` are the buffer's own, kept whichever editor is mounted (the composed buffer's). */
+  constructor(doc: string, extensions: Extension = []) {
+    this.state = EditorState.create({ doc, extensions: [this.historyConfig.of(history()), this.mounted.of([]), extensions] });
   }
 
   text(): string {
@@ -44,7 +46,9 @@ export class CodeMirrorBuffer implements PlanBuffer {
       dispatch(
         this.state.update({
           changes: edits.map((e) => ({ from: e.from, to: e.to, insert: e.insert })),
-          annotations: origin === 'load' ? [Transaction.addToHistory.of(false)] : [],
+          // A remote change (the file changed on disk) stays out of the history too, which maps the
+          // entries before it through it, so an undo never reverts it.
+          annotations: origin === 'load' || origin === 'remote' ? [Transaction.addToHistory.of(false)] : [],
         }),
       ),
     );
@@ -86,7 +90,7 @@ export class CodeMirrorBuffer implements PlanBuffer {
     view.destroy();
   }
 
-  private as(origin: string, body: (dispatch: (tr: Transaction) => void) => void): void {
+  protected as(origin: string, body: (dispatch: (tr: Transaction) => void) => void): void {
     this.origin = origin;
     try {
       body((tr) => this.dispatch(tr));
@@ -95,7 +99,7 @@ export class CodeMirrorBuffer implements PlanBuffer {
     }
   }
 
-  private dispatch(tr: Transaction): void {
+  protected dispatch(tr: Transaction): void {
     this.state = tr.state;
     // Counted before the view updates, so the text editor's listeners see the new version.
     if (tr.docChanged) this.changes++;
@@ -106,7 +110,7 @@ export class CodeMirrorBuffer implements PlanBuffer {
     const change: BufferChange = {
       text: tr.state.doc.toString(),
       edits,
-      mapPos: (pos) => tr.changes.mapPos(pos),
+      mapPos: (pos, assoc) => tr.changes.mapPos(pos, assoc),
       origin: this.origin,
     };
     for (const listener of [...this.listeners]) listener(change);

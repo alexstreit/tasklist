@@ -6,6 +6,7 @@
 import { diagnosticCount, forEachDiagnostic } from '@codemirror/lint';
 import { EditorView } from '@codemirror/view';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import example from '../../examples/example.plan?raw';
 import { CodeMirrorBuffer } from '../../src/buffer';
 import type { Model } from '../../src/core';
 
@@ -32,16 +33,17 @@ vi.mock('../../src/app/registry', async (original) => {
 let view: EditorView;
 let preview: HTMLElement;
 
-// Fake File System Access API.
-let openText = '';
+// Fake File System Access API. The file holds what was last written to it, as a real one does:
+// saving reads it again first (spec §6).
+let onDisk = '';
 const written: string[] = [];
 let writable = true;
 const handle = {
   name: 'q4.plan',
-  getFile: async () => ({ text: async () => openText }),
+  getFile: async () => ({ text: async () => onDisk }),
   createWritable: async () => {
     if (!writable) throw new DOMException('The user denied write access', 'NotAllowedError');
-    return { write: async (t: string) => void written.push(t), close: async () => {} };
+    return { write: async (t: string) => void written.push((onDisk = t)), close: async () => {} };
   },
 };
 const showOpenFilePicker = vi.fn(async () => [handle]);
@@ -68,7 +70,7 @@ beforeAll(async () => {
     '<button id="open"></button><button id="save"></button><button id="save-as"></button><nav id="editors"></nav><span id="filename"></span><span id="status"></span>' +
     '<div id="editor"></div><section id="preview"><nav id="renderers"></nav><nav id="exporters"></nav><div id="host"></div></section>';
   vi.useFakeTimers();
-  await import('../../src/app/main');
+  (await import('../../src/app/main')).boot({ document: example });
   view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
   preview = document.getElementById('preview')!;
 });
@@ -186,7 +188,8 @@ describe('open and save', () => {
   });
 
   it('round-trips a file with comments, blank lines, trailing whitespace and front matter, converting tabs', async () => {
-    openText = '---\ncolumns: est:duration | owner:text\n---\n\n// note   \nAuth | 2d   \n\tLogin | 4h\n    Reset | 1h |\n\n';
+    const openText = '---\ncolumns: est:duration | owner:text\n---\n\n// note   \nAuth | 2d   \n\tLogin | 4h\n    Reset | 1h |\n\n';
+    onDisk = openText;
     document.getElementById('open')!.click();
     await flush();
     expect(view.state.doc.toString()).toBe(openText.replace('\t', '    '));
@@ -197,6 +200,39 @@ describe('open and save', () => {
     expect(written).toEqual([openText.replace('\t', '    ')]);
   });
 
+  it('applies an outside edit to the clean file when the window regains focus', async () => {
+    expect(document.title).toBe('q4.plan — Plan');
+    onDisk = onDisk.replace('Reset | 1h |', 'Reset | 2h |');
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    expect(view.state.doc.toString()).toBe(onDisk);
+    expect(document.title).toBe('q4.plan — Plan');
+  });
+
+  it('asks before saving over an outside edit made while the file had unsaved changes', async () => {
+    view.dispatch({ changes: { from: 0, insert: '// mine\n' } });
+    const outside = onDisk.replace('Login | 4h', 'Login | 5h');
+    onDisk = outside;
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    expect(view.state.doc.toString().startsWith('// mine\n')).toBe(true);
+    expect(view.state.doc.toString()).not.toContain('Login | 5h');
+    written.length = 0;
+    ctrlS();
+    await flush();
+    expect(document.querySelector('.dialog p')!.textContent).toBe('q4.plan changed on disk since you opened it. Overwrite it, or keep your changes unsaved?');
+    [...document.querySelectorAll<HTMLButtonElement>('.dialog button')].find((b) => b.textContent === 'Keep')!.click();
+    await flush();
+    expect(written).toEqual([]);
+    expect(onDisk).toBe(outside);
+    ctrlS();
+    await flush();
+    [...document.querySelectorAll<HTMLButtonElement>('.dialog button')].find((b) => b.textContent === 'Overwrite')!.click();
+    await flush();
+    expect(written).toEqual([view.state.doc.toString()]);
+    expect(document.title).toBe('q4.plan — Plan');
+  });
+
   it('reports a failed save and keeps the document unsaved', async () => {
     writable = false;
     view.dispatch({ changes: { from: 0, insert: 'x' } });
@@ -205,6 +241,19 @@ describe('open and save', () => {
     expect(document.getElementById('status')!.textContent).toBe('Could not save: The user denied write access');
     expect(document.title).toBe('● q4.plan — Plan');
     writable = true;
+  });
+});
+
+// Task 34: the toolbar follows what the workspace can do. A single file in Edge gets Refresh, not Save all.
+describe('toolbar with a single file saved in place', () => {
+  it('offers Open file, Open folder (disabled without a directory picker), Save, Save As and Refresh', () => {
+    const shown = [...document.querySelectorAll<HTMLButtonElement>('body > button')].filter((b) => !b.hidden).map((b) => b.id);
+    expect(shown).toEqual(['new', 'open', 'open-folder', 'save', 'save-as', 'refresh', 'close']);
+    expect(document.getElementById('open')!.textContent).toBe('Open file');
+    const openFolder = document.getElementById('open-folder') as HTMLButtonElement;
+    expect(openFolder.disabled).toBe(true);
+    expect(openFolder.title).toBe('Opening a folder needs Edge or Chrome');
+    expect(document.getElementById('files')!.hidden).toBe(true);
   });
 });
 
@@ -303,6 +352,29 @@ describe('renderer switcher', () => {
     tab('Pins').click();
     expect([...preview.querySelectorAll<HTMLTableRowElement>('tbody tr')].map((r) => r.cells[1].textContent)).toEqual(['UI']);
     tab('Table').click();
+  });
+
+  it('shows the Gantt’s scale picker in the toolbar, beside the exporters, only while the Gantt is showing (Task 39)', () => {
+    const picker = () => document.querySelectorAll('#view-tools .gantt-zoom');
+    const text = '---\nprofile: schedule\nproject-start: 2026-10-05\n---\nBuild\n    API | 3d\n';
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    vi.advanceTimersByTime(60);
+    expect(picker()).toHaveLength(0);
+    tab('Gantt').click();
+    vi.advanceTimersByTime(60);
+    expect(picker()).toHaveLength(1);
+    expect(document.getElementById('view-tools')!.nextElementSibling!.id).toBe('exporters');
+    expect(preview.querySelector('#host .gantt-zoom')).toBeNull();
+    // Another edit renders the Gantt again, with the one picker.
+    view.dispatch({ changes: { from: view.state.doc.length, insert: '    UI | 2d\n' } });
+    vi.advanceTimersByTime(60);
+    expect(picker()).toHaveLength(1);
+    tab('Schedule').click();
+    expect(picker()).toHaveLength(0);
+    tab('Gantt').click();
+    expect(picker()).toHaveLength(1);
+    tab('Table').click();
+    expect(document.getElementById('view-tools')!.children).toHaveLength(0);
   });
 });
 
@@ -451,5 +523,24 @@ describe('model versions', () => {
     expect(built.map(({ model }) => model.version)).toEqual(built.map(({ bufferVersion }) => bufferVersion));
     expect(built[built.length - 1].model.version).toBe(buffer().version());
     expect(buffer().version()).toBeGreaterThan(0);
+  });
+});
+
+describe('search in the single-file workspace (Task 36)', () => {
+  it('Ctrl+F opens CodeMirror’s search panel; replace-all is one undo', async () => {
+    const { closeSearchPanel, replaceAll, SearchQuery, setSearchQuery } = await import('@codemirror/search');
+    view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', keyCode: 70, ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(document.querySelector('.cm-search')).not.toBeNull();
+    // Past the history's grouping delay, so the replace isn't joined to the edit before it.
+    vi.advanceTimersByTime(1000);
+    const before = view.state.doc.toString();
+    view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: 'API', caseSensitive: true, replace: 'Service' })) });
+    replaceAll(view);
+    expect(before).toContain('API');
+    expect(view.state.doc.toString()).toBe(before.replace('API', 'Service'));
+    view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', keyCode: 90, ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(view.state.doc.toString()).toBe(before);
+    closeSearchPanel(view);
+    expect(document.querySelector('.cm-search')).toBeNull();
   });
 });

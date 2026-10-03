@@ -12,9 +12,70 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 /* The tab bar stays put; #host fills the rest and is the scroll container. */
 #preview { border-left: 1px solid var(--border); display: flex; flex-direction: column; }
 .preview-bar { flex: none; display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
-#renderers, #exporters, #editors { display: flex; gap: 4px; }
+#renderers, #exporters, #editors, #view-tools { display: flex; gap: 4px; }
+#view-tools { margin-left: auto; margin-right: 8px; }
 #editors { margin-left: 8px; }
 .toolbar button, .preview-bar button { border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 2px 10px; cursor: pointer; }
 #renderers button.active, #editors button.active { background: var(--accent-bg); border-color: var(--accent-border); }
 #renderers button:disabled { color: var(--fg-faint); cursor: not-allowed; }
 #host { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; }
+/* The file panel (spec §6): left of the editor, shown only for a workspace that lists files. */
+.file-panel { flex: none; width: 200px; overflow: auto; border-right: 1px solid var(--border); font-size: 13px; display: flex; flex-direction: column; }
+.file-panel.collapsed { width: auto; }
+.file-panel[hidden] { display: none; }
+.file-panel-toggle { border: none; background: none; color: var(--fg-muted); text-align: left; padding: 6px 8px; cursor: pointer; font: inherit; }
+.file-panel-toggle::before { content: '▾ '; }
+.file-panel.collapsed .file-panel-toggle::before { content: '▸ '; }
+.file-folder { padding: 6px 8px 2px; color: var(--fg-muted); }
+.file { display: flex; gap: 6px; width: 100%; border: none; background: none; color: var(--fg); text-align: left; padding: 2px 8px; cursor: pointer; font: inherit; }
+.file-folder ~ .file { padding-left: 16px; }
+.file:hover { background: var(--hover); }
+.file.active { background: var(--accent-bg); }
+.file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-marker.stale { color: var(--diag-warning); }
+.file-marker.missing { color: var(--diag-error); }
+/* The in-page question: changed on disk, unsaved changes. */
+.dialog-backdrop { position: fixed; inset: 0; background: var(--backdrop); display: flex; align-items: center; justify-content: center; z-index: 10; }
+.dialog { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 16px; max-width: min(480px, calc(100vw - 32px)); font-size: 14px; }
+.dialog p { margin: 0 0 12px; }
+.dialog-buttons { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.dialog-buttons button { border: 1px solid var(--button-border); background: var(--button-bg); color: var(--fg); border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+/* Hidden while the start screen shows (spec §6); these set their own display. */
+#preview[hidden], #editors[hidden], .close-menu[hidden], .start-screen[hidden] { display: none; }
+/* The Close menu, under the Close button. */
+.close-anchor { position: relative; align-self: stretch; }
+.close-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 5; display: flex; flex-direction: column; min-width: 140px; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px var(--backdrop); }
+.toolbar .close-menu button { border: none; background: none; text-align: left; padding: 4px 8px; }
+.toolbar .close-menu button:hover:not(:disabled), .toolbar .close-menu button:focus-visible { background: var(--hover); }
+.toolbar .close-menu button:disabled { color: var(--fg-faint); cursor: not-allowed; }
+/* The start screen: the page the app opens on, in place of the panes. */
+.start-screen { flex: 1; overflow: auto; padding: 32px 16px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.start-screen h1 { margin: 0; font-size: 24px; font-weight: 600; width: min(520px, 100%); }
+.start-screen section { display: flex; flex-direction: column; gap: 6px; width: min(520px, 100%); }
+.start-screen h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.start-choice { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 8px 12px; border: 1px solid var(--button-border); border-radius: 6px; background: var(--button-bg); color: var(--fg); font: inherit; font-size: 14px; cursor: pointer; }
+.start-choice:hover:not(:disabled) { background: var(--hover); }
+.start-choice:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 1px; }
+.start-choice:disabled { color: var(--fg-faint); cursor: not-allowed; }
+.start-description { font-size: 13px; color: var(--fg-muted); }
+/* The new plan wizard, in the in-page dialog's frame. */
+.wizard { width: min(440px, calc(100vw - 32px)); box-sizing: border-box; }
+.wizard h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+.wizard-step { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.wizard-choice { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.wizard-choice span { display: flex; flex-direction: column; gap: 2px; }
+.wizard-description { font-size: 13px; color: var(--fg-muted); }
+.wizard-field { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.wizard-field label { width: 100%; font-size: 13px; color: var(--fg-muted); }
+.wizard-field input, .wizard-field select { font: inherit; padding: 3px 6px; border: 1px solid var(--button-border); border-radius: 4px; background: var(--bg); color: var(--fg); color-scheme: light dark; }
+.wizard-note { font-size: 13px; color: var(--diag-error); }
+.wizard-mount { font-size: 14px; display: flex; gap: 6px; align-items: center; }
+.dialog-buttons button[hidden] { display: none; }
+/* The filter box (spec §5.7): its query, ✕, and while it's active the count. */
+.toolbar .filter { display: inline-flex; align-items: center; gap: 4px; margin-left: 12px; }
+.toolbar .filter[hidden] { display: none; }
+.toolbar .filter input { font: inherit; width: 14em; padding: 2px 6px; border: 1px solid var(--button-border); border-radius: 4px; background: var(--bg); color: var(--fg); color-scheme: light dark; }
+.toolbar .filter input::-webkit-search-cancel-button { display: none; } /* the ✕ beside it clears it */
+.toolbar .filter.active input { border-color: var(--accent-border); background: var(--accent-bg); }
+.toolbar .filter #filter-clear { padding: 2px 6px; }
+.toolbar .filter .filter-count { color: var(--fg-muted); white-space: nowrap; }

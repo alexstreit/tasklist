@@ -14,7 +14,10 @@ export interface Calendar {
   add(t: WorkHours, hours: number, resource?: string): WorkHours;
   /** 'start': the first working hour on or after d. 'end': the hour just after d's last working hour. */
   fromDate(d: IsoDate, edge: Edge): WorkHours;
-  /** 'start': the working day hour t falls in. 'end': the working day hour t - 1 falls in (an exclusive finish). */
+  /**
+   * 'start': the working day hour t falls in. 'end': the working day hour t - 1 falls in (an
+   * exclusive finish), except at hour 0, which has no working hour before it: hour 0's own day.
+   */
   toDate(t: WorkHours, edge: Edge): IsoDate;
   /** For showing durations in days. */
   readonly hoursPerDay: number;
@@ -54,8 +57,8 @@ export function naiveCalendar(start: IsoDate, hoursPerDay: number): Calendar {
       return (workdayIndex(edge === 'start' ? day : day + 1) - origin) * hoursPerDay;
     },
     toDate(t, edge) {
-      // An exclusive finish belongs to the day of the instant just before it.
-      const days = edge === 'start' ? Math.floor(t / hoursPerDay) : Math.ceil(t / hoursPerDay) - 1;
+      // An exclusive finish belongs to the day of the instant just before it; hour 0 has none, so its own day.
+      const days = edge === 'start' || t === 0 ? Math.floor(t / hoursPerDay) : Math.ceil(t / hoursPerDay) - 1;
       return isoDate(workdayAt(origin + days));
     },
   };

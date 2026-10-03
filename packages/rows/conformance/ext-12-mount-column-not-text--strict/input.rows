@@ -1,0 +1,6 @@
+---
+mount: mount
+columns: est:duration | mount:number
+---
+A | 2d | 3
+B | 1d | mount=teams/b.plan

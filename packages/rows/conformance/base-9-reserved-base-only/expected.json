@@ -2,7 +2,7 @@
   "spec": ["base §9", "ext intro: a base-only parser may reject id=auth in strict mode"],
   "stage": "base",
   "failed": false,
-  "errors": [{ "class": "structural", "code": "invalid-cell-name", "line": 12 }],
+  "errors": [{ "class": "structural", "code": "invalid-cell-name", "line": 13 }],
   "roles": [],
   "columns": [
     { "name": "name", "type": "text" },
@@ -11,8 +11,8 @@
     { "name": "link", "type": "text" }
   ],
   "rows": [
-    { "line": 10, "lead": "~Auth {#auth}", "values": { "est": "2", "dep": "#x", "link": "#y" } },
-    { "line": 11, "indent": 4, "lead": "Login {#login}{#l2}", "values": { "est": "1" } },
-    { "line": 12, "lead": "Admin", "values": { "est": "id=admin" } }
+    { "line": 11, "lead": "~Auth {#auth}", "values": { "est": "2", "dep": "#x", "link": "#y" } },
+    { "line": 12, "indent": 4, "lead": "Login {#login}{#l2}", "values": { "est": "1" } },
+    { "line": 13, "lead": "Admin", "values": { "est": "id=admin" } }
   ]
 }

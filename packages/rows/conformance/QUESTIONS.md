@@ -332,3 +332,45 @@ Raised by Task 25, which combined them as `markers:` does: the file's `roles:` r
 **Decision (spec owner):** they merge per role. Where both bind a role, the file's binding wins, and that is not an error. The bindings keep the profile's entry order, a rebound role keeping its place, and the roles only the file binds follow in its entry order. A profile role whose column the file's `columns` or `lead` replaced is dropped, with no error; this is an exception to base §2.3's rule that such conflicts are reported on the file. A6 is unchanged: a role the file itself binds to a missing column is still `unknown-role-column`, and so is a profile role on a column neither the profile nor the file declares, as an error in the profile (`profile-has-errors`). A role bound twice within one `roles` value is still A7.
 **Spec changed:** ext §11, §10 (extensions 0.9).
 **Cases:** `ext-11-roles-profile-column-replaced` now has no errors and no bound roles, so its strict variant is gone. The former ext-11-roles-file-replaces-profile case is renamed `ext-11-roles-file-rebinds-profile-role`, and now keeps the profile's other role. `ext-11-roles-file-adds-role` and `ext-11-roles-estimate-only` are new.
+
+### A11. A `mount:` naming a column the file doesn't declare (settled by analogy with ext §6.1, `nest:`)
+
+`nest:`'s implicit column has been in ext §6.1 since the first draft; no question settled it. Q16 settled what a wrong nest column is, which A13 follows.
+
+**Decision:** the column is implicitly `MOUNT:text`, as a missing nest column is implicitly `NEST:ref`. Like every implicit column it is set only by name. It follows the other implicit columns, which are now in the order key, nest, markers, mount.
+**Spec changed:** ext §2, §12.1 (extensions 0.10).
+**Cases:** `ext-12-mount-implicit-column` (+ `--strict`), `ext-12-mount-rows`.
+
+### A12. An empty `mount:` (settled by analogy with A1)
+
+**Decision:** declares nothing, and is not an error, as an empty `nest:` doesn't.
+**Spec changed:** ext intro.
+**Cases:** `ext-12-mount-empty` (+ `--strict`), whose `mount=x.plan` is an undeclared cell name.
+
+### A13. A declared mount column of the wrong type (settled by analogy with Q16, the nest column)
+
+**Decision:** the mount column MUST be read as `text` and have no options, as the nest column MUST be a `ref` to the current table without options. Anything else is a structural error (`invalid-mount-column`) on the `mount` line. `mount` is ignored and the column is read as declared, so no row has a mount, as a marker column that isn't `bool` loses its marker entry (Q16). Without options, `unique` can't make two mounts of one file an error, which §12.3 says they are not.
+**Spec changed:** ext §12.1, §10.
+**Cases:** `ext-12-mount-column-not-text` (+ `--strict`), `ext-12-mount-column-with-options` (+ `--strict`).
+
+### A14. `mount:` naming the nest column or a marker column (settled by analogy with A13)
+
+**Decision:** the nest column is a `ref` and a marker column a `bool`, declared or implicit, and the implicit columns come before the mount column (A11). So `mount:` naming either is a mount column that isn't `text`: `invalid-mount-column` on the `mount` line.
+**Spec changed:** ext §12.1.
+**Cases:** `ext-12-mount-names-nest-column` (+ `--strict`), `ext-12-mount-names-marker-column` (+ `--strict`).
+
+### A15. A profile's `mount:` conflicting with the file's declaration (settled by analogy with Q42)
+
+**Decision:** reported on the file's declaration of the column, as for a profile's nest column (base §2.3). The class and recovery are A13's.
+**Spec changed:** ext §12.1, §10.
+**Cases:** `ext-12-mount-column-not-text-from-profile` (+ `--strict`).
+
+### Q44. `mount:` naming the lead or the key column
+
+Raised by Task 33. Both are `text` without written options, so under A13 alone they read as valid mount columns, and a row's title, or its ID, would be its mount target.
+
+**Decision (spec owner):** the mount column MUST NOT be the lead column, or have the key column's name, whether or not identity applies. The key column's name is `key`'s value, or `id` when `key` is unset. The lead is a row's title and the key column its identity, so neither can also be a mount target. A `mount:` naming either is the structural error `invalid-mount-column`, reported on the `mount` line, and `mount` is ignored, as in A13 and A14.
+
+The first version of this decision covered the key column only when identity applied. Identity can begin with a file's first anchor, so a file with `mount: id` and no `key:` had a valid mount column until an anchor was added, and then lost every mount to a new structural error. A rule that changes when the first anchor appears would make anchor edits add or remove errors in other rows. The `setAnchor` property found it. Taking the name whether or not identity applies keeps the rule independent of anchors, and the edit API unchanged.
+**Spec changed:** ext §12.1, §10 (extensions 0.10, with the rest of Task 33).
+**Cases:** `ext-12-mount-names-lead` (+ `--strict`), `ext-12-mount-names-key-column` (+ `--strict`), `ext-12-mount-names-key-column-without-identity` (+ `--strict`).
