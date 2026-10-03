@@ -34,9 +34,10 @@ export async function cancellable<T>(promise: Promise<T>): Promise<T | null> {
 export const message = (e: unknown): string => (typeof e === 'object' && e !== null && 'message' in e ? String(e.message) : String(e));
 const needsFolder = (path: string) => new Error(`${path} is not the open file; reading other files needs a folder workspace`);
 
-/** The parts every single-file workspace shares: it lists and resolves only relative to the one file. */
-function singleFile(current: () => string | null): Pick<Workspace, 'list' | 'resolve'> {
+/** The parts every single-file workspace shares: it lists and resolves only relative to the one file, and creates nothing. */
+function singleFile(current: () => string | null): Pick<Workspace, 'list' | 'resolve' | 'create'> {
   return {
+    create: async () => ({ outcome: 'failed', reason: 'Creating a file at a path needs a folder workspace' }),
     list: async () => {
       const path = current();
       return path === null ? [] : [path];
@@ -66,7 +67,7 @@ function nativeWorkspace(win: PickerWindow): Workspace {
     }
   };
   return {
-    can: { list: false, watch: false, saveInPlace: true, saveAs: true },
+    can: { list: false, watch: false, saveInPlace: true, saveAs: true, create: false },
     ...singleFile(() => handle?.name ?? null),
     async open(): Promise<OpenedFile | null> {
       const picked = await cancellable(win.showOpenFilePicker!({ types: TYPES }));
@@ -108,7 +109,7 @@ function fallbackWorkspace(document: Document): Workspace {
     return { outcome: 'downloaded' };
   };
   return {
-    can: { list: false, watch: false, saveInPlace: false, saveAs: true },
+    can: { list: false, watch: false, saveInPlace: false, saveAs: true, create: false },
     ...singleFile(() => opened?.name ?? null),
     open() {
       return new Promise((resolve) => {

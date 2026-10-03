@@ -11,7 +11,7 @@ import { fieldName } from './fields';
 import type { FieldKey } from './fields';
 import type { Registry, Stage, StageContext } from './plugin';
 import type { Diagnostic, ItemNode, Model } from './types';
-import { isPlanName, PLAN_PROFILE, SCHEDULE_PROFILE } from './profile';
+import { isPlanName, PROFILES } from './profile';
 import { readTree } from './read';
 
 /**
@@ -27,7 +27,7 @@ export function parsePlan(text: string, filename?: string): { doc: RowsDocument;
   });
   const doc = parseRows(lines.join('\n'), {
     filename,
-    profiles: { plan: PLAN_PROFILE, schedule: SCHEDULE_PROFILE },
+    profiles: Object.fromEntries(PROFILES.map((p) => [p.name, p.text])),
     defaultProfile: isPlanName(filename) ? 'plan' : undefined,
   });
   return { doc, tabs };

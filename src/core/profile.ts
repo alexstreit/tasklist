@@ -22,6 +22,12 @@ roles: effort=est duration=dur start=start deps=deps deadline=due
 ---
 `;
 
+/** The built-in profiles, in the order the new plan wizard offers them, each with what it is for. */
+export const PROFILES: readonly { name: string; label: string; description: string; text: string }[] = [
+  { name: 'plan', label: 'Estimate', description: 'Size work in a tree of tasks whose estimates roll up.', text: PLAN_PROFILE },
+  { name: 'schedule', label: 'Schedule', description: 'Estimates plus durations, dependencies and dates, scheduled from a project start.', text: SCHEDULE_PROFILE },
+];
+
 /** A file with no `profile:` key is a plan when its name ends in `.plan`, or when it has no name yet. */
 export function isPlanName(filename: string | undefined): boolean {
   return filename === undefined || filename.endsWith('.plan');

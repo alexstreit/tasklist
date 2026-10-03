@@ -1,9 +1,9 @@
 // The folder workspace (PLUGINS.md §7.1): a folder picked with the File System Access API, holding
-// plan and rows files at paths relative to it. Each file is read and written in place; nothing is
-// created except a file saved back after it went missing (spec §6).
+// plan and rows files at paths relative to it. Each file is read and written in place; `create`
+// makes a new one, and saving back a file that went missing on disk makes it again (spec §6).
 
 import { Notice } from '../../core';
-import type { OpenedFile, Workspace, WriteResult } from '../../core';
+import type { OpenedFile, OpenedFolder, Workspace, WriteResult } from '../../core';
 import type { FolderMemory } from './memory';
 import { cancellable, message } from './single';
 
@@ -60,12 +60,16 @@ export function createFolderWorkspace(win: Window, memory: FolderMemory, remembe
   };
 
   const workspace: Workspace = {
-    can: { list: true, watch: false, saveInPlace: true, saveAs: false },
+    can: { list: true, watch: false, saveInPlace: true, saveAs: false, create: true },
 
-    async open(): Promise<OpenedFile | null> {
+    async open(options): Promise<OpenedFile | OpenedFolder | null> {
       let handle: FileSystemDirectoryHandle;
       let paths: string[];
-      if (remembered) {
+      if (root) {
+        // Picked already, with allowEmpty: this open finishes opening it.
+        handle = root;
+        paths = await workspace.list();
+      } else if (remembered) {
         handle = remembered;
         const gone = new Notice(`${handle.name} can no longer be found, so it was forgotten`);
         try {
@@ -84,6 +88,8 @@ export function createFolderWorkspace(win: Window, memory: FolderMemory, remembe
         handle = root = picked;
         paths = await workspace.list();
       }
+      // Nothing is remembered yet: only an open that shows a file remembers the folder.
+      if (options?.allowEmpty) return { path: null };
       if (paths.length === 0) throw new Notice('No plan files in folder');
       // The file last active in this folder, else the first at its top level, else the first listed.
       const last = await memory.load();
@@ -118,7 +124,17 @@ export function createFolderWorkspace(win: Window, memory: FolderMemory, remembe
       }
     },
 
-    saveAs: async () => ({ outcome: 'failed', reason: 'Creating files comes in a later task' }),
+    async create(path, text) {
+      try {
+        await fileAt(path);
+        return { outcome: 'failed', reason: `${path} already exists` };
+      } catch (e) {
+        if (!notFound(e)) return { outcome: 'failed', reason: message(e) };
+      }
+      return workspace.write(path, text);
+    },
+
+    saveAs: async () => ({ outcome: 'failed', reason: 'Use New… to create a file in this folder.' }),
 
     resolve(from, ref) {
       const out = from.split('/').slice(0, -1);

@@ -70,7 +70,7 @@ beforeAll(async () => {
     '<header class="toolbar"><button id="open"></button><button id="save"></button><button id="save-as"></button><nav id="editors"></nav><span id="filename"></span><span id="status"></span></header>' +
     '<main><div id="editor"></div><section id="preview"><nav id="renderers"></nav><nav id="exporters"></nav><div id="host"></div></section></main>';
   vi.useFakeTimers();
-  await import('../../src/app/main');
+  (await import('../../src/app/main')).boot();
   await settle();
   $('open-folder').click();
   await settle();

@@ -10,13 +10,15 @@ import type { OpenFile } from '../../src/app/files';
 import { createFolderWorkspace, createSingleFileWorkspace } from '../../src/app/workspace';
 import { fakeFolder, fakeMemory } from '../support/fs';
 import type { Tree } from '../support/fs';
+import type { OpenedFile } from '../../src/core';
 
 async function setup(tree: Tree = { 'alpha.plan': 'A1\nA2\nA3\n', 'beta.plan': 'B1\nB2\n', teams: { 'gamma.plan': 'G\n' } }) {
   const folder = fakeFolder('Portfolio', tree);
   const win = { showDirectoryPicker: async () => folder.handle } as unknown as Window;
   Object.assign(win, { self: win, top: win });
   const workspace = createFolderWorkspace(win, fakeMemory());
-  const opened = await workspace.open();
+  // Opened without allowEmpty, so a file is shown.
+  const opened = (await workspace.open()) as OpenedFile | null;
   const answers: boolean[] = [];
   const asked: [string | null, string][] = [];
   const overwrite = vi.fn(async (file: OpenFile, why: 'changed' | 'missing') => {
@@ -109,7 +111,7 @@ describe('saving', () => {
     expect(store.files().filter(isDirty)).toEqual([]);
   });
 
-  it('a file with no path in a folder workspace is not saved: creating files comes later', async () => {
+  it('a file with no path in a folder workspace is not saved: New… creates files there', async () => {
     const folder = fakeFolder('Portfolio', { 'a.plan': 'A\n' });
     const win = { showDirectoryPicker: async () => folder.handle } as unknown as Window;
     Object.assign(win, { self: win, top: win });
@@ -117,7 +119,7 @@ describe('saving', () => {
       makeBuffer: (text) => new InMemoryBuffer(text),
       ask: { overwrite: async () => true },
     });
-    expect(await store.save(store.active())).toEqual({ outcome: 'failed', reason: 'Creating files comes in a later task' });
+    expect(await store.save(store.active())).toEqual({ outcome: 'failed', reason: 'Use New… to create a file in this folder.' });
     expect(folder.writes).toEqual([]);
   });
 
@@ -259,5 +261,49 @@ describe('a file missing on disk', () => {
       [false, false],
       [false, true],
     ]);
+  });
+});
+
+describe('closing (Task 40)', () => {
+  it('marks files the user opened as shown, and files adopted for a segment as not', async () => {
+    const { store, file } = await setup();
+    store.adopt('teams/gamma.plan', 'G\n');
+    await store.show('beta.plan');
+    expect(store.files().map((f) => [f.path, f.shown])).toEqual([
+      ['alpha.plan', true],
+      ['teams/gamma.plan', false],
+      ['beta.plan', true],
+    ]);
+    // Showing an adopted file makes it shown.
+    await store.show('teams/gamma.plan');
+    expect(file('teams/gamma.plan').shown).toBe(true);
+  });
+
+  it('activates the next shown file in the panel’s order, else the one before, and forgets the files dropped', async () => {
+    const { store, file } = await setup();
+    await store.show('beta.plan');
+    await store.show('teams/gamma.plan');
+    await store.show('alpha.plan');
+    const listener = vi.fn();
+    store.onChange(listener);
+    store.close(file('alpha.plan'), [file('alpha.plan')]);
+    expect(store.active().path).toBe('beta.plan');
+    expect(store.files().map((f) => f.path)).toEqual(['beta.plan', 'teams/gamma.plan']);
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.close(file('teams/gamma.plan'), []);
+    expect(store.active().path).toBe('beta.plan');
+    // Kept for a segment: still open, no longer shown.
+    expect(file('teams/gamma.plan').shown).toBe(false);
+    expect(() => store.close(store.active(), [])).toThrow('Closing the last open file');
+  });
+
+  it('save all saves only the files it is given', async () => {
+    const { store, file, append, folder } = await setup();
+    await store.show('beta.plan');
+    append(file('alpha.plan'), 'A4\n');
+    append(file('beta.plan'), 'B3\n');
+    await store.saveAll([file('beta.plan')]);
+    expect(folder.writes.map(([path]) => path)).toEqual(['beta.plan']);
+    expect(isDirty(file('alpha.plan'))).toBe(true);
   });
 });

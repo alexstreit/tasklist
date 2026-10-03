@@ -26,8 +26,35 @@ function setup(tree: Tree = portfolio(), memory = fakeMemory()) {
 }
 
 describe('folder workspace', () => {
-  it('can list and save in place, and cannot save as', () => {
-    expect(setup().workspace.can).toEqual({ list: true, watch: false, saveInPlace: true, saveAs: false });
+  it('can list, save in place and create, and cannot save as', () => {
+    expect(setup().workspace.can).toEqual({ list: true, watch: false, saveInPlace: true, saveAs: false, create: true });
+  });
+
+  it('creates a file and its folders, and refuses one that exists, writing nothing (Task 40)', async () => {
+    const { workspace, folder } = setup();
+    await workspace.open();
+    expect(await workspace.create('teams/new/delta.plan', 'D\n')).toEqual({ outcome: 'saved', path: 'teams/new/delta.plan' });
+    expect((folder.tree.teams as Tree).new).toEqual({ 'delta.plan': 'D\n' });
+    expect(await workspace.create('teams/alpha.plan', 'X\n')).toEqual({ outcome: 'failed', reason: 'teams/alpha.plan already exists' });
+    expect(await workspace.create('teams/new/delta.plan', 'X\n')).toEqual({ outcome: 'failed', reason: 'teams/new/delta.plan already exists' });
+    expect(folder.writes).toEqual([['teams/new/delta.plan', 'D\n']]);
+  });
+
+  it('with allowEmpty, picks a folder, even an empty one, shows no file and remembers nothing; a later open finishes opening it (Task 40)', async () => {
+    const memory = fakeMemory();
+    const { workspace, folder, showDirectoryPicker } = setup({}, memory);
+    expect(await workspace.open({ allowEmpty: true })).toEqual({ path: null });
+    expect(await workspace.list()).toEqual([]);
+    expect(await memory.load()).toBeNull();
+    // Still empty: the open fails, and nothing is remembered.
+    await expect(workspace.open()).rejects.toThrow(new Notice('No plan files in folder'));
+    expect(await memory.load()).toBeNull();
+    // With files written, it opens without a second picker, by the usual rule, and remembers the folder.
+    folder.tree['b.plan'] = 'B\n';
+    folder.tree.teams = { 'a.plan': 'A\n' };
+    expect(await workspace.open()).toEqual({ path: 'b.plan', text: 'B\n' });
+    expect(showDirectoryPicker).toHaveBeenCalledTimes(1);
+    expect(await memory.load()).toEqual({ handle: folder.handle, active: 'b.plan' });
   });
 
   it('lists plan and rows files recursively, relative to the folder, skipping dot-folders and node_modules', async () => {
@@ -47,9 +74,9 @@ describe('folder workspace', () => {
     await expect(workspace.read('teams/none.plan')).rejects.toThrow('none.plan was not found');
   });
 
-  it('save as creates nothing: that comes later', async () => {
+  it('save as creates nothing: New… creates files in a folder', async () => {
     const { workspace } = setup();
-    expect(await workspace.saveAs('x', 'untitled.plan')).toEqual({ outcome: 'failed', reason: 'Creating files comes in a later task' });
+    expect(await workspace.saveAs('x', 'untitled.plan')).toEqual({ outcome: 'failed', reason: 'Use New… to create a file in this folder.' });
   });
 
   it('resolves relative paths, normalising . and .., and refuses one outside the folder', () => {

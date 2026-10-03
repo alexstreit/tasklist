@@ -7,6 +7,7 @@
 
 import { EditorView } from '@codemirror/view';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import example from '../../examples/example.plan?raw';
 import { fakeFolder, fakeMemory } from '../support/fs';
 import type { FakeFolder, Tree } from '../support/fs';
 
@@ -69,14 +70,14 @@ beforeAll(async () => {
     '<header class="toolbar"><button id="open"></button><button id="save"></button><button id="save-as"></button><nav id="editors"></nav><span id="filename"></span><span id="status"></span></header>' +
     '<main><div id="editor"></div><section id="preview"><nav id="renderers"></nav><nav id="exporters"></nav><div id="host"></div></section></main>';
   vi.useFakeTimers();
-  await import('../../src/app/main');
+  (await import('../../src/app/main')).boot({ document: example });
   await flush();
   findView();
 });
 
 describe('reopening the remembered folder', () => {
   it('offers Reopen beside the open buttons; no panel, Save all or Refresh before a folder is open', () => {
-    expect(shown()).toEqual(['Open file', 'Open folder', 'Reopen Old', 'Download']);
+    expect(shown()).toEqual(['New…', 'Open file', 'Open folder', 'Reopen Old', 'Download', 'Close']);
     expect($('open-folder').disabled).toBe(false);
     expect($('files').hidden).toBe(true);
   });
@@ -98,7 +99,7 @@ describe('reopening the remembered folder', () => {
     vi.advanceTimersByTime(60);
     expect(document.title).toBe('old.plan — Plan');
     expect(view.state.doc.toString()).toBe('Old | 1h\n');
-    expect(shown()).toEqual(['Open file', 'Open folder', 'Reopen Old', 'Save', 'Save all', 'Refresh']);
+    expect(shown()).toEqual(['New…', 'Open file', 'Open folder', 'Reopen Old', 'Save', 'Save all', 'Refresh', 'Close']);
     expect(panelFiles()).toEqual(['old.plan (active)']);
     expect(leave()).toBe(false);
   });

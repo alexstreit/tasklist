@@ -633,7 +633,7 @@ Replace the plan's own parser with the rows library. `compute`, renderers and ex
 - The highlighter resolves cells with the parser's rules, not just token positions. The tokenizer marks `ratio=` as a cell name, but the parser reads an undeclared name as part of an unnamed cell, and an unnamed cell after a named one, or past the declared columns, as overflow. The conformance test caught this, and DESIGN §7 now says so.
 - The grid refuses an edit while its model trails the buffer (the shell's 50 ms debounce), with the same note. Before this task that case silently wrote at stale offsets.
 - Typed values are trimmed and tabs become spaces before they go to rows. A title that is unchanged after trimming is a no-op.
-- "New documents start with `profile: plan`": the only document the app creates is the startup one, `examples/example.plan`, which already says `profile: plan`. There is no New command, so nothing else changed.
+- "New documents start with `profile: plan`": the only document the app creates is the startup one, `examples/example.plan`, which already says `profile: plan`. There is no New command, so nothing else changed. (Changed by Task 40: the app opens on a start screen, and the new plan wizard writes `profile:` into every file it creates.)
 
 **Rewritten tests:**
 
@@ -1789,7 +1789,7 @@ Expected, in work hours, with the displayed dates:
 1. **The single file gets the same checks.** The read before each write, and the re-read on focus and Refresh, apply whenever `can.saveInPlace`, so a single file in Edge gets them too. The download fallback skips them, since a download overwrites nothing.
 2. **The file shown first** is the folder's last-active file (remembered with the folder handle), else the first top-level file, else the first listed. An empty folder opens nothing, the open files stay, and the status reads "No plan files in folder".
 3. **Replacing the open files asks first.** Open file, Open folder and Reopen ask "_alpha.plan and beta.plan_ have unsaved changes." with Save all and continue, Discard and continue, and Cancel. Save all and continue goes through the normal save path, changed-on-disk prompt included, and continues only if every save succeeds.
-4. **`can.saveAs`** joins `can` (PLUGINS.md §7.1): true for the single-file workspace, false for a folder. The shell hides Save As without it, and a pathless file in a folder isn't saved ("Creating files comes in a later task").
+4. **`can.saveAs`** joins `can` (PLUGINS.md §7.1): true for the single-file workspace, false for a folder. The shell hides Save As without it, and a pathless file in a folder isn't saved ("Creating files comes in a later task"). (Changed by Task 40: a folder creates files with `workspace.create`, through the new plan wizard and the Portfolio template; Save As stays hidden in a folder.)
 5. **A file that can't be read** on a re-read keeps its buffer and stays open, marked missing, and the status line names it. Saving it asks "_alpha.plan_ is no longer on disk. Save it again at _teams/alpha.plan_?"; Yes writes it at its path, creating it (the only file creation in this task). If it reappears it is handled like any other file. Focus and Refresh also list the folder again.
 6. **Save all** is shown when `can.list`, **Refresh** when `can.saveInPlace`: the single file in Edge gets Refresh but not Save all, and the download fallback neither.
 7. **A refused Reopen** says "Permission to open _Portfolio_ was refused" and keeps Reopen. The handle is forgotten only when it no longer resolves (with a status line saying so) or when another folder is opened.
@@ -2692,3 +2692,138 @@ On a new fixture, `tests/fixtures/long.plan`, with `profile: schedule`, `project
 **Spec:** plan-format-spec §3.3: `RenderContext.toolbar`. §5.5: the geometry's signature and scale argument, the scales table, Fit's ties and zero width, label placement and overlap with the width estimate, the three-row header, the deadline row, lines and ticks, the picker, the minimum width and as-bar summaries. Task 30 has a "Changed by Task 39" note. PLUGINS.md and VISION.md are unchanged.
 
 **Human review:** read `tests/schedule/gantt-zoom.test.ts` against the hand-worked values first, then `resolveScale` and the tiers in `geometry.ts`.
+
+---
+
+## Task 40 — Start screen, templates, new file, close
+
+**Serves:** M3 follow-up, before real use (VISION §6, §7). The app opens on a start screen instead of a sample file, offers templates, creates new plan files through a short wizard, and can close a file or a folder. Together these make it possible to set up and leave a real portfolio without touching the file system by hand.
+
+**Deliverables**
+
+- **Start screen,** shown on every load, and after closing a folder or file. It's a page in the shell, keyboard reachable, in both themes. Its choices, in order:
+  1. **Reopen _Portfolio_.** Only when a folder is remembered (Task 34). Refusal and a missing folder behave as today.
+  2. **New plan…** opens the wizard below.
+  3. **Open folder…** and **Open file…**, today's actions. Open folder is disabled with its tooltip where the browser lacks it.
+  4. **Templates:** Estimate, Schedule and Portfolio, each with a one-line description.
+
+  The app no longer starts on `examples/example.plan`. The shell's boot takes an optional initial document, which tests use; a real load always shows the start screen. VISION §3.1's single-file boot test uses that option.
+
+- **Templates** are bundled with the app (`?raw` imports of the example files), so they work on GitHub Pages:
+  - **Estimate** is `examples/example.plan`, and **Schedule** is `examples/demo.plan`. Each opens as an unsaved, untitled document in the single-file workspace, so Ctrl+S goes to Save As.
+  - **Portfolio** is `examples/portfolio/` (the master and two team plans). It asks for a folder and writes the three files there, keeping their relative paths. If any of them already exists, it stops and names the file, without overwriting. It then opens that folder with `portfolio.plan` active.
+- **New plan wizard.** Reachable from the start screen and from a **New…** toolbar button that's always present. Three steps:
+  1. **Type:** Estimate (`profile: plan`) or Schedule (`profile: schedule`), each with a one-line description. The list comes from the built-in profiles, so a future profile slots in.
+  2. **Name and location** (folder workspace only):
+     - **Name:** defaults to `untitled.plan`, and `.plan` is added if missing. It must be non-empty, contain no `/`, and not already exist in the chosen folder. Each refusal is a plain note beside the field.
+     - **Location:** the workspace root, or one of its subfolders, from the workspace's file list.
+  3. **Project start** (Schedule only): a date field defaulting to today. The wizard is UI code, so it may read the clock.
+
+  **What it writes:** `---\nprofile: plan\n---\n`, or for Schedule `---\nprofile: schedule\nproject-start: YYYY-MM-DD\n---\n`.
+  - **In a folder workspace:** the file is created through a new `workspace.create(path, text)`, which fails if the file exists and creates subfolders as needed. Add it to PLUGINS.md §7.1 and the `Workspace` interface. The single-file workspace's `create` is unavailable (`can.create: false`).
+  - **Elsewhere:** the wizard opens an untitled document in the single-file workspace, after the usual unsaved-changes dialog.
+  - **Mount it under _row_:** a checkbox, shown when a folder workspace's active file has an item row selected in the grid, or the text cursor on an item row. When ticked, after creating the file the wizard writes `mount=` with the path relative to that row's file, with `setCell` through `applyFile`, as one undo step. The master stays active and the new plan appears as its segment. Without the checkbox, the new file becomes the active file.
+
+- **Close:** a **Close** toolbar menu.
+  - **Close file** (folder workspace): closes the active file. It also closes the files that were opened only to show this file's mounts, unless another open file shows them too. The next open file in panel order becomes active. It's disabled, with a tooltip saying to use Close folder, when no other file would remain open, because exactly one file is always active (Task 34).
+  - **Close folder**, or **Close** in the single-file workspace: closes everything and returns to the start screen. The remembered folder stays, for Reopen.
+  - Every close first runs Task 34's dialog (Save all and continue, Discard and continue, Cancel), listing every unsaved file it would close, including mounted ones.
+- **Spec:** plan-format-spec §6 (start screen, templates, new file, close) and §2.1 ("the tool writes `profile:` into every file it creates" is now true, through the wizard). PLUGINS.md §7.1 (`create`, `can.create`).
+
+**Acceptance criteria**
+
+- [x] Boot with no option shows the start screen. Reopen appears only when a folder is remembered. The keyboard reaches every choice. — `tests/app/shell-start.test.ts`, "the start screen": the panes hidden, the choices in order with their descriptions, the toolbar down to New…, Open file and Open folder, every choice an enabled button with the first focused; Reopen _Portfolio_ is first after Close folder ("Close").
+- [x] The Estimate and Schedule templates open untitled and unsaved, with their text exactly the bundled example's. Ctrl+S offers Save As. — `tests/app/shell-start.test.ts`, "single-file templates": the text is `examples/example.plan` and `examples/demo.plan` exactly, the title is "Untitled — Plan", and Ctrl+S calls the save picker with `untitled.plan`.
+- [x] The Portfolio template writes three files with their relative paths into an empty fake folder, and opens it with `portfolio.plan` active. Its schedule matches Task 35's table. Into a folder where `teams/alpha.plan` already exists, it writes nothing, names that file, and opens the folder as Open folder would. A `create` that fails partway keeps what was written, names the file, and opens the folder too. (Changed in review: the clash first left nothing open.) — `tests/app/shell-start.test.ts`, "the Portfolio template": the writes, in order, with each bundled text; start, finish, slack and critical of all seven rows, copied from Task 35's table, from the model the shell built; the clash writes nothing, says "teams/alpha.plan already exists, so the template wasn't written. Opened the folder instead." and opens `teams/alpha.plan` (no top-level file); a `teams/beta.plan` that appears after the listing (hidden from it by a proxy) stops it after two writes, with "…wasn't fully written. Opened the folder instead." and `portfolio.plan` active. Each checks the remembered folder: a dismissed picker and a failed open (the first file blocked, so no plan files) remember nothing; the clash, the partial write and the full write remember their folder.
+- [x] Wizard, folder workspace: — `tests/app/shell-wizard.test.ts`, on a fake folder whose master's Product B mounts nothing (see the decisions).
+  - Estimate at the root creates `untitled.plan` with exactly the text above, and it becomes active.
+  - Schedule in `teams/` creates the file with `project-start` set to a faked today.
+  - The name checks: empty, a `/`, and an existing name each refuse with their note.
+  - With the mount box ticked on Product B's row, the new file appears as a segment under it, the master stays active, and one Ctrl+Z removes the mount while leaving the file on disk.
+- [x] Wizard, single-file workspace: it shows no step 2, and opens an untitled document after the unsaved dialog. Cancel changes nothing. — `tests/app/shell-start.test.ts`, "the wizard outside a folder", with today faked as 2026-10-02; also Estimate as a one-step wizard, and Escape.
+- [x] Close: — `tests/app/shell-start.test.ts`, "Close", in the folder the Portfolio template wrote; the store's `close` in `tests/app/files.test.ts`.
+  - Close file with two open files activates the other.
+  - It's disabled when only one would remain.
+  - Close folder returns to the start screen and Reopen is offered.
+  - With unsaved changes in a mounted file, the dialog lists that file, and Cancel changes nothing.
+- [x] Every existing test passes. Tests that relied on starting with `example.plan` now use the boot option, and each is listed as rewritten. — 4245 tests (4212 before); typecheck, lint and `vite build` clean.
+- [ ] **Browser pass in Edge, after a hard reload:** pending review (there is no browser here).
+  - the start screen, in both themes;
+  - each template;
+  - a new Schedule plan created in a real folder's subfolder and mounted under a master row;
+  - Close file and Close folder, with unsaved changes;
+  - Reopen.
+
+**Visible changes:** the start screen, templates, New…, the wizard, the Close menu, and the app no longer opening on a sample file. In detail:
+
+- **The app opens on the start screen**, never on `examples/example.plan`. It replaces the editor, the preview and the file panel; the toolbar shows only New…, Open file, Open folder and Reopen (when a folder is remembered), with no editor tabs or file name, and the tab title is "Plan". Its choices: Reopen _name_, New plan…, Open folder… (disabled with its tooltip where the browser lacks it), Open file…, and under "Templates" Estimate, Schedule and Portfolio with a description each. The first choice has the focus. Closing returns to it.
+- **Templates.** Estimate and Schedule open the bundled example as an untitled document; it shows no ● until edited, and Ctrl+S goes to Save As. Portfolio asks for a folder, writes `portfolio.plan`, `teams/alpha.plan` and `teams/beta.plan`, and opens it; it is disabled with Open folder's tooltip where Open folder is. A file already there, or one that blocks a write partway: the folder opens as Open folder opens it, with "_teams/alpha.plan_ already exists, so the template wasn't written. Opened the folder instead." ("wasn't fully written" after a partial write).
+- **New…**, first in the toolbar and always shown, opens the wizard: a dialog titled "New plan · _step_ (step _n_ of _m_)" with Back, Next or Create, and Cancel; Escape cancels and Enter in a field goes on. Step 1 lists Estimate and Schedule with a description each. In a folder, step 2 has Name (`untitled.plan`), Location, a combobox offering `.` ("The folder's top level") and every folder the listing reaches, which takes a typed relative path and creates its missing folders; its refusals show beside it: "The location must be relative to the folder.", "The location can't go up a folder (..).", "The location can't have empty parts." and, on an item row that mounts nothing, "Mount it under _row_"; refusals show beside the name: "Enter a name.", "A name can't contain /.", "_path_ already exists.". Step 3, for Schedule, is a date field set to today ("Enter a date." when it is cleared). In a folder the status reads "Created _path_".
+- **Saving a pathless file in a folder**, and the folder workspace's `saveAs`, now fail with "Use New… to create a file in this folder." in place of "Creating files comes in a later task".
+- **Close**, last in the toolbar's file buttons, hidden on the start screen. In a folder it opens a menu (Escape or a click elsewhere closes it) with Close file and Close folder; Close file is disabled, titled "This is the only open file; use Close folder.", when no other file would stay open, and the status reads "Closed _path_". In the single-file workspace Close closes at once. Each asks the unsaved-changes question about the files it closes.
+- **`index.html`** loads `src/app/start.ts`, which calls `boot()`.
+
+**Decisions taken** (asked and answered before any code was written):
+
+1. **Around the start screen** the panes and the file panel are hidden, and the toolbar keeps only New…, Open file, Open folder and Reopen; the title is "Plan".
+2. **A fresh template is not marked unsaved** until it is edited, like any new document; leaving the page with it untouched doesn't prompt.
+3. **The Portfolio template and the workspace.** `Workspace.open` takes `{ allowEmpty: true }`, which picks a folder without refusing an empty one and returns no file (`{ path: null }`). The shell checks the three paths against `list()` and, if any is there, says so and writes nothing; otherwise it `create`s each file and opens `portfolio.plan`. A `create` that still fails stops there, names the file, and leaves the files already written. The workspace knows nothing of templates. Disabled with Open folder's tooltip where Open folder is. (Changed in review: a clash or a partial write then opens the folder as Open folder would, and the folder is remembered only once that open succeeds.)
+4. **Closing a file another open file shows** (alpha while the portfolio is open): it stops being an open file, and the next becomes active, but it stays in the store as that segment, unsaved edits included, so the dialog doesn't list it.
+5. **No mount box on a row that mounts a file already**, since ticking it would replace that mount.
+
+Also agreed with them: `main.ts` exports `boot({ document? })` and `src/app/start.ts` calls it; behind the start screen the store holds a blank untitled single-file document, so exactly one file stays active; a file is open (`OpenFile.shown`) when the user opened it, chose it in the panel or created it, not when it was read only for a segment; Save all and continue saves only the files being closed; Close is a menu in a folder and a plain button in the single-file workspace; the wizard is a modal with Back, Next and Create, Location defaults to the top level and the mount box starts unticked; the type list is core's `PROFILES` (label, description, text), which `analyze` also reads, and step 3 shows for a type whose new file would get `no-project-start`, not for the name "schedule"; `create` returns a `WriteResult`, failing with "_path_ already exists".
+
+**Decisions taken** (by me, within the task; please check):
+
+- **The mount criterion runs on a master whose Product B mounts nothing.** In the Portfolio template Product B mounts `teams/beta.plan`, so by decision 5 it gets no mount box. `tests/app/shell-wizard.test.ts` uses a master with Product A mounting alpha and Product B mounting nothing, and checks both: no box on Product A, and the mount on Product B, selected in the grid.
+- **"Every folder in the workspace" is every folder the listing reaches**: each listed plan file's folder and the folders above it. `list()` lists only plan files, so a folder holding none isn't offered; it can be typed. Listing folders as well would widen the `Workspace` interface, which review didn't ask for.
+- **Finishing an `allowEmpty` open is a second `open()`** on the same folder workspace: with a folder already picked it shows no picker, picks the file by the usual rule and remembers the folder. That keeps "remember only once an open succeeds" inside the workspace, and the template's clash opens the folder exactly as Open folder does. PLUGINS.md §7.1 says so.
+- **The status line wording.** A partial write says "wasn't fully written" where a clash says "wasn't written". When the folder still can't be opened (the first file blocked in an otherwise empty folder), it gives both: "_portfolio.plan_ already exists, so the template wasn't written. No plan files in folder", and the start screen stays. A blocked `create` names the file through its own reason, "_path_ already exists".
+- **The location.** Empty or `.` is the top level, `.` is how the combobox offers it (a datalist can't show an empty option), and a trailing `/` is dropped. A lone `/` is refused as not relative.
+- **Closing works on the store's files, using the composed views.** A file's segments are the files its composed view shows (`pieces().files()`); Close file drops the closed file and the unshown files in its segments, except those in another open file's segments, and destroys the closed files' views. `OpenFiles.close(file, drop)` picks the next active file in the panel's order: the listing, then any open file not in it.
+- **Close folder** loads an empty text into the active buffer, outside the history, and opens a blank single-file store behind the start screen, as boot does.
+- **The mount** is written with the grid's `mountOn` and `withRepairs`, the edit Mount plan… makes, through the composed view's `applyFile` with origin `wizard`. The wizard reads the model again first if an analysis is pending, and finds the row by its file and line.
+- **Messages use a straight apostrophe**, as the shell's others do.
+
+**Changed in review** (asked for before commit):
+
+1. **A folder is remembered only once an open succeeds.** `open({ allowEmpty: true })` remembers nothing; the open that follows it does. A dismissed picker, a refused permission or a failed open leaves the remembered folder as it was. Tested in `tests/app/folder-workspace.test.ts` and, through the template, in `tests/app/shell-start.test.ts`.
+2. **The location is a combobox** (`<input list>` with a datalist): the top level and every folder are offered, and a typed relative path is accepted, with no `..` and no empty parts; `create` makes missing folders. Tested with a new `teams/gamma` folder in `tests/app/shell-wizard.test.ts`, plus `locationOf` directly.
+3. **Both "Creating files comes in a later task" messages** now read "Use New… to create a file in this folder."
+4. **A Portfolio template that is blocked opens the folder anyway**, as Open folder would, with a status note naming the file; files written before a partial failure stay. The acceptance criterion above says so.
+
+**Rewritten tests:**
+
+- `tests/app/shell.test.ts` (VISION §3.1's single-file boot test): boots with `boot({ document: example })`. "offers Open file, Open folder (disabled without a directory picker), Save, Save As and Refresh" expects `new` first and `close` last.
+- `tests/app/shell-download.test.ts`: boots with the example. "offers neither Save all nor Refresh, and disables Open folder with a tooltip" expects `new` and `close` too.
+- `tests/app/shell-folder.test.ts`: boots with the example, since it types into the untitled document before opening a folder. "offers Reopen beside the open buttons…" and "asks before replacing an unsaved document…" expect New… first and Close last.
+- `tests/app/shell-portfolio.test.ts`: boots with the example, since its first test types a mount row into the untitled document.
+- `tests/app/shell-composed.test.ts` and `tests/app/shell-grid-composed.test.ts`: call `boot()`, a real load, and open the folder from there; nothing else changed.
+- `tests/app/folder-workspace.test.ts`: "can list and save in place, and cannot save as" is now "can list, save in place and create, and cannot save as", with `create: true`.
+- `tests/app/workspace.test.ts`: "opens a file and writes back to the same handle without prompting" expects `create: false`, and that `create` fails.
+- `tests/app/files.test.ts`: its setup casts `workspace.open()`'s result to `OpenedFile | null`, for the wider return type; no behaviour changed. "a file with no path in a folder workspace is not saved: creating files comes later" is now "…: New… creates files there", expecting "Use New… to create a file in this folder."
+- `tests/app/folder-workspace.test.ts`: "save as creates nothing: that comes later" is now "save as creates nothing: New… creates files in a folder", with the new message.
+
+**New tests:** `tests/app/shell-start.test.ts` (start screen, templates, the Portfolio template's clash, partial write and failed open with what each remembers, the wizard outside a folder, Close, Reopen) and `tests/app/shell-wizard.test.ts` (the wizard in a folder: Estimate at the top level, the name and location checks, Schedule in `teams/`, a typed new folder `teams/gamma`, the mount box and its undo, and `locationOf`). Added cases: in `tests/app/folder-workspace.test.ts`, `create` (folders made, an existing file refused with nothing written) and `allowEmpty` with the open that finishes it (nothing remembered until then, nor after a failed open); in `tests/app/files.test.ts`, "closing (Task 40)": `shown`, `close`'s next active file and dropped files, and `saveAll(only)`.
+
+**Spec:** plan-format-spec §2.1 (the tool writes `profile:` through the wizard) and §6 (the start screen, the templates, the wizard, Close; Replacing the open files, Saving and the new-document line follow). PLUGINS.md §7.1: `create`, `can.create`, `open({ allowEmpty })` and the open that finishes it, remembering only on success, `OpenedFolder`, each implementation's `create`. plan-format-spec §6 also says when a folder is remembered. Task 22's and Task 34's notes say what this task changed. VISION.md is unchanged. The plan format spec has no draft version line, so there is nothing to bump.
+
+**Not in this task:**
+
+- Renaming or deleting files from the app.
+- A list of recent files.
+- Custom or user-defined templates.
+- The filter (Task 41).
+- The settings editor.
+
+**Human review:** the start screen and the wizard in the browser first. They are the first thing every new user sees.
+
+---
+
+## Task 41 — Filter _(placeholder; written in full when Task 40 is done)_
+
+One filter box in the toolbar, applied to every pane at once so they stay aligned.
+
+- **Matching:** case-insensitive text in any cell of every row, mounted plans included.
+- **Shown:** matches and their ancestors, with the ancestors dimmed. Everything else is hidden, in the text editor too, with its text untouched.
+- **Display only:** totals and the schedule still cover the whole plan. "Showing 12 of 340 rows", and Esc or ✕ clears it.

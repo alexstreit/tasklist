@@ -6,6 +6,7 @@
 import { diagnosticCount, forEachDiagnostic } from '@codemirror/lint';
 import { EditorView } from '@codemirror/view';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import example from '../../examples/example.plan?raw';
 import { CodeMirrorBuffer } from '../../src/buffer';
 import type { Model } from '../../src/core';
 
@@ -69,7 +70,7 @@ beforeAll(async () => {
     '<button id="open"></button><button id="save"></button><button id="save-as"></button><nav id="editors"></nav><span id="filename"></span><span id="status"></span>' +
     '<div id="editor"></div><section id="preview"><nav id="renderers"></nav><nav id="exporters"></nav><div id="host"></div></section>';
   vi.useFakeTimers();
-  await import('../../src/app/main');
+  (await import('../../src/app/main')).boot({ document: example });
   view = EditorView.findFromDOM(document.querySelector('.cm-editor')!)!;
   preview = document.getElementById('preview')!;
 });
@@ -247,7 +248,7 @@ describe('open and save', () => {
 describe('toolbar with a single file saved in place', () => {
   it('offers Open file, Open folder (disabled without a directory picker), Save, Save As and Refresh', () => {
     const shown = [...document.querySelectorAll<HTMLButtonElement>('body > button')].filter((b) => !b.hidden).map((b) => b.id);
-    expect(shown).toEqual(['open', 'open-folder', 'save', 'save-as', 'refresh']);
+    expect(shown).toEqual(['new', 'open', 'open-folder', 'save', 'save-as', 'refresh', 'close']);
     expect(document.getElementById('open')!.textContent).toBe('Open file');
     const openFolder = document.getElementById('open-folder') as HTMLButtonElement;
     expect(openFolder.disabled).toBe(true);

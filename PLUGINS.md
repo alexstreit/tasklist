@@ -254,11 +254,14 @@ Both are interfaces from the start, each with a naive first implementation, so l
 
 ```ts
 interface Workspace {
-  readonly can: { list: boolean; watch: boolean; saveInPlace: boolean; saveAs: boolean };
-  open(): Promise<OpenedFile | null>; // the user picks a file, or a folder and the file shown first
+  readonly can: { list: boolean; watch: boolean; saveInPlace: boolean; saveAs: boolean; create: boolean };
+  open(options?: { allowEmpty?: boolean }): Promise<OpenedFile | OpenedFolder | null>;
+  // the user picks a file, or a folder and the file shown first; with allowEmpty, a folder that may be
+  // empty, and no file in it ({ path: null }), which a later open() of the same workspace finishes opening
   read(path: string): Promise<string>;
   write(path: string, text: string): Promise<WriteResult>;
   saveAs(text: string, suggested: string): Promise<WriteResult>;
+  create(path: string, text: string): Promise<WriteResult>; // a new file and its folders; fails if it exists
   list(): Promise<string[]>; // single-file: just the open file
   resolve(from: string, ref: string): string; // relative to a file; throws, with a plain reason, outside the workspace
   watch?(path: string, onChange: () => void): () => void;
@@ -273,13 +276,13 @@ type WriteResult =
 class Notice extends Error {} // why open() opened nothing, worded for the user and shown as is
 ```
 
-The shell asks what a workspace **can** do, never which kind it is, so no code branches on the implementation. `saveAs` says whether the user can pick where to save, which creates a file: the shell hides Save As without it. `list` shows the file panel and Save all; `saveInPlace` shows Refresh, and turns on the read before each write and the re-read on focus (plan-format-spec §6). `write` says what actually happened: in the input-and-download fallback it returns `downloaded`, and the unsaved-changes indicator stays on, because nothing on disk changed.
+The shell asks what a workspace **can** do, never which kind it is, so no code branches on the implementation. `saveAs` says whether the user can pick where to save, which creates a file: the shell hides Save As without it. `create` says whether the shell can make a file at a path it chooses: the new plan wizard creates its file there with it, and asks for no name or location without it (plan-format-spec §6). `create` never overwrites: it fails, writing nothing, when the file exists, so a caller writing several files checks for them first and still stops at the first that fails. `open({ allowEmpty: true })` picks a folder without refusing an empty one and shows no file in it; the shell uses it to write the Portfolio template into a folder, then calls `open()` on the same workspace, which opens that folder, without a picker, as any open does. A folder is remembered only by an open that succeeds: a dismissed picker, a refusal or an open that fails leaves the remembered folder as it was. The workspace knows nothing of templates. `list` shows the file panel and Save all; `saveInPlace` shows Refresh, and turns on the read before each write and the re-read on focus (plan-format-spec §6). `write` says what actually happened: in the input-and-download fallback it returns `downloaded`, and the unsaved-changes indicator stays on, because nothing on disk changed.
 
 Only the app shell holds the workspace. Core and plugins never see it; they get the snapshot (§6).
 
-The **single-file** implementation is today's Task 4 code moved behind the interface: File System Access where available (`saveInPlace: true`), the input-and-download fallback otherwise (`saveInPlace: false`), and visible failures in framed contexts. Both have `saveAs: true`. `read` of any other path fails with a message saying a folder workspace is needed.
+The **single-file** implementation is today's Task 4 code moved behind the interface: File System Access where available (`saveInPlace: true`), the input-and-download fallback otherwise (`saveInPlace: false`), and visible failures in framed contexts. Both have `saveAs: true` and `create: false`; their `create` fails. `read` of any other path fails with a message saying a folder workspace is needed.
 
-The **folder** implementation (`src/app/workspace/folder.ts`) reports `{ list: true, watch: false, saveInPlace: true, saveAs: false }`. `open()` picks a folder with `showDirectoryPicker` (read and write), or, for Reopen, asks permission again on the remembered handle; it returns the file to show first (plan-format-spec §6). An empty folder, a refused permission and a remembered folder that no longer resolves are `Notice`s. `list()` returns the `.plan` and `.rows` files recursively, as paths relative to the folder, skipping dot-folders and `node_modules`. `read` and `write` take those paths; `write` creates a missing file, and its folders, which only saving back a file missing on disk does. `saveAs` fails: creating files comes later. `resolve` joins a path relative to the file it appears in, normalising `.` and `..`, and throws for a result outside the folder; M3b turns that into a diagnostic. The folder handle, with the file last active in it, is kept in IndexedDB (`src/app/workspace/memory.ts`).
+The **folder** implementation (`src/app/workspace/folder.ts`) reports `{ list: true, watch: false, saveInPlace: true, saveAs: false, create: true }`. `open()` picks a folder with `showDirectoryPicker` (read and write), or, for Reopen, asks permission again on the remembered handle; it returns the file to show first (plan-format-spec §6). An empty folder (unless `allowEmpty`), a refused permission and a remembered folder that no longer resolves are `Notice`s. With `allowEmpty` it returns `{ path: null }` and remembers nothing; a later `open()` uses the folder already picked, picks the file to show as usual, and only then remembers the folder. `list()` returns the `.plan` and `.rows` files recursively, as paths relative to the folder, skipping dot-folders and `node_modules`. `read` and `write` take those paths; `write` creates a missing file, and its folders, which only saving back a file missing on disk does. `create` makes a new file and its folders, and fails with "_path_ already exists" when the file exists. `saveAs` fails: a folder creates files with `create`. `resolve` joins a path relative to the file it appears in, normalising `.` and `..`, and throws for a result outside the folder; M3b turns that into a diagnostic. The folder handle, with the file last active in it, is kept in IndexedDB (`src/app/workspace/memory.ts`).
 
 The shell holds the open files (`src/app/files.ts`) for whichever workspace is open; every save goes through them.
 

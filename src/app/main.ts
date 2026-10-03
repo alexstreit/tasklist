@@ -8,10 +8,12 @@
 import { CodeMirrorBuffer } from '../buffer';
 import { ComposedBuffer } from '../buffer/composed';
 import type { Mount } from '../buffer/pieces';
-import { mountsOf, Notice, readMounts, unmetReason } from '../core';
-import type { Exporter, FileLine, ItemNode, Model, Renderer, Workspace } from '../core';
+import { mountsOf, Notice, PROFILES, readMounts, relativePath, unmetReason } from '../core';
+import type { Exporter, FileLine, ItemNode, Model, OpenedFile, Renderer, Workspace } from '../core';
 import { mountTextEditor } from '../editor';
 import { mountGrid } from '../grid';
+import { mountOn, withRepairs } from '../grid/edits';
+import { today } from '../ui/today';
 import type { Leader } from '../ui/row-layout';
 import { connectPanes, followerChannel } from './align';
 import { cursorItemFor, itemLines } from './cursor';
@@ -21,8 +23,11 @@ import type { OpenFile, OpenFiles, SaveResult } from './files';
 import { createMounts } from './mounts';
 import { mountFilePanel } from './panel';
 import { analyze, exporters, registry, renderers } from './registry';
+import { mountStartScreen } from './start-screen';
+import { TEMPLATES } from './templates';
+import type { FolderTemplate, Template } from './templates';
+import { newPlanText, newPlanWizard } from './wizard';
 import { createFolderMemory, createFolderWorkspace, createSingleFileWorkspace, folderUnavailable } from './workspace';
-import example from '../../examples/example.plan?raw';
 import './theme.css';
 import './style.css';
 
@@ -293,7 +298,10 @@ function updateTitle(): void {
   const file = files.active();
   const name = file.path ?? 'Untitled';
   filename.textContent = name;
-  document.title = `${isDirty(file) ? '● ' : ''}${name} — Plan`;
+  document.title = starting ? 'Plan' : `${isDirty(file) ? '● ' : ''}${name} — Plan`;
+  const closable = files.workspace.can.list && closing(file) !== null;
+  closeFileItem.disabled = !closable;
+  closeFileItem.title = closable ? '' : 'This is the only open file; use Close folder.';
   editor?.showUnsaved?.(new Set(files.files().flatMap((f) => (f.path !== null && isDirty(f) ? [f.path] : []))));
   panel.update(
     files.workspace.can.list
@@ -429,10 +437,10 @@ async function save(as = false): Promise<void> {
   updateTitle();
 }
 
-/** Saves every unsaved file; true when all of them were saved (or downloaded). */
-async function saveAll(): Promise<boolean> {
-  const unsaved = files.files().filter(isDirty);
-  const results = await files.saveAll();
+/** Saves every unsaved file, or those of `only`; true when all of them were saved (or downloaded). */
+async function saveAll(only?: readonly OpenFile<CodeMirrorBuffer>[]): Promise<boolean> {
+  const unsaved = (only ?? files.files()).filter(isDirty);
+  const results = await files.saveAll(only);
   let ok = true;
   results.forEach((result, i) => (ok = reportSave(unsaved[i], result) && ok));
   if (ok && unsaved.length > 1) status.textContent = `Saved ${names(unsaved.map(nameOf))}`;
@@ -440,9 +448,12 @@ async function saveAll(): Promise<boolean> {
   return ok;
 }
 
-/** Before the open files are replaced: true to go ahead, saving or discarding unsaved changes as the user says. */
-async function settleUnsaved(): Promise<boolean> {
-  const unsaved = files.files().filter(isDirty);
+/**
+ * Before the open files, or the files of `closing`, are replaced or closed: true to go ahead, saving
+ * or discarding their unsaved changes as the user says.
+ */
+async function settleUnsaved(closing?: readonly OpenFile<CodeMirrorBuffer>[]): Promise<boolean> {
+  const unsaved = (closing ?? files.files()).filter(isDirty);
   if (unsaved.length === 0) return true;
   const choice = await ask(`${names(unsaved.map(nameOf))} ${unsaved.length === 1 ? 'has' : 'have'} unsaved changes.`, [
     'Save all and continue',
@@ -450,7 +461,7 @@ async function settleUnsaved(): Promise<boolean> {
     'Cancel',
   ]);
   if (choice === 'Cancel') return false;
-  return choice === 'Discard and continue' || saveAll();
+  return choice === 'Discard and continue' || saveAll(unsaved);
 }
 
 /** Open file, Open folder and Reopen: the new workspace's files replace the open ones. */
@@ -467,12 +478,173 @@ async function open(create: () => Workspace): Promise<void> {
   } finally {
     void renderReopen();
   }
-  if (!file) return;
+  if (!file || file.path === null) return;
+  await replaceFiles(workspace, file);
+}
+
+/** The workspace's files replace the open ones, with `file` active, and the start screen goes. */
+async function replaceFiles(workspace: Workspace, file: OpenedFile): Promise<void> {
   // The active buffer is reused, so the mounted editor stays; loading clears its history.
   useFiles(createOpenFiles(workspace, files.active().buffer, file, { makeBuffer, ask: { overwrite } }));
+  showStart(false);
   editor?.setCursorLine({ file: file.path, line: 1 });
   status.textContent = `Opened ${file.path}`;
   await files.relist();
+}
+
+/**
+ * `text` as an untitled document in the single-file workspace, replacing the open files, after the
+ * unsaved-changes dialog: a single-file template, or a new plan outside a folder.
+ */
+async function openUntitled(text: string): Promise<void> {
+  if (!(await settleUnsaved())) return;
+  const buffer = files.active().buffer;
+  buffer.apply([{ from: 0, to: buffer.text().length, insert: text }], 'load');
+  useFiles(createOpenFiles(createSingleFileWorkspace(), buffer, null, { makeBuffer, ask: { overwrite } }));
+  showStart(false);
+}
+
+/**
+ * A folder template (spec §6): its files are written into a folder the user picks, keeping their
+ * relative paths, and the folder opens with `show` active. A file already there stops it before
+ * anything is written, and one that blocks a write stops it there, keeping what was written; either
+ * way the folder then opens as Open folder opens one, and the status line names the file.
+ */
+async function openFolderTemplate(template: FolderTemplate): Promise<void> {
+  if (!(await settleUnsaved())) return;
+  const workspace = createFolderWorkspace(window, memory);
+  // What stopped the template being written, and how many of its files were.
+  let blocked: string | null = null;
+  let written = 0;
+  const unwritten = () => `${blocked}, so the template wasn't ${written > 0 ? 'fully ' : ''}written.`;
+  try {
+    // Picks the folder; nothing is remembered until the open below succeeds.
+    if (!(await workspace.open({ allowEmpty: true }))) return;
+    const there = await workspace.list();
+    const taken = Object.keys(template.files).find((path) => there.includes(path));
+    if (taken !== undefined) blocked = `${taken} already exists`;
+    for (const [path, text] of blocked === null ? Object.entries(template.files) : []) {
+      const result = await workspace.create(path, text);
+      if (result.outcome !== 'saved') {
+        blocked = result.outcome === 'failed' ? result.reason : `${path} wasn't created`;
+        break;
+      }
+      written++;
+    }
+    const opened = await workspace.open();
+    if (!opened || opened.path === null) return;
+    await replaceFiles(workspace, blocked === null ? { path: template.show, text: await workspace.read(template.show) } : opened);
+    if (blocked !== null) status.textContent = `${unwritten()} Opened the folder instead.`;
+  } catch (e) {
+    if (e instanceof Notice) status.textContent = blocked === null ? e.message : `${unwritten()} ${e.message}`;
+    else report('open', e);
+  } finally {
+    void renderReopen();
+  }
+}
+
+function openTemplate(template: Template): void {
+  if ('files' in template) void openFolderTemplate(template);
+  else void openUntitled(template.text);
+}
+
+/** The item row on `at` in the current model: the cursor's, or the grid's selection; null on any other line. */
+function rowAt(at: FileLine | null): ItemNode | null {
+  if (!at) return null;
+  const find = (nodes: readonly ItemNode[]): ItemNode | null => {
+    for (const node of nodes) {
+      if (node.file === at.file && node.line === at.line) return node;
+      const found = find(node.children);
+      if (found) return found;
+    }
+    return null;
+  };
+  return find(model.roots);
+}
+
+/**
+ * New plan… (spec §6). In a folder it creates the file, which becomes active, or with the mount box
+ * ticked mounts it under the cursor's row, as one undo step, with the master still active. Elsewhere
+ * it opens an untitled document, after the unsaved-changes dialog.
+ */
+async function newPlan(): Promise<void> {
+  const { workspace } = files;
+  const inFolder = workspace.can.create;
+  if (dirty) render();
+  const row = inFolder ? rowAt(cursorLine) : null;
+  // A row that mounts a file already isn't offered: the box would replace its mount.
+  const under = row && !row.row.mount ? row : null;
+  const listing = inFolder ? await workspace.list().catch(() => [...files.listing()]) : [];
+  const result = await newPlanWizard({
+    types: PROFILES.map((p) => ({ ...p, needsStart: analyze(newPlanText(p.name)).diagnostics.some((d) => d.code === 'no-project-start') })),
+    folder: inFolder
+      ? {
+          // Every folder the listing reaches, each of a file's folders and the folders above them.
+          folders: ['', ...[...new Set(listing.flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => `${parts.slice(0, i + 1).join('/')}/`)))].sort()],
+          exists: (path) => listing.includes(path),
+        }
+      : null,
+    mountUnder: under ? under.title : null,
+    today: today(),
+  });
+  if (!result) return;
+  if (result.path === undefined) {
+    await openUntitled(result.text);
+    return;
+  }
+  const created = await workspace.create(result.path, result.text);
+  if (created.outcome !== 'saved') return report(`create ${result.path}`, created.outcome === 'failed' ? created.reason : created.outcome);
+  status.textContent = `Created ${result.path}`;
+  await files.relist();
+  if (!(result.mount && under)) {
+    await files.show(result.path).catch((e) => report('open', e));
+    return;
+  }
+  // The model the row came from may be older than the buffer by now.
+  if (dirty) render();
+  const node = rowAt({ file: under.file, line: under.line });
+  const view = views.get(files.active());
+  const edit = node && withRepairs(model, mountOn(model, node, relativePath(node.file, result.path)), [node]);
+  if (!view || !edit || 'refused' in edit) return report(`mount ${result.path}`, edit && 'refused' in edit ? edit.refused : 'the row is gone');
+  view.applyFile(node.file, edit.edits, 'wizard');
+}
+
+/**
+ * What Close file on `file` closes (spec §6): the file, and the files opened only to show its
+ * mounts, except those a segment of another open file still shows. Null when no other file would
+ * stay open.
+ */
+function closing(file: OpenFile<CodeMirrorBuffer>): OpenFile<CodeMirrorBuffer>[] | null {
+  const others = files.files().filter((f) => f.shown && f !== file);
+  if (others.length === 0) return null;
+  const segments = (f: OpenFile) => views.get(f)?.pieces().files() ?? (f.path === null ? [] : [f.path]);
+  const kept = new Set(others.flatMap(segments));
+  const own = new Set(segments(file));
+  return files.files().filter((f) => f.path !== null && !kept.has(f.path) && (f === file || (!f.shown && own.has(f.path))));
+}
+
+/** Close file: the active file closes, after the unsaved-changes dialog, and the next open file becomes active. */
+async function closeFile(): Promise<void> {
+  const file = files.active();
+  const drop = closing(file);
+  if (!drop || !(await settleUnsaved(drop))) return;
+  files.close(file, drop);
+  for (const f of new Set([file, ...drop])) {
+    views.get(f)?.destroy();
+    views.delete(f);
+  }
+  status.textContent = `Closed ${file.path}`;
+}
+
+/** Close folder, or Close in the single-file workspace: everything closes, and the start screen shows. The remembered folder stays. */
+async function closeAll(): Promise<void> {
+  if (!(await settleUnsaved())) return;
+  const buffer = files.active().buffer;
+  buffer.apply([{ from: 0, to: buffer.text().length, insert: '' }], 'load');
+  useFiles(createOpenFiles(createSingleFileWorkspace(), buffer, null, { makeBuffer, ask: { overwrite } }));
+  status.textContent = '';
+  showStart(true);
+  void renderReopen();
 }
 
 /** Reads every open file again, on focus and Refresh (spec §6). */
@@ -487,8 +659,8 @@ async function refresh(): Promise<void> {
   updateTitle();
 }
 
-const first = new CodeMirrorBuffer(example);
-let shownBuffer: CodeMirrorBuffer = first;
+// The buffer the editor shows, set by boot.
+let shownBuffer: CodeMirrorBuffer;
 
 // One editor is mounted at a time, over the active file's buffer (spec §3.4).
 const editors = [
@@ -572,34 +744,90 @@ const button = (label: string, id: string): HTMLButtonElement => {
 const openButton = document.getElementById('open')!;
 const saveButton = document.getElementById('save')!;
 const saveAsButton = document.getElementById('save-as')!;
+const newButton = button('New…', 'new');
 const openFolderButton = button('Open folder', 'open-folder');
 const reopenButton = button('Reopen', 'reopen');
 const saveAllButton = button('Save all', 'save-all');
 const refreshButton = button('Refresh', 'refresh');
+const closeButton = button('Close', 'close');
 openButton.textContent = 'Open file';
+openButton.before(newButton);
 openButton.after(openFolderButton, reopenButton);
-saveAsButton.after(saveAllButton, refreshButton);
+saveAsButton.after(saveAllButton, refreshButton, closeButton);
+// The Close menu, in a folder: Close file and Close folder. In the single-file workspace Close closes at once.
+const closeMenu = document.createElement('div');
+closeMenu.className = 'close-menu';
+closeMenu.setAttribute('role', 'menu');
+closeMenu.hidden = true;
+const closeFileItem = button('Close file', 'close-file');
+const closeFolderItem = button('Close folder', 'close-folder');
+for (const item of [closeFileItem, closeFolderItem]) item.setAttribute('role', 'menuitem');
+closeMenu.append(closeFileItem, closeFolderItem);
+// Anchors the menu under the Close button.
+const closeAnchor = document.createElement('span');
+closeAnchor.className = 'close-anchor';
+closeAnchor.append(closeMenu);
+closeButton.after(closeAnchor);
+const showCloseMenu = (on: boolean): void => {
+  closeMenu.hidden = !on;
+  closeButton.setAttribute('aria-expanded', String(on));
+  if (on) closeMenu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+};
 const panelHost = document.createElement('nav');
 panelHost.id = 'files';
 editorHost.before(panelHost);
 const panel = mountFilePanel(panelHost, (path) => {
   files.show(path).catch((e) => report('open', e));
 });
+const preview = document.getElementById('preview')!;
 
-/** What the toolbar and panel offer follows what the workspace can do (PLUGINS.md §7.1). */
+// The start screen shows on every load, and after Close folder (spec §6).
+let starting = false;
+
+/** What the toolbar and panel offer follows what the workspace can do (PLUGINS.md §7.1); the start screen has no document. */
 function renderToolbar(): void {
   const { can } = files.workspace;
   saveButton.textContent = can.saveInPlace ? 'Save' : 'Download';
-  saveAsButton.hidden = !can.saveInPlace || !can.saveAs;
-  saveAllButton.hidden = !can.list;
-  refreshButton.hidden = !can.saveInPlace;
-  panelHost.hidden = !can.list;
+  saveButton.hidden = starting;
+  saveAsButton.hidden = starting || !can.saveInPlace || !can.saveAs;
+  saveAllButton.hidden = starting || !can.list;
+  refreshButton.hidden = starting || !can.saveInPlace;
+  closeButton.hidden = starting;
+  if (can.list) closeButton.setAttribute('aria-haspopup', 'menu');
+  else closeButton.removeAttribute('aria-haspopup');
+  showCloseMenu(false);
+  editorTabs.hidden = filename.hidden = starting;
+  panelHost.hidden = starting || !can.list;
 }
 
 const noFolder = folderUnavailable();
 openFolderButton.disabled = noFolder !== null;
 openFolderButton.title = noFolder ?? '';
 reopenButton.hidden = true;
+
+const startHost = document.createElement('section');
+startHost.id = 'start';
+panelHost.before(startHost);
+const reopen = (): void => {
+  const folder = remembered;
+  if (folder) void open(() => createFolderWorkspace(window, memory, folder));
+};
+const startScreen = mountStartScreen(startHost, TEMPLATES, noFolder, {
+  reopen,
+  newPlan: () => void newPlan(),
+  openFolder: () => void open(() => createFolderWorkspace(window, memory)),
+  openFile: () => void open(() => createSingleFileWorkspace()),
+  template: openTemplate,
+});
+
+/** The start screen, in place of the panes; or the panes. */
+function showStart(on: boolean): void {
+  starting = on;
+  editorHost.hidden = preview.hidden = on;
+  renderToolbar();
+  updateTitle();
+  startScreen.show(on);
+}
 
 // The folder Reopen reopens, read when the page loads and after every open.
 let remembered: FileSystemDirectoryHandle | null = null;
@@ -609,27 +837,51 @@ async function renderReopen(): Promise<void> {
   remembered = noFolder === null ? ((await memory.load())?.handle ?? null) : null;
   reopenButton.hidden = !remembered;
   if (remembered) reopenButton.textContent = `Reopen ${remembered.name}`;
+  startScreen.setReopen(remembered?.name ?? null);
 }
 
-let files: OpenFiles<CodeMirrorBuffer> = createOpenFiles(createSingleFileWorkspace(), first, null, { makeBuffer, ask: { overwrite } });
+let files: OpenFiles<CodeMirrorBuffer>;
 /** A mounted file open in the store gives its current text, unsaved edits included. */
 const openText = (path: string): string | undefined => files.files().find((f) => f.path === path)?.buffer.text();
-let mounts = createMounts({ workspace: files.workspace, openText }, gathered);
-files.onChange(onFilesChange);
-watch(first);
-mountEditor(lastEditor());
+let mounts: ReturnType<typeof createMounts>;
 
-exportBar.replaceChildren(...exportButtons);
-render();
-renderToolbar();
-updateTitle();
-void renderReopen();
+/**
+ * Starts the app. A real load shows the start screen; `document` opens that text instead, as an
+ * untitled document in the single-file workspace, which tests use.
+ */
+export function boot(options: { document?: string } = {}): void {
+  const first = new CodeMirrorBuffer(options.document ?? '');
+  shownBuffer = first;
+  files = createOpenFiles(createSingleFileWorkspace(), first, null, { makeBuffer, ask: { overwrite } });
+  mounts = createMounts({ workspace: files.workspace, openText }, gathered);
+  files.onChange(onFilesChange);
+  watch(first);
+  mountEditor(lastEditor());
 
+  exportBar.replaceChildren(...exportButtons);
+  render();
+  showStart(options.document === undefined);
+  void renderReopen();
+}
+
+newButton.addEventListener('click', () => void newPlan());
 openButton.addEventListener('click', () => void open(() => createSingleFileWorkspace()));
 openFolderButton.addEventListener('click', () => void open(() => createFolderWorkspace(window, memory)));
-reopenButton.addEventListener('click', () => {
-  const folder = remembered;
-  if (folder) void open(() => createFolderWorkspace(window, memory, folder));
+reopenButton.addEventListener('click', reopen);
+closeButton.addEventListener('click', () => {
+  if (files.workspace.can.list) showCloseMenu(closeButton.getAttribute('aria-expanded') !== 'true');
+  else void closeAll();
+});
+closeMenu.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  event.preventDefault();
+  showCloseMenu(false);
+  closeButton.focus();
+});
+closeFileItem.addEventListener('click', () => (showCloseMenu(false), void closeFile()));
+closeFolderItem.addEventListener('click', () => (showCloseMenu(false), void closeAll()));
+document.addEventListener('click', (event) => {
+  if (!closeMenu.hidden && !closeMenu.contains(event.target as Node) && event.target !== closeButton) showCloseMenu(false);
 });
 saveButton.addEventListener('click', () => void save());
 saveAsButton.addEventListener('click', () => void save(true));

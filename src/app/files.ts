@@ -20,6 +20,8 @@ export interface OpenFile<B extends PlanBuffer = PlanBuffer> {
   stale: boolean;
   /** It couldn't be read when last read again. */
   missing: boolean;
+  /** The user opened it: picked it, chose it in the panel, or created it. False for a file read only to fill a segment. */
+  shown: boolean;
 }
 
 /** Unsaved: the buffer differs from the file on disk. */
@@ -40,7 +42,7 @@ export interface OpenFiles<B extends PlanBuffer = PlanBuffer> {
   active(): OpenFile<B>;
   /** The workspace's files as last listed: the open file alone when it can't list. */
   listing(): readonly string[];
-  /** Makes the file at `path` active, reading it the first time. */
+  /** Makes the file at `path` active, and shown, reading it the first time. */
   show(path: string): Promise<OpenFile<B>>;
   /**
    * Opens a file already read from disk, as `text`, without making it active: a mounted file a
@@ -49,8 +51,14 @@ export interface OpenFiles<B extends PlanBuffer = PlanBuffer> {
   adopt(path: string, text: string): OpenFile<B>;
   /** Writes the file in place, or picks where with `as` or when it has no path. */
   save(file: OpenFile<B>, as?: boolean): Promise<SaveResult>;
-  /** Saves every file with unsaved changes, one at a time. */
-  saveAll(): Promise<SaveResult[]>;
+  /** Saves every file with unsaved changes, or those of `only`, one at a time. */
+  saveAll(only?: readonly OpenFile<B>[]): Promise<SaveResult[]>;
+  /**
+   * Closes `file`: it is no longer shown, and the next shown file in the panel's order becomes
+   * active, else the one before it. The files in `drop` are forgotten; `file` stays open, unshown,
+   * when a segment another file shows still needs it.
+   */
+  close(file: OpenFile<B>, drop: readonly OpenFile<B>[]): void;
   /** Lists the workspace again, when it can list. */
   relist(): Promise<void>;
   /**
@@ -80,15 +88,15 @@ export function createOpenFiles<B extends PlanBuffer>(
 ): OpenFiles<B> {
   const listeners = new Set<() => void>();
   const changed = (): void => listeners.forEach((listener) => listener());
-  const make = (buffer: B, path: string | null, text: string): OpenFile<B> => ({ buffer, path, disk: text, kept: text, stale: false, missing: false });
+  const make = (buffer: B, path: string | null, text: string, shown: boolean): OpenFile<B> => ({ buffer, path, disk: text, kept: text, stale: false, missing: false, shown });
 
   let first: OpenFile<B>;
   if (opened) {
     const text = normalise(opened.text);
     buffer.apply([{ from: 0, to: buffer.text().length, insert: text }], 'load');
-    first = make(buffer, opened.path, text);
-  } else first = make(buffer, null, buffer.text());
-  const files: OpenFile<B>[] = [first];
+    first = make(buffer, opened.path, text, true);
+  } else first = make(buffer, null, buffer.text(), true);
+  let files: OpenFile<B>[] = [first];
   let active = first;
   let listing: string[] = opened ? [opened.path] : [];
   let refreshing: Promise<void> | null = null;
@@ -122,8 +130,9 @@ export function createOpenFiles<B extends PlanBuffer>(
         const text = normalise(await workspace.read(path));
         // Another show of the same path may have finished while this one read.
         file = files.find((f) => f.path === path);
-        if (!file) files.push((file = make(options.makeBuffer(text), path, text)));
+        if (!file) files.push((file = make(options.makeBuffer(text), path, text, true)));
       }
+      file.shown = true;
       active = file;
       changed();
       return file;
@@ -132,7 +141,7 @@ export function createOpenFiles<B extends PlanBuffer>(
     adopt(path, text) {
       let file = files.find((f) => f.path === path);
       if (!file) {
-        files.push((file = make(options.makeBuffer(text), path, text)));
+        files.push((file = make(options.makeBuffer(text), path, text, false)));
         changed();
       }
       return file;
@@ -142,7 +151,7 @@ export function createOpenFiles<B extends PlanBuffer>(
       const text = file.buffer.text();
       let result: WriteResult;
       if (as || file.path === null) {
-        if (!workspace.can.saveAs) return { outcome: 'failed', reason: 'Creating files comes in a later task' };
+        if (!workspace.can.saveAs) return { outcome: 'failed', reason: 'Use New… to create a file in this folder.' };
         result = await workspace.saveAs(text, file.path ?? DEFAULT_NAME);
       } else {
         // A download overwrites nothing, so only a write in place checks the disk first.
@@ -156,10 +165,23 @@ export function createOpenFiles<B extends PlanBuffer>(
       return result;
     },
 
-    async saveAll() {
+    async saveAll(only) {
       const results: SaveResult[] = [];
-      for (const file of files.filter(isDirty)) results.push(await store.save(file));
+      for (const file of (only ?? files).filter(isDirty)) results.push(await store.save(file));
       return results;
+    },
+
+    close(file, drop) {
+      // The panel's order: the listing, then any open file not in it.
+      const order = [...listing, ...files.flatMap((f) => (f.path === null || listing.includes(f.path) ? [] : [f.path]))];
+      const at = order.indexOf(file.path ?? '');
+      const shown = (path: string) => files.find((f) => f.path === path && f.shown && f !== file);
+      const next = order.slice(at + 1).map(shown).find(Boolean) ?? order.slice(0, Math.max(at, 0)).reverse().map(shown).find(Boolean);
+      if (!next) throw new Error('Closing the last open file');
+      file.shown = false;
+      files = files.filter((f) => !drop.includes(f));
+      active = next;
+      changed();
     },
 
     async relist() {
